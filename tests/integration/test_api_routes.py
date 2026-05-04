@@ -213,7 +213,16 @@ def _seed_full_dataset(session) -> dict:
             started_at=datetime(2026, 5, 4, 18, 0),
             finished_at=datetime(2026, 5, 4, 18, 1),
             status="SUCCESS",
-            result_summary={"rows": 500},
+            result_summary={
+                "rows": 500,
+                "provider_type": "FakeKisDataProvider",
+                "universe": "MARKET_CAP_TOP_500",
+                "batch_size": 100,
+                "symbols_count": 2,
+                "daily_success_count": 2,
+                "daily_failure_count": 0,
+                "skipped_no_prices": 0,
+            },
         ),
     )
 
@@ -827,9 +836,50 @@ def test_jobs_lists_seeded_runs(client, session):
     assert response.status_code == 200
     body = response.json()
     assert len(body["items"]) == 1
-    assert body["items"][0]["job_name"] == "collect_close_data"
-    assert body["items"][0]["status"] == "SUCCESS"
-    assert body["items"][0]["result_summary"] == {"rows": 500}
+    item = body["items"][0]
+    assert item["job_name"] == "collect_close_data"
+    assert item["status"] == "SUCCESS"
+    assert item["result_summary"]["rows"] == 500
+    assert item["success_count"] == 2
+    assert item["failed_count"] == 0
+    assert item["skipped_count"] == 0
+    assert item["partial_count"] is None
+    assert item["total_count"] == 2
+    assert item["provider_type"] == "FakeKisDataProvider"
+    assert item["universe_name"] == "MARKET_CAP_TOP_500"
+    assert item["batch_size"] == 100
+
+
+def test_jobs_flattens_partial_summary_fields(client, session):
+    JobRunRepository(session).add(
+        JobRun(
+            job_name="calculate_technical_indicators",
+            started_at=datetime(2026, 5, 4, 18, 30),
+            finished_at=datetime(2026, 5, 4, 18, 31),
+            status="PARTIAL",
+            result_summary={
+                "universe_name": "CUSTOM_TOP",
+                "batch_size": 10,
+                "members_count": 5,
+                "success_count": 3,
+                "failure_count": 1,
+                "skipped_no_prices": 1,
+            },
+        ),
+    )
+    session.commit()
+
+    response = client.get("/api/jobs")
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["success_count"] == 3
+    assert item["failed_count"] == 1
+    assert item["skipped_count"] == 1
+    assert item["partial_count"] == 1
+    assert item["total_count"] == 5
+    assert item["provider_type"] is None
+    assert item["universe_name"] == "CUSTOM_TOP"
+    assert item["batch_size"] == 10
 
 
 def test_jobs_filters_by_status(client, session):

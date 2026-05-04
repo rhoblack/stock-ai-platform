@@ -246,6 +246,14 @@ class JobRunSchema(_BaseSchema):
     status: str
     error_message: Optional[str]
     result_summary: Optional[Dict[str, Any]]
+    success_count: Optional[int] = None
+    failed_count: Optional[int] = None
+    skipped_count: Optional[int] = None
+    partial_count: Optional[int] = None
+    total_count: Optional[int] = None
+    provider_type: Optional[str] = None
+    universe_name: Optional[str] = None
+    batch_size: Optional[int] = None
 
 
 class JobsResponse(_BaseSchema):

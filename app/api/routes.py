@@ -294,6 +294,72 @@ def _resolve_holding_checks(
     return items
 
 
+def _summary_int(summary: dict, *keys: str) -> int | None:
+    for key in keys:
+        value = summary.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _job_run_to_schema(row: JobRun) -> JobRunSchema:
+    summary = row.result_summary or {}
+    success_count = _summary_int(
+        summary,
+        "success_count",
+        "daily_success_count",
+        "saved_count",
+        "snapshots_saved",
+        "upserted_results",
+    )
+    failed_count = _summary_int(
+        summary,
+        "failed_count",
+        "failure_count",
+        "daily_failure_count",
+    )
+    skipped_count = _summary_int(
+        summary,
+        "skipped_count",
+        "skipped_no_prices",
+        "skipped_no_price",
+        "skipped_no_indicator",
+        "skipped_no_reference",
+    )
+    total_count = _summary_int(
+        summary,
+        "total_count",
+        "members_count",
+        "symbols_count",
+        "processed_recommendations",
+        "candidate_count",
+    )
+    partial_count = _summary_int(summary, "partial_count")
+    if partial_count is None and row.status == "PARTIAL":
+        partial_count = 1
+
+    return JobRunSchema(
+        job_id=row.job_id,
+        job_name=row.job_name,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        status=row.status,
+        error_message=row.error_message,
+        result_summary=row.result_summary,
+        success_count=success_count,
+        failed_count=failed_count,
+        skipped_count=skipped_count,
+        partial_count=partial_count,
+        total_count=total_count,
+        provider_type=summary.get("provider_type"),
+        universe_name=summary.get("universe") or summary.get("universe_name"),
+        batch_size=_summary_int(summary, "batch_size"),
+    )
+
+
 # ---------- /api/reports/today ----------
 
 @router.get("/api/reports/today", response_model=TodayReportResponse, tags=["reports"])
@@ -609,7 +675,7 @@ def get_jobs(
 
     rows = list(session.execute(statement).scalars().all())
     return JobsResponse(
-        items=[JobRunSchema.from_orm(row) for row in rows],
+        items=[_job_run_to_schema(row) for row in rows],
         limit=limit,
         offset=offset,
     )

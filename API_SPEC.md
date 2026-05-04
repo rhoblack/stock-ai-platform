@@ -170,6 +170,18 @@ Query:
 
 스케줄러 작업 실행 로그를 조회한다.
 
+응답의 각 job item은 원본 `result_summary`를 유지하면서, 대시보드 표시용으로
+다음 필드를 가능한 경우 평탄화해 제공한다:
+
+- `success_count`
+- `failed_count`
+- `skipped_count`
+- `partial_count`
+- `total_count`
+- `provider_type`
+- `universe_name`
+- `batch_size`
+
 Query:
 
 - `job_name`

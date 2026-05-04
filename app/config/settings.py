@@ -54,6 +54,27 @@ class Settings:
     kis_use_paper: bool = field(default_factory=lambda: _as_bool(os.getenv("KIS_USE_PAPER"), True))
     kis_timeout_seconds: int = field(default_factory=lambda: _as_int(os.getenv("KIS_TIMEOUT_SECONDS"), 10))
 
+    collect_market: str = field(default_factory=lambda: os.getenv("COLLECT_MARKET", "KOSPI"))
+    market_cap_limit: int = field(default_factory=lambda: _as_int(os.getenv("MARKET_CAP_LIMIT"), 500))
+    market_cap_universe_name: str = field(
+        default_factory=lambda: os.getenv("MARKET_CAP_UNIVERSE_NAME", "MARKET_CAP_TOP_500"),
+    )
+    daily_price_lookback_days: int = field(
+        default_factory=lambda: _as_int(os.getenv("DAILY_PRICE_LOOKBACK_DAYS"), 1),
+    )
+    daily_price_batch_size: int = field(
+        default_factory=lambda: _as_int(os.getenv("DAILY_PRICE_BATCH_SIZE"), 100),
+    )
+    indicator_universe_name: str = field(
+        default_factory=lambda: os.getenv("INDICATOR_UNIVERSE_NAME", "MARKET_CAP_TOP_500"),
+    )
+    indicator_lookback_days: int = field(
+        default_factory=lambda: _as_int(os.getenv("INDICATOR_LOOKBACK_DAYS"), 250),
+    )
+    indicator_batch_size: int = field(
+        default_factory=lambda: _as_int(os.getenv("INDICATOR_BATCH_SIZE"), 100),
+    )
+
     telegram_enabled: bool = field(
         default_factory=lambda: _as_bool(os.getenv("TELEGRAM_ENABLED"), False),
     )

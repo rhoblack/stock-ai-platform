@@ -1,19 +1,22 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
+from app.analysis.technical_analyzer import TechnicalAnalyzer
 from app.config.settings import Settings
 from app.data.repositories import (
     DailyPriceRepository,
     HoldingCheckRepository,
     HoldingRepository,
     JobRunRepository,
+    MarketCapRankingRepository,
     NotificationLogRepository,
     RecommendationRepository,
     RecommendationRunRepository,
+    StockRepository,
     StockIndicatorRepository,
     StockUniverseMemberRepository,
     StockUniverseRepository,
@@ -47,6 +50,8 @@ from app.scheduler.jobs import (
     send_recommendation_report,
     update_recommendation_results,
 )
+from tests.mocks.fake_kis_client import FakeKisDataProvider
+from tests.mocks.kis_responses import DAILY_PRICE_RESPONSE, MARKET_CAP_RANKING_RESPONSE
 
 
 @pytest.fixture()
@@ -87,6 +92,81 @@ def _open_session(session_factory):
 def _read_session(session_factory):
     """Convenience for assertions: opens a fresh session against the same engine."""
     return session_factory()
+
+
+def _market_cap_rows() -> list[dict]:
+    return list(MARKET_CAP_RANKING_RESPONSE["output"])
+
+
+def _daily_price_rows() -> list[dict]:
+    return list(DAILY_PRICE_RESPONSE["output2"])
+
+
+class FailingDailyPriceProvider(FakeKisDataProvider):
+    def __init__(self, *, failing_symbols: set[str], **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._failing_symbols = failing_symbols
+
+    def fetch_daily_prices(self, symbol, start_date, end_date):
+        if symbol in self._failing_symbols:
+            self.calls.append(("fetch_daily_prices", (symbol, start_date, end_date)))
+            raise RuntimeError(f"daily failed for {symbol}")
+        return super().fetch_daily_prices(symbol, start_date, end_date)
+
+
+def _market_close_config() -> dict:
+    return {
+        "target_date": date(2026, 5, 4),
+        "start_date": date(2026, 5, 4),
+        "end_date": date(2026, 5, 4),
+        "market": "KOSPI",
+        "limit": 2,
+        "universe_name": "MARKET_CAP_TOP_500",
+    }
+
+
+def _seed_universe_members(session, *, name: str, symbols: list[str]) -> StockUniverse:
+    universe = StockUniverseRepository(session).add(StockUniverse(name=name))
+    session.flush()
+    for symbol in symbols:
+        StockUniverseMemberRepository(session).add(
+            StockUniverseMember(universe_id=universe.universe_id, symbol=symbol),
+        )
+    session.flush()
+    return universe
+
+
+def _seed_flat_prices(
+    session,
+    *,
+    symbol: str,
+    n_bars: int,
+    start_date: date = date(2026, 5, 1),
+) -> None:
+    for offset in range(n_bars):
+        DailyPriceRepository(session).upsert(
+            symbol=symbol,
+            price_date=start_date + timedelta(days=offset),
+            open_price=Decimal("100"),
+            high_price=Decimal("100"),
+            low_price=Decimal("100"),
+            close_price=Decimal("100"),
+            volume=1_000_000,
+        )
+    session.flush()
+
+
+class FailingTechnicalAnalyzer:
+    def __init__(self, *, failing_symbol: str) -> None:
+        self._failing_symbol = failing_symbol
+        self.seen_symbols: list[str] = []
+
+    def analyze_latest(self, bars):
+        symbol = bars[-1].symbol
+        self.seen_symbols.append(symbol)
+        if symbol == self._failing_symbol:
+            raise RuntimeError(f"indicator failed for {symbol}")
+        return TechnicalAnalyzer().analyze_latest(bars)
 
 
 # ---------- run_job wrapper ----------
@@ -245,16 +325,191 @@ def test_run_job_returns_unique_job_run_ids(session_factory):
 
 # ---------- collect_market_close_data ----------
 
-def test_collect_market_close_data_returns_placeholder(session_factory):
+def test_collect_market_close_data_collects_rankings_and_daily_prices_success(
+    session_factory,
+):
     session = session_factory()
     try:
+        provider = FakeKisDataProvider(
+            market_cap_responses={
+                ("KOSPI", date(2026, 5, 4)): _market_cap_rows(),
+            },
+            daily_price_responses={
+                "005930": _daily_price_rows(),
+                "000660": _daily_price_rows(),
+            },
+        )
+        session.info["data_provider"] = provider
+        session.info["market_close_config"] = _market_close_config()
         result = collect_market_close_data(session)
+        session.commit()
     finally:
         session.close()
 
     assert result.status == JOB_STATUS_SUCCESS
-    assert result.summary["placeholder"] is True
-    assert result.summary["phase"] == "8"
+    assert result.summary["phase"] == "8-wired"
+    assert result.summary["market_cap_saved_rankings"] == 2
+    assert result.summary["symbols_count"] == 2
+    assert result.summary["daily_success_count"] == 2
+    assert result.summary["daily_failure_count"] == 0
+    assert result.summary["daily_saved_rows"] == 4
+    assert result.error_message is None
+
+    session2 = _read_session(session_factory)
+    try:
+        rankings = MarketCapRankingRepository(session2).list_by_date_market(
+            date(2026, 5, 4),
+            "KOSPI",
+        )
+        assert [r.symbol for r in rankings] == ["005930", "000660"]
+        assert StockRepository(session2).get_by_symbol("005930") is not None
+        assert DailyPriceRepository(session2).get_by_symbol_date(
+            "005930",
+            date(2026, 5, 4),
+        ) is not None
+    finally:
+        session2.close()
+
+
+def test_collect_market_close_data_uses_settings_when_no_job_config(
+    session_factory,
+    monkeypatch,
+):
+    fixed_today = date(2026, 5, 4)
+    monkeypatch.setattr(
+        "app.scheduler.jobs._today_in_default_timezone",
+        lambda: fixed_today,
+    )
+
+    session = session_factory()
+    try:
+        provider = FakeKisDataProvider(
+            market_cap_responses={("KOSDAQ", fixed_today): _market_cap_rows()},
+            daily_price_responses={"005930": _daily_price_rows()},
+        )
+        session.info["data_provider"] = provider
+        session.info["settings"] = Settings(
+            collect_market="KOSDAQ",
+            market_cap_limit=1,
+            market_cap_universe_name="KOSDAQ_TOP_1",
+            daily_price_lookback_days=3,
+            daily_price_batch_size=1,
+        )
+        result = collect_market_close_data(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_SUCCESS
+    assert result.summary["market"] == "KOSDAQ"
+    assert result.summary["market_cap_limit"] == 1
+    assert result.summary["universe"] == "KOSDAQ_TOP_1"
+    assert result.summary["lookback_days"] == 3
+    assert result.summary["batch_size"] == 1
+    assert result.summary["start_date"] == "2026-05-02"
+    assert result.summary["end_date"] == "2026-05-04"
+    assert provider.calls[0] == (
+        "fetch_market_cap_rankings",
+        ("KOSDAQ", fixed_today, 1),
+    )
+    assert provider.calls[1] == (
+        "fetch_daily_prices",
+        ("005930", date(2026, 5, 2), fixed_today),
+    )
+
+
+def test_collect_market_close_data_returns_partial_when_one_symbol_fails(
+    session_factory,
+):
+    session = session_factory()
+    try:
+        provider = FailingDailyPriceProvider(
+            failing_symbols={"000660"},
+            market_cap_responses={
+                ("KOSPI", date(2026, 5, 4)): _market_cap_rows(),
+            },
+            daily_price_responses={"005930": _daily_price_rows()},
+        )
+        session.info["data_provider"] = provider
+        session.info["market_close_config"] = _market_close_config()
+        result = collect_market_close_data(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_PARTIAL
+    assert result.error_message == "1 daily price collections failed"
+    assert result.summary["daily_success_count"] == 1
+    assert result.summary["daily_failure_count"] == 1
+    assert result.summary["failures"] == [
+        {
+            "stage": "daily_prices",
+            "symbol": "000660",
+            "error_type": "RuntimeError",
+            "message": "daily failed for 000660",
+        },
+    ]
+
+
+def test_collect_market_close_data_returns_failed_when_all_symbols_fail(
+    session_factory,
+):
+    session = session_factory()
+    try:
+        provider = FailingDailyPriceProvider(
+            failing_symbols={"005930", "000660"},
+            market_cap_responses={
+                ("KOSPI", date(2026, 5, 4)): _market_cap_rows(),
+            },
+        )
+        session.info["data_provider"] = provider
+        session.info["market_close_config"] = _market_close_config()
+        result = collect_market_close_data(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_FAILED
+    assert result.error_message == "all daily price collections failed"
+    assert result.summary["daily_success_count"] == 0
+    assert result.summary["daily_failure_count"] == 2
+    assert {failure["symbol"] for failure in result.summary["failures"]} == {
+        "005930",
+        "000660",
+    }
+
+
+def test_collect_market_close_data_via_run_job_persists_partial_summary(
+    session_factory,
+):
+    def wrapped(session):
+        session.info["data_provider"] = FailingDailyPriceProvider(
+            failing_symbols={"000660"},
+            market_cap_responses={
+                ("KOSPI", date(2026, 5, 4)): _market_cap_rows(),
+            },
+            daily_price_responses={"005930": _daily_price_rows()},
+        )
+        session.info["market_close_config"] = _market_close_config()
+        return collect_market_close_data(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_COLLECT_MARKET_CLOSE,
+        fn=wrapped,
+    )
+
+    assert outcome.status == JOB_STATUS_PARTIAL
+    assert outcome.result_summary["daily_failure_count"] == 1
+
+    session = _read_session(session_factory)
+    try:
+        row = JobRunRepository(session).list()[0]
+        assert row.status == JOB_STATUS_PARTIAL
+        assert row.result_summary["failures"][0]["symbol"] == "000660"
+        assert row.error_message == "1 daily price collections failed"
+    finally:
+        session.close()
 
 
 # ---------- calculate_technical_indicators ----------
@@ -269,30 +524,19 @@ def test_calculate_technical_indicators_skips_when_universe_missing(session_fact
     assert result.status == JOB_STATUS_SUCCESS
     assert result.summary["skipped"] is True
     assert result.summary["snapshots_saved"] == 0
+    assert result.summary["universe"] == "MARKET_CAP_TOP_500"
 
 
 def test_calculate_technical_indicators_runs_indicator_service(session_factory):
     session = session_factory()
     try:
-        universe = StockUniverseRepository(session).add(
-            StockUniverse(name="MARKET_CAP_TOP_500"),
+        _seed_universe_members(
+            session,
+            name="MARKET_CAP_TOP_500",
+            symbols=["005930", "000660"],
         )
-        session.flush()
-        StockUniverseMemberRepository(session).add(
-            StockUniverseMember(universe_id=universe.universe_id, symbol="005930"),
-        )
-        # Seed a small price history (insufficient for MA60+, sufficient to
-        # produce an IndicatorSnapshot row with technical_score=0)
-        for offset in range(5):
-            DailyPriceRepository(session).upsert(
-                symbol="005930",
-                price_date=date(2026, 5, 1 + offset),
-                open_price=Decimal("100"),
-                high_price=Decimal("100"),
-                low_price=Decimal("100"),
-                close_price=Decimal("100"),
-                volume=1_000_000,
-            )
+        _seed_flat_prices(session, symbol="005930", n_bars=5)
+        _seed_flat_prices(session, symbol="000660", n_bars=5)
         session.commit()
 
         result = calculate_technical_indicators(session)
@@ -301,14 +545,116 @@ def test_calculate_technical_indicators_runs_indicator_service(session_factory):
         session.close()
 
     assert result.status == JOB_STATUS_SUCCESS
-    assert result.summary["members_count"] == 1
-    assert result.summary["snapshots_saved"] == 1
+    assert result.summary["members_count"] == 2
+    assert result.summary["snapshots_saved"] == 2
+    assert result.summary["success_count"] == 2
     assert result.summary["skipped_no_prices"] == 0
+    assert result.summary["failure_count"] == 0
 
     session2 = _read_session(session_factory)
     try:
         indicator = StockIndicatorRepository(session2).get_latest_by_symbol("005930")
         assert indicator is not None
+        assert StockIndicatorRepository(session2).get_latest_by_symbol("000660") is not None
+    finally:
+        session2.close()
+
+
+def test_calculate_technical_indicators_partial_when_symbol_has_no_prices(
+    session_factory,
+):
+    session = session_factory()
+    try:
+        _seed_universe_members(
+            session,
+            name="MARKET_CAP_TOP_500",
+            symbols=["005930", "000660"],
+        )
+        _seed_flat_prices(session, symbol="005930", n_bars=5)
+        session.commit()
+
+        result = calculate_technical_indicators(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_PARTIAL
+    assert result.error_message is None
+    assert result.summary["success_count"] == 1
+    assert result.summary["skipped_no_prices"] == 1
+    assert result.summary["failure_count"] == 0
+    assert result.summary["skipped"] == [
+        {"symbol": "000660", "reason": "NO_DAILY_PRICES"},
+    ]
+
+
+def test_calculate_technical_indicators_partial_when_one_symbol_fails(
+    session_factory,
+):
+    session = session_factory()
+    try:
+        _seed_universe_members(
+            session,
+            name="MARKET_CAP_TOP_500",
+            symbols=["005930", "000660"],
+        )
+        _seed_flat_prices(session, symbol="005930", n_bars=5)
+        _seed_flat_prices(session, symbol="000660", n_bars=5)
+        session.info["technical_analyzer"] = FailingTechnicalAnalyzer(
+            failing_symbol="000660",
+        )
+        session.commit()
+
+        result = calculate_technical_indicators(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_PARTIAL
+    assert result.error_message == "1 technical indicator calculations failed"
+    assert result.summary["success_count"] == 1
+    assert result.summary["failure_count"] == 1
+    assert result.summary["failures"] == [
+        {
+            "symbol": "000660",
+            "error_type": "RuntimeError",
+            "message": "indicator failed for 000660",
+        },
+    ]
+
+
+def test_calculate_technical_indicators_uses_settings_override(session_factory):
+    session = session_factory()
+    try:
+        _seed_universe_members(
+            session,
+            name="CUSTOM_TOP",
+            symbols=["005930"],
+        )
+        _seed_flat_prices(session, symbol="005930", n_bars=40)
+        session.info["settings"] = Settings(
+            indicator_universe_name="CUSTOM_TOP",
+            indicator_lookback_days=30,
+            indicator_batch_size=1,
+        )
+        session.commit()
+
+        result = calculate_technical_indicators(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_SUCCESS
+    assert result.summary["universe"] == "CUSTOM_TOP"
+    assert result.summary["lookback_days"] == 30
+    assert result.summary["batch_size"] == 1
+
+    session2 = _read_session(session_factory)
+    try:
+        indicator = StockIndicatorRepository(session2).get_latest_by_symbol("005930")
+        assert indicator is not None
+        assert indicator.ma20 is not None
+        assert indicator.ma60 is None
     finally:
         session2.close()
 
@@ -549,13 +895,27 @@ def test_job_functions_registry_covers_all_six_jobs():
 
 def test_run_job_with_registered_function(session_factory):
     """Smoke test: wrapper + registry can drive a registered job end-to-end."""
+    def wrapped(session):
+        session.info["data_provider"] = FakeKisDataProvider(
+            market_cap_responses={
+                ("KOSPI", date(2026, 5, 4)): _market_cap_rows(),
+            },
+            daily_price_responses={
+                "005930": _daily_price_rows(),
+                "000660": _daily_price_rows(),
+            },
+        )
+        session.info["market_close_config"] = _market_close_config()
+        return JOB_FUNCTIONS[JOB_NAME_COLLECT_MARKET_CLOSE](session)
+
     outcome = run_job(
         session_factory=session_factory,
         job_name=JOB_NAME_COLLECT_MARKET_CLOSE,
-        fn=JOB_FUNCTIONS[JOB_NAME_COLLECT_MARKET_CLOSE],
+        fn=wrapped,
     )
     assert outcome.status == JOB_STATUS_SUCCESS
-    assert outcome.result_summary["placeholder"] is True
+    assert outcome.result_summary["phase"] == "8-wired"
+    assert outcome.result_summary["daily_success_count"] == 2
 
 
 def test_run_job_exposes_job_run_id_to_fn_via_session_info(session_factory):

@@ -6,6 +6,14 @@ def test_settings_defaults():
     assert settings.app_name == "stock_ai_platform"
     assert settings.feature_real_order_execution is False
     assert settings.feature_full_auto is False
+    assert settings.collect_market == "KOSPI"
+    assert settings.market_cap_limit == 500
+    assert settings.market_cap_universe_name == "MARKET_CAP_TOP_500"
+    assert settings.daily_price_lookback_days == 1
+    assert settings.daily_price_batch_size == 100
+    assert settings.indicator_universe_name == "MARKET_CAP_TOP_500"
+    assert settings.indicator_lookback_days == 250
+    assert settings.indicator_batch_size == 100
 
 
 def test_interfaces_importable():

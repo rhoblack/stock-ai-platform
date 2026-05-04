@@ -8,16 +8,16 @@ Boundary rules (Phase 8):
       success / partial / failure, so the dashboard `/api/jobs` and operator
       retro tooling can see the full timeline.
     * Jobs that have a backing service (TechnicalIndicatorService,
-      RecommendationEngine, HoldingCheckEngine) call it. Jobs that don't yet
-      (KIS data collection, recommendation result update) return a documented
-      placeholder summary with ``placeholder=True``.
+      RecommendationEngine, HoldingCheckEngine) call it. KIS data collection
+      is wired through read-only collectors and remains fake/mock-injectable in
+      tests.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -26,11 +26,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.analysis.indicator_service import TechnicalIndicatorService
 from app.analysis.technical_analyzer import TechnicalAnalyzer
 from app.config.settings import get_settings
+from app.data.collectors import (
+    DailyPriceCollector,
+    KisClient,
+    MarketCapRankingCollector,
+)
+from app.data.interfaces import DataProviderInterface
 from app.data.repositories.daily_prices import DailyPriceRepository
 from app.data.repositories.decision_logs import DecisionLogRepository
 from app.data.repositories.holdings import HoldingRepository
 from app.data.repositories.holding_checks import HoldingCheckRepository
 from app.data.repositories.job_runs import JobRunRepository
+from app.data.repositories.market_cap_rankings import MarketCapRankingRepository
 from app.data.repositories.notification_logs import NotificationLogRepository
 from app.data.repositories.recommendations import (
     RecommendationRepository,
@@ -283,62 +290,349 @@ def _build_holding_risk_alert_dispatcher(
         log_repository=NotificationLogRepository(session),
     )
 
+
+def _serialize_quality_issues(issues) -> list[dict[str, Any]]:
+    return [
+        {
+            "code": issue.code,
+            "message": issue.message,
+            "symbol": issue.symbol,
+            "target_date": (
+                issue.target_date.isoformat()
+                if issue.target_date is not None
+                else None
+            ),
+        }
+        for issue in issues
+    ]
+
+
+def _resolve_data_provider(session: Session) -> tuple[DataProviderInterface, bool]:
+    override = session.info.get("data_provider")
+    if override is not None:
+        return override, False
+    return KisClient(settings=_resolve_settings(session)), True
+
+
+def _market_close_job_config(session: Session) -> dict[str, Any]:
+    settings = _resolve_settings(session)
+    override = session.info.get("market_close_config", {})
+    target_date = override.get("target_date") or _today_in_default_timezone()
+    lookback_days = int(
+        override.get("lookback_days", settings.daily_price_lookback_days),
+    )
+    if lookback_days < 1:
+        lookback_days = 1
+    return {
+        "target_date": target_date,
+        "market": override.get("market", settings.collect_market),
+        "limit": int(override.get("limit", settings.market_cap_limit)),
+        "universe_name": override.get(
+            "universe_name",
+            settings.market_cap_universe_name,
+        ),
+        "start_date": override.get(
+            "start_date",
+            target_date - timedelta(days=lookback_days - 1),
+        ),
+        "end_date": override.get("end_date", target_date),
+        "batch_size": max(
+            int(override.get("batch_size", settings.daily_price_batch_size)),
+            1,
+        ),
+        "lookback_days": lookback_days,
+    }
+
+
+def _chunks(values: list[str], size: int) -> list[list[str]]:
+    return [values[index:index + size] for index in range(0, len(values), size)]
+
+
+def _indicator_job_config(session: Session) -> dict[str, Any]:
+    settings = _resolve_settings(session)
+    override = session.info.get("indicator_config", {})
+    lookback_days = int(
+        override.get("lookback_days", settings.indicator_lookback_days),
+    )
+    if lookback_days < 1:
+        lookback_days = 1
+    return {
+        "universe_name": override.get(
+            "universe_name",
+            settings.indicator_universe_name,
+        ),
+        "lookback_days": lookback_days,
+        "batch_size": max(
+            int(override.get("batch_size", settings.indicator_batch_size)),
+            1,
+        ),
+    }
+
+
 # ---------- 18:00 collect_market_close_data ----------
 
 def collect_market_close_data(session: Session) -> JobResult:
-    """Phase 8 placeholder for the KIS close-data ingestion job.
+    """Collect market-cap rankings and daily prices through data collectors.
 
-    Real wiring (DailyPriceCollector / MarketCapRankingCollector) is left for
-    a Phase 8 follow-up so this job doesn't accidentally hit the live KIS
-    service. The placeholder emits a deterministic summary so dashboards can
-    render the row.
+    Tests inject ``session.info["data_provider"]`` with a fake provider. In
+    normal runtime, this builds the read-only KIS client from settings.
     """
-    return JobResult(
-        status=JOB_STATUS_SUCCESS,
-        summary={
-            "phase": "8",
-            "placeholder": True,
-            "note": "KIS data ingestion not yet wired into scheduler",
-        },
-    )
+    config = _market_close_job_config(session)
+    target_date = config["target_date"]
+    market = config["market"]
+    limit = config["limit"]
+    universe_name = config["universe_name"]
+    start_date = config["start_date"]
+    end_date = config["end_date"]
+    batch_size = config["batch_size"]
+
+    provider, should_close_provider = _resolve_data_provider(session)
+    try:
+        market_collector = MarketCapRankingCollector(
+            client=provider,
+            ranking_repository=MarketCapRankingRepository(session),
+            stock_repository=StockRepository(session),
+            universe_repository=StockUniverseRepository(session),
+            member_repository=StockUniverseMemberRepository(session),
+        )
+        try:
+            ranking_result = market_collector.collect(
+                market=market,
+                ranking_date=target_date,
+                limit=limit,
+                universe_name=universe_name,
+            )
+        except Exception as exc:  # noqa: BLE001 - vendor/normalizer failures
+            return JobResult(
+                status=JOB_STATUS_FAILED,
+                summary={
+                    "phase": "8-wired",
+                    "market": market,
+                    "market_cap_limit": limit,
+                    "target_date": target_date.isoformat(),
+                    "universe": universe_name,
+                    "lookback_days": config["lookback_days"],
+                    "batch_size": batch_size,
+                    "market_cap_status": "FAILED",
+                    "daily_price_status": "SKIPPED",
+                    "failure_count": 1,
+                    "failures": [
+                        {
+                            "stage": "market_cap_rankings",
+                            "error_type": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                    ],
+                },
+                error_message=f"market cap collection failed: {exc}",
+            )
+
+        members = StockUniverseMemberRepository(session).list_by_universe(
+            ranking_result.universe_id,
+        )
+        symbols = [member.symbol for member in members]
+
+        daily_collector = DailyPriceCollector(
+            client=provider,
+            repository=DailyPriceRepository(session),
+        )
+        daily_results = []
+        failures = []
+        for batch_index, batch_symbols in enumerate(_chunks(symbols, batch_size), start=1):
+            logger.info(
+                "collecting daily prices batch %s (%s symbols)",
+                batch_index,
+                len(batch_symbols),
+            )
+            for symbol in batch_symbols:
+                try:
+                    result = daily_collector.collect(
+                        symbol=symbol,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except Exception as exc:  # noqa: BLE001 - keep collecting others
+                    failures.append(
+                        {
+                            "stage": "daily_prices",
+                            "symbol": symbol,
+                            "error_type": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                    )
+                    continue
+
+                daily_results.append(
+                    {
+                        "symbol": result.symbol,
+                        "saved_count": result.saved_count,
+                        "quality_issues": _serialize_quality_issues(
+                            result.quality_issues,
+                        ),
+                    },
+                )
+        success_count = len(daily_results)
+        failure_count = len(failures)
+        if symbols and success_count == 0:
+            status = JOB_STATUS_FAILED
+            error_message = "all daily price collections failed"
+        elif failure_count > 0:
+            status = JOB_STATUS_PARTIAL
+            error_message = f"{failure_count} daily price collections failed"
+        else:
+            status = JOB_STATUS_SUCCESS
+            error_message = None
+
+        return JobResult(
+            status=status,
+            summary={
+                "phase": "8-wired",
+                "market": market,
+                "market_cap_limit": limit,
+                "target_date": target_date.isoformat(),
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "lookback_days": config["lookback_days"],
+                "batch_size": batch_size,
+                "universe": universe_name,
+                "universe_id": ranking_result.universe_id,
+                "market_cap_status": "SUCCESS",
+                "market_cap_saved_rankings": ranking_result.saved_rankings,
+                "market_cap_new_stocks": ranking_result.new_stocks,
+                "market_cap_new_universe_members": (
+                    ranking_result.new_universe_members
+                ),
+                "market_cap_quality_issues": _serialize_quality_issues(
+                    ranking_result.quality_issues,
+                ),
+                "daily_price_status": status,
+                "symbols_count": len(symbols),
+                "daily_success_count": success_count,
+                "daily_failure_count": failure_count,
+                "daily_saved_rows": sum(r["saved_count"] for r in daily_results),
+                "daily_results": daily_results,
+                "failures": failures,
+            },
+            error_message=error_message,
+        )
+    finally:
+        if should_close_provider and hasattr(provider, "close"):
+            provider.close()
 
 
 # ---------- 18:30 calculate_technical_indicators ----------
 
 def calculate_technical_indicators(session: Session) -> JobResult:
     """Compute indicators for every active universe member that has prices."""
-    universe = StockUniverseRepository(session).get_by_name("MARKET_CAP_TOP_500")
+    config = _indicator_job_config(session)
+    universe_name = config["universe_name"]
+    lookback_days = config["lookback_days"]
+    batch_size = config["batch_size"]
+
+    universe = StockUniverseRepository(session).get_by_name(universe_name)
     if universe is None:
         return JobResult(
             status=JOB_STATUS_SUCCESS,
             summary={
                 "phase": "8",
                 "skipped": True,
-                "reason": "MARKET_CAP_TOP_500 universe missing",
+                "reason": f"{universe_name} universe missing",
+                "universe": universe_name,
+                "lookback_days": lookback_days,
+                "batch_size": batch_size,
                 "members_count": 0,
                 "snapshots_saved": 0,
+                "success_count": 0,
+                "skipped_no_prices": 0,
+                "failure_count": 0,
             },
         )
 
     members = StockUniverseMemberRepository(session).list_by_universe(
         universe.universe_id,
     )
+    symbols = [member.symbol for member in members]
     service = TechnicalIndicatorService(
         daily_price_repository=DailyPriceRepository(session),
         indicator_repository=StockIndicatorRepository(session),
-        analyzer=TechnicalAnalyzer(),
+        analyzer=session.info.get("technical_analyzer") or TechnicalAnalyzer(),
     )
-    snapshots = service.analyze_and_store_many(
-        symbols=[m.symbol for m in members],
-    )
+
+    successes = []
+    skipped = []
+    failures = []
+    for batch_index, batch_symbols in enumerate(_chunks(symbols, batch_size), start=1):
+        logger.info(
+            "calculating technical indicators batch %s (%s symbols)",
+            batch_index,
+            len(batch_symbols),
+        )
+        for symbol in batch_symbols:
+            try:
+                snapshot = service.analyze_and_store(
+                    symbol,
+                    lookback_days=lookback_days,
+                )
+            except Exception as exc:  # noqa: BLE001 - isolate symbol failures
+                failures.append(
+                    {
+                        "symbol": symbol,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
+                continue
+
+            if snapshot is None:
+                skipped.append(
+                    {
+                        "symbol": symbol,
+                        "reason": "NO_DAILY_PRICES",
+                    },
+                )
+                continue
+
+            successes.append(
+                {
+                    "symbol": snapshot.symbol,
+                    "indicator_date": snapshot.date.isoformat(),
+                    "technical_score": str(snapshot.technical_score),
+                },
+            )
+
+    success_count = len(successes)
+    skipped_count = len(skipped)
+    failure_count = len(failures)
+    if failure_count > 0 and success_count == 0:
+        status = JOB_STATUS_FAILED
+        error_message = "all technical indicator calculations failed"
+    elif failure_count > 0 or skipped_count > 0:
+        status = JOB_STATUS_PARTIAL
+        error_message = None
+        if failure_count > 0:
+            error_message = f"{failure_count} technical indicator calculations failed"
+    else:
+        status = JOB_STATUS_SUCCESS
+        error_message = None
+
     return JobResult(
-        status=JOB_STATUS_SUCCESS,
+        status=status,
         summary={
             "phase": "8",
-            "members_count": len(members),
-            "snapshots_saved": len(snapshots),
-            "skipped_no_prices": len(members) - len(snapshots),
+            "universe": universe_name,
+            "universe_id": universe.universe_id,
+            "lookback_days": lookback_days,
+            "batch_size": batch_size,
+            "members_count": len(symbols),
+            "snapshots_saved": success_count,
+            "success_count": success_count,
+            "skipped_no_prices": skipped_count,
+            "failure_count": failure_count,
+            "successes": successes,
+            "skipped": skipped,
+            "failures": failures,
         },
+        error_message=error_message,
     )
 
 
