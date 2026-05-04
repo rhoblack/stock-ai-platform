@@ -639,7 +639,7 @@ def calculate_technical_indicators(session: Session) -> JobResult:
 # ---------- 06:00 send_recommendation_report ----------
 
 def send_recommendation_report(session: Session) -> JobResult:
-    """Generate a recommendation run and dispatch the report via Telegram.
+    """Dispatch the latest recommendation run report via Telegram.
 
     The notifier respects ``settings.telegram_enabled``. When False (default
     for v0.1 / tests) the dispatch records a DRY_RUN notification_logs row
@@ -648,22 +648,35 @@ def send_recommendation_report(session: Session) -> JobResult:
     job_run_id = session.info.get("job_run_id")
     settings = _resolve_settings(session)
 
-    engine = _build_recommendation_engine(session)
-    result = engine.generate(run_date=_today_in_default_timezone())
+    run = RecommendationRunRepository(session).latest()
+    if run is None:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "8-followup",
+                "run_id": None,
+                "run_date": None,
+                "notification_status": "NO_DATA",
+                "telegram_sent": False,
+                "dry_run": False,
+                "telegram_sent_flag_updated": False,
+                "notification_log_id": None,
+                "recommendation_count": 0,
+                "message_length": 0,
+            },
+        )
 
     notifier = TelegramNotifier(settings=settings)
     try:
         dispatcher = _build_recommendation_dispatcher(session, notifier=notifier)
         dispatch = dispatcher.dispatch(
-            run_id=result.run_id,
+            run_id=run.run_id,
             related_job_id=job_run_id,
         )
     finally:
         notifier.close()
 
-    if result.status == "EMPTY":
-        job_status = JOB_STATUS_PARTIAL
-    elif dispatch.notification.status in _DISPATCHED_NOTIFICATION_STATUSES:
+    if dispatch.notification.status in _DISPATCHED_NOTIFICATION_STATUSES:
         job_status = JOB_STATUS_SUCCESS
     else:
         job_status = JOB_STATUS_PARTIAL
@@ -672,15 +685,11 @@ def send_recommendation_report(session: Session) -> JobResult:
         status=job_status,
         summary={
             "phase": "8-followup",
-            "run_id": result.run_id,
-            "run_date": result.run_date.isoformat(),
-            "engine_status": result.status,
-            "candidate_count": result.candidate_count,
-            "saved_count": result.saved_count,
-            "skipped_no_indicator": result.skipped_no_indicator,
-            "skipped_no_stock_master": result.skipped_no_stock_master,
+            "run_id": run.run_id,
+            "run_date": run.run_date.isoformat(),
             "recommendation_count": dispatch.recommendation_count,
             "telegram_sent": dispatch.notification.sent,
+            "dry_run": dispatch.notification.status == "DRY_RUN",
             "telegram_sent_flag_updated": dispatch.telegram_sent_flag_updated,
             "notification_status": dispatch.notification.status,
             "notification_log_id": dispatch.notification.notification_log_id,

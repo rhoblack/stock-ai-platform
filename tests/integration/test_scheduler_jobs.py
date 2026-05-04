@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
+import app.scheduler.jobs as scheduler_jobs
 from app.analysis.technical_analyzer import TechnicalAnalyzer
 from app.config.settings import Settings
 from app.data.repositories import (
@@ -661,7 +662,7 @@ def test_calculate_technical_indicators_uses_settings_override(session_factory):
 
 # ---------- send_recommendation_report ----------
 
-def test_send_recommendation_report_partial_when_no_universe(session_factory):
+def test_send_recommendation_report_success_no_data_when_no_run(session_factory):
     session = _open_session(session_factory)
     try:
         result = send_recommendation_report(session)
@@ -669,29 +670,43 @@ def test_send_recommendation_report_partial_when_no_universe(session_factory):
     finally:
         session.close()
 
-    assert result.status == JOB_STATUS_PARTIAL
-    assert result.summary["engine_status"] == "EMPTY"
+    assert result.status == JOB_STATUS_SUCCESS
+    assert result.summary["run_id"] is None
+    assert result.summary["run_date"] is None
     assert result.summary["telegram_sent"] is False
-    assert result.summary["saved_count"] == 0
-    # Dispatcher still ran (DRY_RUN) and emitted an empty-candidates message.
-    assert result.summary["notification_status"] == "DRY_RUN"
+    assert result.summary["dry_run"] is False
+    assert result.summary["notification_status"] == "NO_DATA"
     assert result.summary["recommendation_count"] == 0
     assert result.summary["telegram_sent_flag_updated"] is False
-    assert result.summary["message_length"] > 0
+    assert result.summary["notification_log_id"] is None
+    assert result.summary["message_length"] == 0
 
     session2 = _read_session(session_factory)
     try:
-        logs = NotificationLogRepository(session2).list()
-        assert len(logs) == 1
-        assert logs[0].status == "DRY_RUN"
-        assert logs[0].message_type == "REPORT"
+        assert NotificationLogRepository(session2).list() == []
     finally:
         session2.close()
 
 
-def test_send_recommendation_report_success_with_seeded_universe(session_factory):
+def test_send_recommendation_report_success_dry_run_with_latest_run(session_factory):
     session = _open_session(session_factory)
     try:
+        latest_run = RecommendationRunRepository(session).add(
+            RecommendationRun(
+                run_date=date(2026, 5, 4),
+                started_at=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+                status="SUCCESS",
+                telegram_sent=False,
+            ),
+        )
+        session.flush()
+        RecommendationRepository(session).add(
+            Recommendation(
+                run_id=latest_run.run_id, rank=1, market="KOSPI",
+                symbol="005930", name="Samsung Electronics",
+                grade="A", total_score=Decimal("80"),
+            ),
+        )
         universe = StockUniverseRepository(session).add(
             StockUniverse(name="MARKET_CAP_TOP_500"),
         )
@@ -710,6 +725,7 @@ def test_send_recommendation_report_success_with_seeded_universe(session_factory
             volume_ratio_20d=Decimal("1.5"),
         )
         session.commit()
+        latest_run_id = latest_run.run_id
 
         result = send_recommendation_report(session)
         session.commit()
@@ -717,13 +733,15 @@ def test_send_recommendation_report_success_with_seeded_universe(session_factory
         session.close()
 
     assert result.status == JOB_STATUS_SUCCESS
-    assert result.summary["engine_status"] == "SUCCESS"
+    assert result.summary["run_id"] == latest_run_id
+    assert result.summary["run_date"] == "2026-05-04"
     assert result.summary["telegram_sent"] is False
-    assert result.summary["saved_count"] == 1
-    assert result.summary["run_id"] is not None
+    assert result.summary["dry_run"] is True
     assert result.summary["recommendation_count"] == 1
     assert result.summary["notification_status"] == "DRY_RUN"
+    assert result.summary["notification_log_id"] is not None
     assert result.summary["telegram_sent_flag_updated"] is False
+    assert result.summary["message_length"] > 0
 
     session2 = _read_session(session_factory)
     try:
@@ -733,6 +751,67 @@ def test_send_recommendation_report_success_with_seeded_universe(session_factory
         assert RecommendationRepository(session2).list_by_run_id(run.run_id)
         log = NotificationLogRepository(session2).list()[0]
         assert log.status == "DRY_RUN"
+        assert log.message_type == "REPORT"
+    finally:
+        session2.close()
+
+
+def test_send_recommendation_report_via_run_job_failed_when_dispatcher_fails(
+    session_factory,
+    monkeypatch,
+):
+    session = _open_session(session_factory)
+    try:
+        run = RecommendationRunRepository(session).add(
+            RecommendationRun(
+                run_date=date(2026, 5, 4),
+                started_at=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+                status="SUCCESS",
+                telegram_sent=False,
+            ),
+        )
+        session.flush()
+        RecommendationRepository(session).add(
+            Recommendation(
+                run_id=run.run_id, rank=1, market="KOSPI",
+                symbol="005930", name="Samsung Electronics",
+                grade="A", total_score=Decimal("80"),
+            ),
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    class FailingDispatcher:
+        def dispatch(self, *, run_id, related_job_id=None):
+            raise RuntimeError("dispatcher failed")
+
+    monkeypatch.setattr(
+        scheduler_jobs,
+        "_build_recommendation_dispatcher",
+        lambda session, *, notifier: FailingDispatcher(),
+    )
+
+    def wrapped_send_recommendation(session):
+        session.info["settings"] = _dry_run_settings()
+        return send_recommendation_report(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_SEND_RECOMMENDATION_REPORT,
+        fn=wrapped_send_recommendation,
+    )
+
+    assert outcome.status == JOB_STATUS_FAILED
+    assert outcome.result_summary is None
+    assert "dispatcher failed" in outcome.error_message
+
+    session2 = _read_session(session_factory)
+    try:
+        run = RecommendationRunRepository(session2).latest()
+        assert run is not None
+        assert run.telegram_sent is False
+        assert NotificationLogRepository(session2).list() == []
     finally:
         session2.close()
 
@@ -939,6 +1018,28 @@ def test_send_recommendation_report_via_run_job_links_notification_log_to_job(
     """End-to-end: run_job → send_recommendation_report → dispatcher →
     notification_logs.related_job_id == this run_job's job_run_id."""
 
+    seed_session = _open_session(session_factory)
+    try:
+        run = RecommendationRunRepository(seed_session).add(
+            RecommendationRun(
+                run_date=date(2026, 5, 4),
+                started_at=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+                status="SUCCESS",
+                telegram_sent=False,
+            ),
+        )
+        seed_session.flush()
+        RecommendationRepository(seed_session).add(
+            Recommendation(
+                run_id=run.run_id, rank=1, market="KOSPI",
+                symbol="005930", name="Samsung Electronics",
+                grade="A", total_score=Decimal("80"),
+            ),
+        )
+        seed_session.commit()
+    finally:
+        seed_session.close()
+
     # Wrap the job so we can inject deterministic dry-run settings on the
     # work_session that run_job opens.
     def wrapped_send_recommendation(session):
@@ -952,8 +1053,9 @@ def test_send_recommendation_report_via_run_job_links_notification_log_to_job(
     )
 
     # Engine had no universe → PARTIAL with dispatch DRY_RUN
-    assert outcome.status == JOB_STATUS_PARTIAL
+    assert outcome.status == JOB_STATUS_SUCCESS
     assert outcome.result_summary["notification_status"] == "DRY_RUN"
+    assert outcome.result_summary["dry_run"] is True
 
     session = _read_session(session_factory)
     try:

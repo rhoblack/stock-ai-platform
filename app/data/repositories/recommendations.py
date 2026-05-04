@@ -13,7 +13,11 @@ class RecommendationRunRepository(BaseRepository[RecommendationRun]):
         super().__init__(session, RecommendationRun)
 
     def latest(self) -> RecommendationRun | None:
-        statement = select(RecommendationRun).order_by(RecommendationRun.run_date.desc())
+        statement = select(RecommendationRun).order_by(
+            RecommendationRun.run_date.desc(),
+            RecommendationRun.started_at.desc(),
+            RecommendationRun.run_id.desc(),
+        )
         return self.session.execute(statement).scalars().first()
 
     def list_by_date_range(

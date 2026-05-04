@@ -299,6 +299,12 @@ Phase 8 follow-up `scheduler jobs` 추가 통합 테스트:
 - Job summary의 새 필드: `notification_status`, `telegram_sent`,
   `telegram_sent_flag_updated`, `notification_log_id`, `recommendation_count`
   / `holding_check_count`, `message_length`
+- `send_recommendation_report`는 새 추천을 생성하지 않고 최신
+  `recommendation_runs`를 조회해 `RecommendationReportDispatcher`로 전달한다.
+  최신 run이 없으면 `notification_status="NO_DATA"`, `run_id=None`,
+  `recommendation_count=0`으로 안전 종료하며 `notification_logs`는 생성하지 않는다.
+  DRY_RUN 발송 시 `dry_run=True`, `telegram_sent=False`,
+  `notification_log_id`가 summary에 기록된다.
 
 Phase 8 `Scheduler / Jobs` 테스트는 `BackgroundScheduler`를 실제로 시작하지
 않고 잡 함수와 `run_job` 래퍼를 직접 호출해 검증한다 (시간 대기 / 실제
