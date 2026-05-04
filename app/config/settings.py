@@ -55,6 +55,18 @@ class Settings:
     telegram_enabled: bool = field(
         default_factory=lambda: _as_bool(os.getenv("TELEGRAM_ENABLED"), False),
     )
+    telegram_bot_token: str = field(
+        default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""),
+    )
+    telegram_chat_id: str = field(
+        default_factory=lambda: os.getenv("TELEGRAM_CHAT_ID", ""),
+    )
+    telegram_api_base_url: str = field(
+        default_factory=lambda: os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org"),
+    )
+    telegram_timeout_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("TELEGRAM_TIMEOUT_SECONDS"), 10),
+    )
     scheduler_enabled: bool = field(
         default_factory=lambda: _as_bool(os.getenv("SCHEDULER_ENABLED"), True),
     )

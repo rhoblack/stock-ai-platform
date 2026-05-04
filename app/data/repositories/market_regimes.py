@@ -18,3 +18,9 @@ class MarketRegimeRepository(BaseRepository[MarketRegime]):
         )
         return self.session.execute(statement).scalar_one_or_none()
 
+    def latest(self, market: str | None = None) -> MarketRegime | None:
+        statement = select(MarketRegime).order_by(MarketRegime.date.desc())
+        if market is not None:
+            statement = statement.where(MarketRegime.market == market)
+        return self.session.execute(statement.limit(1)).scalar_one_or_none()
+

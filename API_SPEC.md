@@ -1,9 +1,25 @@
 # API_SPEC.md
 
-FastAPI 기반 PC 대시보드 API 명세 초안이다.
+FastAPI 기반 PC 대시보드 API 명세이다.
 
 v0.1 API는 조회 중심이다.  
 실거래 주문 API는 구현하지 않는다.
+
+Phase 7 기준 13개 GET 라우터가 `app/api/routes.py`에 구현되어 있고
+[Pydantic schema](app/api/schemas.py)는 risk_summary, risk_level, risk_flags,
+decision, alert 정보를 응답에 포함한다. Decimal 컬럼은 정밀도 보존을 위해
+JSON에 모두 문자열로 직렬화된다 (예: `total_score: "82.0000"`).
+
+Phase 7 후속에서 추천 성과(`recommendation_results`)가 응답에 노출된다:
+
+* `GET /api/recommendations/{run_id}` 와 `GET /api/recommendations/latest` 의
+  각 recommendation 항목에 `results: List[RecommendationResultSchema]` 필드 포함
+  (`days_after`, `result_date`, `open/high/low/close/max_return`, `max_drawdown`,
+  `result_status`).
+* `GET /api/reports/today` 응답의 `top_recommendations`도 동일 `results` 필드 노출.
+* `GET /api/recommendations/history` 응답의 각 항목에 `success_rate` (days_after=5
+  finalized 행 기준 0~100 백분율) 및 `avg_close_return_1d/3d/5d/20d` 집계 필드 포함.
+  데이터가 없으면 `null`로 일관 처리.
 
 ## 공통 응답 원칙
 

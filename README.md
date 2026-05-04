@@ -81,25 +81,50 @@ v0.1은 다음 기능을 구현하는 안정적인 분석/리포트 시스템입
 
 ## 6. 현재 구현 상태
 
-Phase 1 기준으로 프로젝트 기본 골격만 준비되어 있습니다.
+Phase 1~3까지 진행되어 데이터 수집·정규화·검증·저장 흐름이 갖춰졌습니다.
 
 - `app/main.py`: FastAPI 최소 앱과 `/health` 엔드포인트
 - `app/config/`: 환경 설정과 logging 기본 구조
-- `app/data/`: 데이터 수집 계층 경계와 `DataProviderInterface`
+- `app/data/interfaces.py`: `DataProviderInterface`
 - `app/ai/`: AI 보조 계층 경계와 `AIProviderInterface`
 - `app/broker/`: 미래 확장용 `BrokerInterface` placeholder
 - `app/decision/`: 미래 전략 확장용 `StrategyInterface` placeholder
-- `tests/`: Phase 1 import/설정 테스트
+- `app/db/`: SQLAlchemy 2.0 Base/Session, v0.1 필수 17개 테이블 ORM 모델
+- `app/data/repositories/`: 테이블별 Repository (Stock/Daily/Indicator/Universe/Recommendation/Snapshot/DecisionLog 등)
+- `app/data/collectors/kis_client.py`: httpx 기반 `KisClient` (토큰 발급, 현재가, 일봉, 시총 상위)
+- `app/data/normalizers/kis.py`: KIS 응답 → DTO 변환
+- `app/data/validators/quality.py`: `DataQualityChecker`
+- `app/data/collectors/daily_price_collector.py`: KIS 일봉 raw → normalize → 품질 검사 → `daily_prices` upsert
+- `app/data/collectors/market_cap_ranking_collector.py`: KIS 시총 raw → normalize → `market_cap_rankings` 스냅샷 교체 + `stocks`/`stock_universes`/`stock_universe_members` 동기화
+- `app/analysis/technical_analyzer.py`: 일봉 DTO 시퀀스 → MA5/20/60/120, RSI14, MACD, volume_ratio_20d, breakout_20d/60d, ma_alignment, technical_score 산출 (`IndicatorSnapshot` 반환)
+- `app/analysis/indicator_service.py`: `daily_prices` 조회 → `TechnicalAnalyzer` 실행 → `stock_indicators` upsert (단일/다중 종목)
+- `app/decision/scoring_engine.py`: 신규 추천/보유 점수 산식 (`technical/news/supply/fundamental/ai`, `technical/news/earnings/ai/profit_management`), `risk_penalty` 반영, 0~100 clamp, `ScoreBreakdown` 반환
+- `app/decision/recommendation_engine.py`: MARKET_CAP_TOP_500 유니버스 → 종목별 최신 `stock_indicators` → `ScoringEngine` → TOP N 관찰 후보 생성. `recommendation_runs`/`recommendations`/`data_snapshots`/`decision_logs`까지 일괄 저장. 뉴스/수급/실적/AI 점수는 Phase 5-1에서 placeholder
+- `app/decision/holding_check_engine.py`: 활성 `holdings` → 최신 `daily_prices` + 최신 `stock_indicators` → `ScoringEngine.score_holding` → `holding_checks` upsert + `data_snapshots`/`decision_logs` 기록. PRE_MARKET / POST_MARKET 지원, 위험 경고 (점수 15점 이상 하락 / 20일선 이탈 / 손절 근접) 평가
+- `app/decision/risk_engine.py`: 추천/보유 결과의 점수·경고·가격 위치를 바탕으로 risk_penalty + risk_level(LOW/MEDIUM/HIGH) + risk_flags 산출. ScoringEngine과 양 Engine에 연결
+- `app/notification/report_generator.py`: 추천 리포트 / 장전·장후 보유 점검 리포트 / 위험 경고 텍스트 포맷터. HIGH risk_level 보유는 보고서 상단 우선 노출
+- `app/notification/telegram_notifier.py`: Telegram BOT API 클라이언트. `TELEGRAM_ENABLED=false`면 dry-run, 자격증명 누락 시 DISABLED, 실패 시 FAILED 결과 반환 (실제 발송은 `httpx.Client` 주입으로 mock 가능)
+- `app/notification/notification_service.py`: notifier + `notification_logs` 저장 글루
+- `app/api/`: 13개 read-only GET 라우터 (`/api/reports/today`, `/api/recommendations/*`, `/api/holdings/*`, `/api/stocks/{symbol}`, `/api/universe/market-cap-top`, `/api/market-regime/latest`, `/api/news`, `/api/jobs`, `/api/settings`). risk_summary / decision / alert를 응답에 포함. `/api/settings`는 토큰·키·계좌번호를 마스킹
+- `app/scheduler/jobs.py`: `run_job` 래퍼(2-session 패턴, `session.info["job_run_id"]`로 `notification_logs.related_job_id` 자동 연결) + 6개 v0.1 잡 함수
+- `app/scheduler/scheduler.py`: APScheduler `BackgroundScheduler` 빌드 (Asia/Seoul 기본, cron 트리거, misfire 5분 허용, coalesce). FastAPI lifespan에서 `SCHEDULER_ENABLED=true`일 때 lazy import로 시작/종료
+- `app/notification/dispatchers.py`: `RecommendationReportDispatcher` / `HoldingCheckReportDispatcher`. ORM 행 → `ReportGenerator` → `NotificationService` 흐름. `recommendation_runs.telegram_sent`는 실제 발송(`SUCCESS`)일 때만 True로 갱신, DRY_RUN/FAILED는 그대로 False
+- `send_recommendation_report` / `run_pre_market_holding_check` / `run_post_market_holding_check` 잡: dispatcher와 연결되어 각 실행마다 `notification_logs` 행 생성 (DRY_RUN이 기본). job 결과 summary에 `notification_status`/`telegram_sent`/`notification_log_id`/`message_length` 노출
+- `app/decision/recommendation_result_service.py`: 추천일 종가 기준 1/3/5/20일 후 open/high/low/close/max return + max_drawdown + result_status 산출. (recommendation_id, days_after) upsert로 멱등 재실행. SUCCESS(고가≥+3% 또는 종가≥+1%) / FAILED(저가≤-5%, 우선순위) / PENDING(데이터 부족 또는 신호 없음)
+- `update_recommendation_results` 잡 (17:00): 위 서비스에 연결되어 `lookback_days=60` 범위의 모든 추천에 대해 결과 행을 upsert
+- `tests/`: Phase 1~8 + dispatcher + result service 단위/통합 테스트, mock KIS 응답, mock Telegram transport, FastAPI TestClient 기반 API 테스트, `BackgroundScheduler.start` 없는 잡 함수 단위 테스트
 
 아직 구현하지 않은 범위:
 
-- DB 모델과 Repository
-- KIS API 실제 연동
-- 기술 지표 계산
-- 추천/보유 점검 로직
-- 텔레그램 발송
-- 스케줄러 작업
-- 주문 실행 또는 자동매매 기능
+- 뉴스/수급/실적/AI 점수 producer (Phase 6+ rule/dummy)
+- 캔들 패턴 / ATR 변동성 점수 보강 (Phase 4 후속)
+- `collect_market_close_data` 잡의 실제 KIS 수집 연결 (현재 placeholder)
+- 단일 종목 위험 발생 시 즉시 ALERT 발송 (`risk_alert` 포맷터는 있고 dispatcher 연결만 후속)
+- `recommendation_results` 결과를 대시보드 API에 노출 (현재 DB에는 저장되지만 라우터 미연결)
+- 텔레그램 발송 (Phase 6)
+- FastAPI 대시보드 라우터 (Phase 7)
+- 스케줄러 작업 (Phase 8)
+- 주문 실행 또는 자동매매 기능 (v1.0+)
 
 ## 7. 로컬 실행
 
