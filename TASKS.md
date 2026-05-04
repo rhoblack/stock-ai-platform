@@ -1,7 +1,8 @@
 # TASKS.md
 
 이 파일은 Codex가 v0.1 개발 작업을 작게 나누어 진행하기 위한 태스크 목록이다.
-체크박스 상태는 실제 코드/테스트 상태에 맞춰 동기화한다 (현재 스냅샷: 294 passed).
+체크박스 상태는 실제 코드/테스트 상태에 맞춰 동기화한다 (현재 스냅샷: **296 passed,
+v0.1 백엔드 마감**).
 
 ## Phase 0 - 프로젝트 준비
 
@@ -110,7 +111,7 @@
 - [x] `/api/recommendations/history` (success_rate / avg_close_return_{1,3,5,20}d 집계 포함)
 - [x] `/api/holdings`
 - [x] `/api/holdings/checks/latest`
-- [x] `/api/holdings/{symbol}/checks` (raw items[]만 — metric 보강은 §남은 v0.1)
+- [x] `/api/holdings/{symbol}/checks` (items[] + summary metric: total/alert/high_risk count, latest/previous/change, best/worst return rate, latest decision/risk_level)
 - [x] `/api/stocks/{symbol}` (recent_recommendations[*].results[] 1/3/5/20일 성과 join 포함)
 - [x] `/api/universe/market-cap-top`
 - [x] `/api/market-regime/latest`
@@ -133,25 +134,29 @@
 - [x] 실패/재시도 처리 (run_job 래퍼가 예외 캐치 후 FAILED 기록 + work_session 롤백)
 - [x] 잡 통합 테스트 (34 cases)
 
-## Phase 9 - 테스트/문서
+## Phase 9 - 테스트/문서 / 통합 시나리오
 
-- [x] pytest 전체 실행 (294 passed)
+- [x] pytest 전체 실행 (296 passed)
 - [x] 구조 경계 리뷰 (PROJECT_STATUS.md §6 금지사항 정리)
 - [x] API 키 노출 여부 점검 (.env 미커밋, .env.example만, telegram chat_id 마스킹)
 - [x] v0.1 범위 위반 점검 (자동매매/실주문/POST 라우터 없음)
-- [x] README 갱신
+- [x] README 갱신 (mock seed + runbook 진입점 추가)
 - [x] TESTING.md 갱신 (잡 / dispatcher / NO_DATA·PARTIAL 케이스 반영)
 - [x] SECURITY.md 갱신
-- [x] PROJECT_STATUS.md 동기화 (이번 작업)
-- [x] TASKS.md 동기화 (이번 작업)
+- [x] PROJECT_STATUS.md 동기화
+- [x] TASKS.md 동기화
+- [x] Mock seed 스크립트 (`scripts/seed_mock_data.py`, 멱등 + `--reset`)
+- [x] 통합 실행 시나리오 문서 (`INTEGRATION_RUNBOOK.md`: 사전준비 → 시드 → 6개 잡 수동 트리거 → 13개 GET API → 로그 검증 → 회귀 게이트)
 
 ## 남은 v0.1 작업
 
-코드 변경이 남은 항목만 모은다.
+v0.1 백엔드 코드는 마감 상태. 다음 두 항목은 신규 분석 기능 / 운영 검증
+영역이라 명시적 요청 없이는 진행하지 않는다.
 
-- [ ] `/api/holdings/{symbol}/checks` 응답에 일별 손익률 추세 / 누적 alert 카운트 등 metric 보강 *(다음 추천 작업)*
-- [ ] 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (Phase 4 후속 신규 분석 기능)
-- [ ] `collect_market_close_data` 실 KIS 키 운영 검증 (코드 경로는 완성, `.env` 실 키 + dry-run 외 환경에서 1회 검증 — 코드 변경 없음)
+- [ ] (선택) 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강
+  (Phase 4 후속 신규 분석 기능 — Backlog 이동도 무방)
+- [ ] (운영) `collect_market_close_data` 실 KIS 키 운영 검증
+  (코드 경로 완성, `.env` 실 키 + dry-run 외 환경에서 1회 검증 — 코드 변경 없음)
 
 ## Backlog (v0.2 이후)
 
@@ -167,9 +172,9 @@ v0.1 범위 외. 명시적 요청 없는 한 손대지 않는다.
 
 ## 완료 기준
 
-- [x] v0.1 기능이 mock 데이터로 동작
-- [x] 핵심 테스트 통과 (294 passed)
+- [x] v0.1 기능이 mock 데이터로 동작 (`scripts/seed_mock_data.py` + `INTEGRATION_RUNBOOK.md`)
+- [x] 핵심 테스트 통과 (296 passed)
 - [x] 실거래 주문 코드 없음 (`BrokerInterface` placeholder만 존재)
 - [x] snapshot/log 저장 가능 (`data_snapshots`, `decision_logs`, `job_runs`, `notification_logs`)
 - [x] 텔레그램 메시지 포맷 가능 (DRY_RUN 기본)
-- [x] 대시보드 API 응답 가능 (13개 GET 라우터)
+- [x] 대시보드 API 응답 가능 (13개 GET 라우터, holding metric summary 포함)

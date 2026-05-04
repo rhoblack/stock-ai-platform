@@ -29,26 +29,28 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 | **8 후속** 잡 최종 점검 | 6개 잡 모두 dispatcher / engine / NO_DATA·PARTIAL 분기 정리 | `send_recommendation_report`은 최신 run을 dispatcher로 발송 (NO_DATA 단락), `run_pre/post_market_holding_check`은 활성 보유 없으면 NO_DATA 단락, `update_recommendation_results`는 `data_status` SUCCESS/PARTIAL/NO_DATA + skipped_no_reference 시 PARTIAL |
 | **4 후속** Dummy score producer | News/Supply/Fundamental/Earnings/AI 컴포넌트 점수 placeholder | `app/analysis/score_producers.py` (`DummyScoreProducer`), `RecommendationEngine`/`HoldingCheckEngine` 생성자 default 주입 — neutral 50 + volume_ratio_20d / ma_alignment 기반 룰베이스 ±5 nudge, 메타데이터 `decision_logs.rule_result_json["score_producer"]`에 저장 |
 | **7 후속** Stock detail 추천 이력 join | `/api/stocks/{symbol}` 응답에 추천 이력 + 1/3/5/20일 성과 | `_resolve_recent_recommendations_for_symbol` (Recommendation+RecommendationRun join, run_date desc), `RecommendationItemSchema.results: List[RecommendationResultSchema]` 채움, `recommendation_limit`/`holding_check_limit` 쿼리 파라미터 |
+| **7 후속** Holding check 추세 metric | `/api/holdings/{symbol}/checks` 응답에 종목 단위 summary 추가 | `HoldingCheckSymbolMetrics`/`HoldingCheckSymbolResponse` 신규 schema, summary는 limit 무관하게 종목 전체 이력 집계 (total/alert/high_risk count + latest/previous/change + best/worst return rate + latest decision/risk_level), 정렬 규칙 `(check_date desc, POST > PRE)` |
+| **9** v0.1 통합 시나리오 / mock seed | 실 KIS·실 텔레그램 없이 백엔드 전체 흐름 로컬 검증 | `scripts/seed_mock_data.py` (멱등 + `--reset`), `INTEGRATION_RUNBOOK.md` (사전준비 → 시드 → 6개 잡 수동 트리거 → 13개 GET API → 로그 검증 → 회귀 게이트), README §9 진입점 |
 
-브리프 전체 v0.1 범위 + 일부 v0.2 후속 (성과 검증, dispatcher) 까지 도달. 6개 잡 result_summary는 모두 dashboard `/api/jobs` 진단에 적합한 키 (`data_status` / `notification_status` / `dry_run` / 카운트들)을 노출한다.
+브리프 전체 v0.1 범위 + 일부 v0.2 후속 (성과 검증, dispatcher, holding metric, 통합 시나리오) 까지 도달. **v0.1 백엔드 마감 상태** — 코드 변경이 남은 v0.1 항목은 §4 "남은 v0.1 작업" 의 두 건뿐이며, 이번 작업으로 신규 세션 / QA 인수자가 mock seed + runbook 만으로 전체 흐름을 30분 안에 검증 가능.
 
 ---
 
 ## 2. 현재 테스트 결과
 
 ```text
-294 passed in 6.62s
+296 passed in 5.48s
 ```
 
 | 영역 | 파일 수 | 테스트 수 |
 |---|---:|---:|
 | `tests/unit/` | 11 | 127 |
-| `tests/integration/` | 11 | 167 |
+| `tests/integration/` | 11 | 169 |
 
 **테스트 파일별 카운트:**
 
 ```text
-tests/integration/test_api_routes.py                     40
+tests/integration/test_api_routes.py                     42
 tests/integration/test_collectors.py                      8
 tests/integration/test_dispatchers.py                    16
 tests/integration/test_holding_check_engine.py           17
@@ -96,10 +98,12 @@ tests/unit/test_telegram_notifier.py                     14
 
 ## 4. 아직 하지 않은 작업
 
-**v0.1 범위 안에서 남은 것**
+**v0.1 범위 안에서 남은 것 (코드 변경)**
 
-- `/api/holdings/{symbol}/checks` 응답에 일별 손익률 추세 / 누적 alert 카운트 등 metric 보강 (현재 raw `items[]`만 반환)
-- 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (Phase 4 후속, 신규 분석 기능)
+- 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (Phase 4 후속, 신규 분석 기능 — 본 세션에서는 의도적으로 손대지 않음. Backlog 이동도 무방)
+
+**v0.1 범위 안에서 남은 것 (운영)**
+
 - `collect_market_close_data` 잡의 실 KIS 키 운영 검증 — 코드 경로는 완성되어 있고 `KisClient`가 `settings`에서 자동 연결됨. 남은 것은 실제 발급 키를 `.env`에 채워 dry-run 외 환경에서 한 번 검증하는 운영 단계 (코드 변경 없음)
 - PROJECT_STATUS.md / TASKS.md — 신규 세션마다 수동 갱신 필요
 
@@ -117,14 +121,12 @@ tests/unit/test_telegram_notifier.py                     14
 
 ## 5. 다음에 이어서 할 첫 번째 작업
 
-**`/api/holdings/{symbol}/checks` 응답에 일별 손익률 추세 / 누적 alert 카운트 등 metric 보강**
+**v0.1 백엔드는 마감 상태.** 남은 코드 작업은 캔들 패턴 / ATR 컴포넌트 추가 1건뿐이며, 본 작업은 신규 분석 기능이라 v0.2 Backlog로 이동 가능. 사용자가 신규 기능 진행을 명시하기 전까지 다음 세션이 우선 처리할 항목은 다음 둘 중 하나:
 
-이유:
-- v0.1 백엔드의 마지막 read-only API 보강 항목. 현재 `/api/holdings/{symbol}/checks`는 `items: List[HoldingCheckSchema]` 만 반환 (`app/api/routes.py:528-539`).
-- 이미 동일한 패턴이 `/api/stocks/{symbol}` 에서 검증되어 있어 (`recent_recommendations[*].results[]` join + 집계 필드), 같은 구조로 확장 가능.
-- DB 스키마 변경 / 새 잡 / 새 service 도입 없이 `HoldingCheckRepository.list_by_symbol` 결과만 가공하면 되므로 회귀 위험이 가장 낮은 안전한 작업.
-- 추천되는 추가 필드: `summary.return_rate_trend[]` (date, return_rate), `summary.alert_count`, `summary.last_decision`, `summary.first_check_date` 등.
-- 그 다음 후속: 캔들 패턴/ATR 컴포넌트(Phase 4 후속, 신규 분석 기능), 실 KIS 키 운영 검증.
+1. **운영 검증 1회** — `.env` 에 실 KIS 키 + dry-run 환경(파일 SQLite 또는 docker-compose Postgres)에서 `INTEGRATION_RUNBOOK.md` §1 → §3 → §4 시나리오 1회 수행 후 결과를 PROJECT_STATUS.md §2에 기록. 코드 변경 없음.
+2. **(선택) 캔들 패턴 / ATR 컴포넌트** — `technical_analyzer.py` 에 hammer / engulfing / 14-day ATR 계산 추가, `technical_score` 합산 가중치 미세 조정. 단위 테스트 동반.
+
+이 외 잡 / 라우터 / 엔진 / dispatcher 변경은 v0.1 마감 후의 새 기능이라 명시적 요청 없이는 진행하지 않는다.
 
 ---
 

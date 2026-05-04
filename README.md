@@ -190,7 +190,25 @@ docker compose down -v
 로그 파일을 남기고 싶으면 `.env` 또는 Compose 환경변수에서 `LOG_TO_FILE=true`로 설정한다.
 로그 디렉터리는 기본적으로 `logs/`이며, Git에는 `.gitkeep`만 유지된다.
 
-## 9. 테스트
+## 9. Mock Seed 데이터 / 통합 실행 시나리오
+
+실 KIS 키 / 실 텔레그램 없이 v0.1 백엔드 전체 흐름을 로컬에서 검증하려면
+`scripts/seed_mock_data.py` 로 결정론적 mock 데이터를 적재한 뒤,
+`INTEGRATION_RUNBOOK.md` 에 정리된 6개 잡 + 13개 GET API 시나리오를 따라간다.
+
+```powershell
+# 1) Mock 시드 적재 (로컬 SQLite, 멱등 — `--reset`은 destructive)
+.\.venv\bin\python.exe -m scripts.seed_mock_data --reset
+
+# 2) 시나리오는 INTEGRATION_RUNBOOK.md §3 (잡), §4 (API) 참조
+```
+
+시드 범위: stocks, market_cap_rankings, stock_universes/members, daily_prices,
+stock_indicators, holdings, recommendation_runs, recommendations, data_snapshots,
+holding_checks. 자세한 건수와 종목 / 점검 데이터 구성은
+[INTEGRATION_RUNBOOK.md §1.2](./INTEGRATION_RUNBOOK.md) 참고.
+
+## 10. 테스트
 
 ```powershell
 .\.venv\bin\python.exe -m pytest
@@ -198,7 +216,7 @@ docker compose down -v
 
 외부 API, 텔레그램, 주문 기능은 테스트에서 실제로 호출하지 않습니다.
 
-## 10. Codex 첫 실행 프롬프트 예시
+## 11. Codex 첫 실행 프롬프트 예시
 
 ```text
 AGENTS.md, stock_ai_project_codex_brief.md, stock_ai_detailed_spec.md,
@@ -207,7 +225,7 @@ v0.1 범위를 벗어나지 않는 개발 계획을 작성해줘.
 아직 코드는 수정하지 말고 TASKS.md 업데이트 계획만 제안해줘.
 ```
 
-## 11. 주의
+## 12. 주의
 
 이 프로젝트는 투자 판단 보조 도구입니다.  
 v0.1에서는 실제 주문이나 자동매매를 구현하지 않습니다.
