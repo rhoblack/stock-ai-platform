@@ -264,6 +264,13 @@ Phase 8 follow-up `Dispatcher` 통합 테스트는 ORM → `ReportGenerator` →
   - 보유 점검 0건 → "점검 대상 보유 종목이 없습니다" 메시지 dispatch
   - 잘못된 `check_type` → `ValueError`
   - SUCCESS 경로 (`httpx.MockTransport`): `notification_logs.sent_at` 채워짐
+  
+- `HoldingRiskAlertDispatcher`:
+  - `holding_checks` 중 `alert=True` 인 항목에 대해 `risk_alert` 포맷터로 알림 생성
+  - `notification_logs.message_type = "ALERT"` 로 저장
+  - 동일한 `symbol + check_date + check_type` 대상은 재실행 시 중복 발송 방지 (Skip)
+  - DRY_RUN: `settings.telegram_enabled=False`일 경우 HTTP 호출 없이 DB에만 로깅됨
+  - `related_job_id` 연결 확인
 
 Phase 8 follow-up `scheduler jobs` 추가 통합 테스트:
 - `run_job` 래퍼가 `session.info["job_run_id"]`를 fn에 노출 → 잡 함수가

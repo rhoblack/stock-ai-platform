@@ -26,6 +26,7 @@ from app.data.repositories.recommendations import (
     RecommendationRepository,
     RecommendationRunRepository,
 )
+from app.data.repositories.notification_logs import NotificationLogRepository
 from app.data.repositories.snapshots import DataSnapshotRepository
 from app.notification.notification_service import (
     MESSAGE_TYPE_REPORT,
@@ -203,3 +204,62 @@ class HoldingCheckReportDispatcher:
             notification=notification,
             message_text=message,
         )
+
+
+class HoldingRiskAlertDispatcher:
+    def __init__(
+        self,
+        *,
+        report_generator: ReportGenerator,
+        notification_service: NotificationService,
+        holding_check_repository: HoldingCheckRepository,
+        snapshot_repository: DataSnapshotRepository,
+        log_repository: NotificationLogRepository,
+    ) -> None:
+        self._report_generator = report_generator
+        self._notification_service = notification_service
+        self._holding_check_repository = holding_check_repository
+        self._snapshot_repository = snapshot_repository
+        self._log_repository = log_repository
+
+    def dispatch(
+        self,
+        *,
+        check_date: date,
+        check_type: str,
+        related_job_id: int | None = None,
+    ) -> int:
+        if check_type not in _VALID_HOLDING_CHECK_TYPES:
+            raise ValueError(f"invalid check_type: {check_type}")
+
+        checks = self._holding_check_repository.list_by_date_type(
+            check_date=check_date,
+            check_type=check_type,
+        )
+
+        all_logs = self._log_repository.list()
+        dispatched_count = 0
+
+        for check in checks:
+            snapshot = self._snapshot_repository.get(check.snapshot_id) if check.snapshot_id else None
+            level, flags = extract_risk_summary(snapshot)
+
+            if not check.alert and level != "HIGH":
+                continue
+
+            dedup_target = f"ALERT_HOLDING:{check.symbol}:{check_date.isoformat()}:{check_type}"
+            if any(log.message_type == MESSAGE_TYPE_ALERT and log.target == dedup_target for log in all_logs):
+                continue
+
+            line = HoldingLine(check=check, risk_level=level, risk_flags=flags)
+            message = self._report_generator.risk_alert(line=line)
+
+            self._notification_service.send_telegram(
+                message=message,
+                message_type=MESSAGE_TYPE_ALERT,
+                target=dedup_target,
+                related_job_id=related_job_id,
+            )
+            dispatched_count += 1
+
+        return dispatched_count

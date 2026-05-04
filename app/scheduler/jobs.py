@@ -56,6 +56,7 @@ from app.decision.risk_engine import RiskEngine
 from app.decision.scoring_engine import ScoringEngine
 from app.notification.dispatchers import (
     HoldingCheckReportDispatcher,
+    HoldingRiskAlertDispatcher,
     RecommendationReportDispatcher,
 )
 from app.notification.notification_service import NotificationService
@@ -266,6 +267,22 @@ def _build_holding_check_dispatcher(
     )
 
 
+def _build_holding_risk_alert_dispatcher(
+    session: Session,
+    *,
+    notifier: TelegramNotifier,
+) -> HoldingRiskAlertDispatcher:
+    return HoldingRiskAlertDispatcher(
+        report_generator=ReportGenerator(),
+        notification_service=NotificationService(
+            notifier=notifier,
+            log_repository=NotificationLogRepository(session),
+        ),
+        holding_check_repository=HoldingCheckRepository(session),
+        snapshot_repository=DataSnapshotRepository(session),
+        log_repository=NotificationLogRepository(session),
+    )
+
 # ---------- 18:00 collect_market_close_data ----------
 
 def collect_market_close_data(session: Session) -> JobResult:
@@ -398,6 +415,13 @@ def _run_holding_check_job(
             check_type=check_type,
             related_job_id=job_run_id,
         )
+        
+        alert_dispatcher = _build_holding_risk_alert_dispatcher(session, notifier=notifier)
+        alert_count = alert_dispatcher.dispatch(
+            check_date=check_date,
+            check_type=check_type,
+            related_job_id=job_run_id,
+        )
     finally:
         notifier.close()
 
@@ -419,6 +443,7 @@ def _run_holding_check_job(
             "skipped_no_indicator": result.skipped_no_indicator,
             "alert_count": result.alert_count,
             "holding_check_count": dispatch.holding_check_count,
+            "alert_sent_count": alert_count,
             "telegram_sent": dispatch.notification.sent,
             "notification_status": dispatch.notification.status,
             "notification_log_id": dispatch.notification.notification_log_id,

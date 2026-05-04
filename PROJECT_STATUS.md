@@ -25,7 +25,7 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 | **7** Backend API | 13개 read-only GET 라우터 | `app/api/{schemas,routes}.py`, FastAPI lifespan 통합, 모든 Decimal은 JSON 문자열 직렬화 |
 | **7 후속** API 성과 노출 | 추천 항목에 `results[]` + history 집계 | `RecommendationResultSchema`, `RecommendationHistoryItem` 확장 (`success_rate`, `avg_close_return_{1,3,5,20}d`) |
 | **8** Scheduler + 6개 Job | APScheduler + `run_job` 래퍼 | `app/scheduler/{jobs,scheduler}.py`, FastAPI lifespan에서 lazy import 후 시작/종료, `SCHEDULER_ENABLED` 제어 |
-| **8 후속** Dispatcher 연결 | 추천/보유 잡 → 텔레그램 자동 발송 | `app/notification/dispatchers.py`, 잡에서 `session.info["job_run_id"]`로 `notification_logs.related_job_id` 자동 연결 |
+| **8 후속** Dispatcher 연결 | 추천/보유/ALERT 잡 → 텔레그램 자동 발송 | `app/notification/dispatchers.py`, 잡에서 `session.info["job_run_id"]`로 `notification_logs.related_job_id` 자동 연결, `HoldingRiskAlertDispatcher` 연동 완료 |
 
 브리프 전체 v0.1 범위 + 일부 v0.2 후속 (성과 검증, dispatcher) 까지 도달.
 
@@ -95,7 +95,6 @@ tests/unit/test_telegram_notifier.py                     14
 **v0.1 범위 안에서 남은 것**
 
 - `collect_market_close_data` 잡의 실제 KIS 수집 연결 (현재 placeholder; 실 KIS API 키 + Phase 3-3 collector 호출 연결 필요)
-- 즉시 ALERT dispatcher: HoldingCheck `risk_level=HIGH` 감지 시 일일 보고서와 별도로 즉시 텔레그램 발송 (`risk_alert` 포맷터는 이미 있음, dispatcher만 추가)
 - 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (Phase 4 후속)
 - News / Supply / Fundamental / Earnings / AI dummy score producer → 등급 분포 활성화 (현재 technical 단독으로 D~C에 머무름)
 - `/api/stocks/{symbol}` 응답에 그 종목의 최근 추천 이력 + `recommendation_results` join
@@ -115,28 +114,13 @@ tests/unit/test_telegram_notifier.py                     14
 
 ## 5. 다음에 이어서 할 첫 번째 작업
 
-**즉시 ALERT dispatcher 연결**
+**News/Supply/Fundamental/Earnings/AI dummy score producer (등급 분포 활성화) 및 API 응답에 추천 이력 Join**
 
 이유:
-- v0.1 안에서 가장 작고 자족적인 다음 단계 (외부 키 / 새 산식 불필요)
-- 기반은 모두 준비됨: `RiskEngine.evaluate_holding`이 HIGH/MEDIUM/LOW 산출,
-  `ReportGenerator.risk_alert(line=...)` 단일 종목 알림 포맷 존재,
-  `NotificationService.send_telegram(message_type=MESSAGE_TYPE_ALERT, ...)`,
-  `notification_logs` 스키마, dispatcher 패턴 (`RecommendationReportDispatcher` /
-  `HoldingCheckReportDispatcher`)이 이미 정착
-- 산출물: 신규 `app/notification/dispatchers.py::HoldingRiskAlertDispatcher`,
-  `app/scheduler/jobs.py::run_pre_market_holding_check` /
-  `run_post_market_holding_check` 잡에서 holding_check 결과 중
-  `risk_level == "HIGH"`인 행을 골라 `dispatch_alert(...)` 호출,
-  `notification_logs.message_type = "ALERT"` 행 누적
-
-스코프 가드: 알림 dedup (같은 날 같은 종목 중복 발송 방지) 정책 정의 필요. 
-1차 구현은 "같은 (check_date, symbol)이 이미 ALERT으로 기록되어 있으면 skip"
-정도로 단순화하고 향후 더 정교한 dedup은 후속 단계로.
-
-이 작업 후 자연스러운 다음 단계 후보: news/supply/fundamental/earnings/ai
-dummy score producer (등급 분포 활성화) → `/api/stocks/{symbol}` 추천 이력
-join.
+- 즉시 ALERT dispatcher 연동까지 포함해 추천 및 점검, 알림(Dispatcher)의 기초 흐름이 모두 완료되었습니다.
+- 현재 신규 추천 및 보유 점수 산출 시 technical(기술적 분석) 단독으로만 점수가 책정되어 있어, 등급 분포가 D~C 하위권에 머물고 있습니다. 
+- 이를 해소하기 위해 나머지 정성적/정량적 지표(News, Fundamental 등)에 대한 Dummy Score를 부여하여 S~D 등급이 정상적으로 분포되도록 활성화하는 작업이 필수적입니다.
+- 연이어 대시보드 API(`.api/stocks/{symbol}`)에서 그 종목의 과거 추천 이력(`recommendation_results`)을 Join하여 프론트엔드가 활용할 수 있게 완성도를 높입니다.
 
 ---
 

@@ -27,6 +27,7 @@ from app.db.session import create_session_factory
 from app.notification.dispatchers import (
     HoldingCheckReportDispatcher,
     RecommendationReportDispatcher,
+    HoldingRiskAlertDispatcher,
 )
 from app.notification.notification_service import (
     MESSAGE_TYPE_REPORT,
@@ -422,3 +423,29 @@ def test_holding_dispatcher_success_path_records_sent_at(session):
     log = NotificationLogRepository(session).list()[0]
     assert log.status == "SUCCESS"
     assert log.sent_at is not None
+
+# ---------- HoldingRiskAlertDispatcher ----------
+
+def test_holding_risk_alert_dispatcher_dedup(session):
+    _seed_holding_check(session, level="HIGH", flags=["MA20_BREAKDOWN"])
+    notifier = _notifier(_settings(telegram_enabled=False))
+    dispatcher = _build_holding_risk_alert_dispatcher(session, notifier)
+
+    # 1. 최초 발송 (경고 조건 만족하므로 1건이 발송되어야 함)
+    sent_count = dispatcher.dispatch(
+        check_date=date(2026, 5, 4),
+        check_type="PRE_MARKET",
+    )
+    session.commit()
+    assert sent_count == 1
+
+    logs = [log for log in NotificationLogRepository(session).list() if log.message_type == "ALERT"]
+    assert len(logs) == 1
+    assert logs[0].target == "ALERT_HOLDING:005930:2026-05-04:PRE_MARKET"
+
+    # 2. 2차 발송 시도 (동일한 조건이므로 dedup 정책에 의해 0건이 발송되어야 함)
+    sent_count_retry = dispatcher.dispatch(
+        check_date=date(2026, 5, 4),
+        check_type="PRE_MARKET",
+    )
+    assert sent_count_retry == 0
