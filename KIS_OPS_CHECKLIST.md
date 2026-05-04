@@ -26,7 +26,7 @@
       Claude / Codex 에게는 보여주지 않는다**:
   - `KIS_APP_KEY=...`
   - `KIS_APP_SECRET=...`
-  - `KIS_ACCOUNT_NUMBER=...`
+  - `KIS_ACCOUNT_NO=...`
   - (선택) `KIS_BASE_URL=...` — 모의 vs 실서버 분기
   - `TELEGRAM_BOT_TOKEN=...` (선택, §5 단계까지는 false)
   - `TELEGRAM_CHAT_ID=...` (마스킹된 값을 운영자만 알 것)
