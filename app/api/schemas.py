@@ -96,6 +96,8 @@ class RecommendationItemSchema(_BaseSchema):
     reason: Optional[str]
     risk_note: Optional[str]
     snapshot_id: Optional[int]
+    risk_level: Optional[str] = None
+    risk_flags: List[str] = []
     risk_summary: Optional[RiskSummarySchema] = None
     results: List[RecommendationResultSchema] = []
 

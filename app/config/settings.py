@@ -27,6 +27,8 @@ class Settings:
     app_host: str = field(default_factory=lambda: os.getenv("APP_HOST", "127.0.0.1"))
     app_port: int = field(default_factory=lambda: _as_int(os.getenv("APP_PORT"), 8000))
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
+    log_dir: str = field(default_factory=lambda: os.getenv("LOG_DIR", "logs"))
+    log_to_file: bool = field(default_factory=lambda: _as_bool(os.getenv("LOG_TO_FILE"), False))
     timezone: str = field(default_factory=lambda: os.getenv("TIMEZONE", "Asia/Seoul"))
 
     database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", ""))

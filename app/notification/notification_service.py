@@ -48,12 +48,14 @@ class NotificationService:
         *,
         message: str,
         message_type: str,
+        target: str | None = None,
         related_job_id: int | None = None,
     ) -> NotificationOutcome:
         result = self._notifier.send(message)
         log = self._record_log(
             result=result,
             message_type=message_type,
+            target=target,
             related_job_id=related_job_id,
         )
         return NotificationOutcome(
@@ -61,7 +63,7 @@ class NotificationService:
             channel=result.channel,
             status=result.status,
             sent=result.sent,
-            target=result.target,
+            target=log.target,
             error_message=result.error_message,
         )
 
@@ -70,6 +72,7 @@ class NotificationService:
         *,
         result: NotificationResult,
         message_type: str,
+        target: str | None,
         related_job_id: int | None,
     ) -> NotificationLog:
         sent_at = datetime.now(UTC) if result.sent else None
@@ -77,7 +80,7 @@ class NotificationService:
             NotificationLog(
                 channel=result.channel,
                 message_type=message_type,
-                target=result.target,
+                target=target or result.target,
                 sent_at=sent_at,
                 status=result.status,
                 error_message=result.error_message,

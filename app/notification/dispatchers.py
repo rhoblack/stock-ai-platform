@@ -29,6 +29,7 @@ from app.data.repositories.recommendations import (
 from app.data.repositories.notification_logs import NotificationLogRepository
 from app.data.repositories.snapshots import DataSnapshotRepository
 from app.notification.notification_service import (
+    MESSAGE_TYPE_ALERT,
     MESSAGE_TYPE_REPORT,
     NotificationOutcome,
     NotificationService,
@@ -42,6 +43,8 @@ from app.notification.report_generator import (
 
 
 _VALID_HOLDING_CHECK_TYPES = {"PRE_MARKET", "POST_MARKET"}
+_ALERT_TYPE_HIGH_RISK = "HIGH_RISK"
+_ALERT_TYPE_CHECK_ALERT = "CHECK_ALERT"
 
 
 @dataclass(frozen=True)
@@ -237,18 +240,32 @@ class HoldingRiskAlertDispatcher:
             check_type=check_type,
         )
 
-        all_logs = self._log_repository.list()
+        sent_targets = {
+            log.target
+            for log in self._log_repository.list()
+            if log.message_type == MESSAGE_TYPE_ALERT
+        }
         dispatched_count = 0
 
         for check in checks:
-            snapshot = self._snapshot_repository.get(check.snapshot_id) if check.snapshot_id else None
+            snapshot = (
+                self._snapshot_repository.get(check.snapshot_id)
+                if check.snapshot_id
+                else None
+            )
             level, flags = extract_risk_summary(snapshot)
+            alert_type = self._resolve_alert_type(alert=check.alert, risk_level=level)
 
-            if not check.alert and level != "HIGH":
+            if alert_type is None:
                 continue
 
-            dedup_target = f"ALERT_HOLDING:{check.symbol}:{check_date.isoformat()}:{check_type}"
-            if any(log.message_type == MESSAGE_TYPE_ALERT and log.target == dedup_target for log in all_logs):
+            dedup_target = _holding_alert_target(
+                symbol=check.symbol,
+                check_date=check_date,
+                check_type=check_type,
+                alert_type=alert_type,
+            )
+            if dedup_target in sent_targets:
                 continue
 
             line = HoldingLine(check=check, risk_level=level, risk_flags=flags)
@@ -261,5 +278,27 @@ class HoldingRiskAlertDispatcher:
                 related_job_id=related_job_id,
             )
             dispatched_count += 1
+            sent_targets.add(dedup_target)
 
         return dispatched_count
+
+    @staticmethod
+    def _resolve_alert_type(*, alert: bool, risk_level: str) -> str | None:
+        if risk_level == "HIGH":
+            return _ALERT_TYPE_HIGH_RISK
+        if alert:
+            return _ALERT_TYPE_CHECK_ALERT
+        return None
+
+
+def _holding_alert_target(
+    *,
+    symbol: str,
+    check_date: date,
+    check_type: str,
+    alert_type: str,
+) -> str:
+    return (
+        "ALERT_HOLDING:"
+        f"{symbol}:{check_date.isoformat()}:{check_type}:{alert_type}"
+    )

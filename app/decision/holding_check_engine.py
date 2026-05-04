@@ -29,6 +29,7 @@ from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from app.analysis.score_producers import DummyScoreProducer, HoldingComponentScores
 from app.data.repositories.daily_prices import DailyPriceRepository
 from app.data.repositories.decision_logs import DecisionLogRepository
 from app.data.repositories.holdings import HoldingRepository
@@ -221,9 +222,11 @@ class HoldingCheckEngine:
         snapshot_repository: DataSnapshotRepository,
         holding_check_repository: HoldingCheckRepository,
         decision_log_repository: DecisionLogRepository,
+        score_producer: DummyScoreProducer | None = None,
     ) -> None:
         self._scoring_engine = scoring_engine
         self._risk_engine = risk_engine
+        self._score_producer = score_producer or DummyScoreProducer()
         self._holding_repository = holding_repository
         self._daily_price_repository = daily_price_repository
         self._indicator_repository = indicator_repository
@@ -295,11 +298,19 @@ class HoldingCheckEngine:
     ) -> tuple[HoldingCheck, bool]:
         current_price = price.close
         return_rate = _compute_return_rate(current_price, holding.avg_buy_price)
+        components = self._score_producer.score_holding(
+            holding=holding,
+            indicator=indicator,
+        )
 
         # Pass 1: weighted total without risk penalty (ScoringEngine treats
         # risk_penalty=None as 0).
         weighted_only = self._scoring_engine.score_holding(
-            HoldingScoreInputs(technical_score=indicator.technical_score),
+            _holding_score_inputs(
+                indicator=indicator,
+                components=components,
+                risk_penalty=None,
+            ),
         )
 
         previous_check = self._holding_check_repository.find_previous_for_symbol(
@@ -322,8 +333,9 @@ class HoldingCheckEngine:
 
         # Pass 3: final scoring with risk_penalty applied.
         final_score = self._scoring_engine.score_holding(
-            HoldingScoreInputs(
-                technical_score=indicator.technical_score,
+            _holding_score_inputs(
+                indicator=indicator,
+                components=components,
                 risk_penalty=assessment.risk_penalty,
             ),
         )
@@ -349,6 +361,7 @@ class HoldingCheckEngine:
                     "check_date": check_date.isoformat(),
                     "check_type": check_type,
                     "phase": self.PHASE_TAG,
+                    "component_score_metadata": components.metadata,
                     "risk_summary": _serialize_risk_summary(assessment),
                 },
             ),
@@ -362,9 +375,9 @@ class HoldingCheckEngine:
             avg_buy_price=holding.avg_buy_price,
             return_rate=return_rate,
             technical_score=indicator.technical_score,
-            news_score=None,
-            earnings_score=None,
-            ai_score=None,
+            news_score=components.news_score,
+            earnings_score=components.earnings_score,
+            ai_score=components.ai_score,
             risk_score=assessment.risk_penalty,
             total_score=final_score.total_score,
             grade=grade,
@@ -382,7 +395,12 @@ class HoldingCheckEngine:
             "raw_total": str(final_score.raw_total),
             "total_score": str(final_score.total_score),
             "risk_penalty": str(final_score.risk_penalty),
-            "placeholder_components": ["news", "earnings", "ai"],
+            "component_scores": {
+                "news": str(components.news_score),
+                "earnings": str(components.earnings_score),
+                "ai": str(components.ai_score),
+            },
+            "score_producer": components.metadata,
             "return_rate": _decimal_to_str(return_rate),
             "current_price": _decimal_to_str(current_price),
             "avg_buy_price": _decimal_to_str(holding.avg_buy_price),
@@ -403,3 +421,18 @@ class HoldingCheckEngine:
         )
 
         return check, bool(assessment.risk_flags)
+
+
+def _holding_score_inputs(
+    *,
+    indicator: StockIndicator,
+    components: HoldingComponentScores,
+    risk_penalty: Decimal | None,
+) -> HoldingScoreInputs:
+    return HoldingScoreInputs(
+        technical_score=indicator.technical_score,
+        news_score=components.news_score,
+        earnings_score=components.earnings_score,
+        ai_score=components.ai_score,
+        risk_penalty=risk_penalty,
+    )

@@ -184,21 +184,16 @@ def test_engine_generates_top_n_sorted_by_total_score_desc(session):
     saved = RecommendationRepository(session).list_by_run_id(result.run_id)
     assert [r.rank for r in saved] == [1, 2, 3, 4, 5]
     assert [r.symbol for r in saved] == ["AAA001", "AAA002", "AAA003", "AAA004", "AAA005"]
-    # total_score from ScoringEngine: technical * 0.35 only
-    assert saved[0].total_score == Decimal("31.5000")  # 90 * 0.35
-    assert saved[1].total_score == Decimal("26.2500")  # 75 * 0.35
+    # total_score includes technical plus neutral/rule-based dummy components.
+    assert saved[0].total_score == Decimal("64.5000")
+    assert saved[1].total_score == Decimal("59.2500")
 
 
 def test_engine_grades_match_score_thresholds(session):
     universe = _seed_universe(session)
-    # technical 100 -> total 35 (C); 200 not allowed by clamp; we want broad spread
-    # with technical_score weight = 0.35, the pure tech contribution is 0..35.
-    # To exercise grade thresholds we drive the score directly via technical_score.
-    # For S grade we'd need total >= 85, which requires more than tech alone.
-    # Phase 5-1 only uses technical, so grade range realistically: D..C.
     _seed_stock_with_indicator(
         session, universe=universe, symbol="HIGH01", name="High",
-        technical_score=Decimal("100"),  # 100*0.35 = 35 -> D boundary (40 cutoff for C)
+        technical_score=Decimal("100"),
     )
     _seed_stock_with_indicator(
         session, universe=universe, symbol="MID001", name="Mid",
@@ -215,9 +210,9 @@ def test_engine_grades_match_score_thresholds(session):
 
     saved = RecommendationRepository(session).list_by_run_id(result.run_id)
     by_symbol = {r.symbol: r for r in saved}
-    assert by_symbol["HIGH01"].grade == "D"  # 35 < 40
-    assert by_symbol["MID001"].grade == "D"  # 17.5
-    assert by_symbol["LOW001"].grade == "D"  # 0
+    assert by_symbol["HIGH01"].grade == "B"
+    assert by_symbol["MID001"].grade == "C"
+    assert by_symbol["LOW001"].grade == "D"
 
 
 def test_engine_grade_uses_full_total_when_score_lifted_externally(session):
@@ -254,10 +249,10 @@ def test_engine_persists_snapshot_recommendation_decision_log_linked(session):
     assert rec.market == "KOSPI"
     assert rec.name == "삼성전자"
     assert rec.technical_score == Decimal("82.0000")
-    assert rec.news_score is None
-    assert rec.supply_score is None
-    assert rec.fundamental_score is None
-    assert rec.ai_score is None
+    assert rec.news_score == Decimal("50.0000")
+    assert rec.supply_score == Decimal("55.0000")
+    assert rec.fundamental_score == Decimal("50.0000")
+    assert rec.ai_score == Decimal("55.0000")
     assert rec.risk_score == Decimal("0.0000")
     assert "관찰 후보" in rec.reason
     assert "PERFECT_BULL" in rec.reason
@@ -274,6 +269,9 @@ def test_engine_persists_snapshot_recommendation_decision_log_linked(session):
     assert snapshot.indicator_data_json["ma_alignment"] == "PERFECT_BULL"
     assert snapshot.market_context_json["run_id"] == result.run_id
     assert snapshot.market_context_json["phase"] == "5-3"
+    assert snapshot.market_context_json["component_score_metadata"]["producer"] == (
+        "DummyScoreProducer"
+    )
     assert snapshot.market_context_json["risk_summary"] == {
         "level": RISK_LEVEL_LOW,
         "flags": [],
@@ -287,7 +285,13 @@ def test_engine_persists_snapshot_recommendation_decision_log_linked(session):
     assert log.input_snapshot_id == rec.snapshot_id
     assert log.final_decision == "WATCH_CANDIDATE_RANK_1"
     assert log.rule_result_json["weighted_components"]["technical"] == "28.7000"
-    assert "placeholder_components" in log.rule_result_json
+    assert log.rule_result_json["weighted_components"]["supply"] == "8.2500"
+    assert log.rule_result_json["component_scores"] == {
+        "news": "50",
+        "supply": "55",
+        "fundamental": "50",
+        "ai": "55",
+    }
     assert log.risk_result_json["alerts"] == []
     assert log.risk_result_json["risk_level"] == RISK_LEVEL_LOW
     assert log.risk_result_json["risk_penalty"] == "0.0000"
@@ -326,7 +330,8 @@ def test_engine_records_run_metadata(session):
         "skipped_no_indicator": 1,
         "skipped_no_stock_master": 0,
         "phase": "5-3",
-        "placeholder_components": ["news", "supply", "fundamental", "ai"],
+        "score_components": ["news", "supply", "fundamental", "ai"],
+        "score_producer": "DummyScoreProducer",
     }
 
 
@@ -390,8 +395,8 @@ def test_engine_applies_risk_penalty_and_records_flags(session):
 
     saved = RecommendationRepository(session).list_by_run_id(result.run_id)
     rec = saved[0]
-    # weighted = 10 * 0.35 = 3.5; penalty = 18; final = max(0, 3.5 - 18) = 0
-    assert rec.total_score == Decimal("0.0000")
+    # weighted = 35.5 with dummy components; penalty = 18; final = 17.5
+    assert rec.total_score == Decimal("17.5000")
     assert rec.risk_score == Decimal("18.0000")
     assert rec.grade == "D"
 

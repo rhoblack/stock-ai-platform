@@ -46,7 +46,11 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create the FastAPI application without starting background jobs eagerly."""
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        log_dir=settings.log_dir,
+        log_to_file=settings.log_to_file,
+    )
 
     app = FastAPI(
         title=settings.app_name,

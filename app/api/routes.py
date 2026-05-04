@@ -117,6 +117,7 @@ def _recommendation_to_schema(
     snapshot: Optional[DataSnapshot],
     results: list[RecommendationResult],
 ) -> RecommendationItemSchema:
+    risk_summary = _risk_summary_from_snapshot(snapshot)
     return RecommendationItemSchema(
         rank=rec.rank,
         market=rec.market,
@@ -133,7 +134,9 @@ def _recommendation_to_schema(
         reason=rec.reason,
         risk_note=rec.risk_note,
         snapshot_id=rec.snapshot_id,
-        risk_summary=_risk_summary_from_snapshot(snapshot),
+        risk_level=risk_summary.level if risk_summary is not None else None,
+        risk_flags=risk_summary.flags if risk_summary is not None else [],
+        risk_summary=risk_summary,
         results=[_recommendation_result_to_schema(r) for r in results],
     )
 

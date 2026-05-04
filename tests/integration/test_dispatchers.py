@@ -30,6 +30,7 @@ from app.notification.dispatchers import (
     HoldingRiskAlertDispatcher,
 )
 from app.notification.notification_service import (
+    MESSAGE_TYPE_ALERT,
     MESSAGE_TYPE_REPORT,
     NotificationService,
 )
@@ -104,6 +105,19 @@ def _build_holding_check_dispatcher(session, notifier):
     )
 
 
+def _build_holding_risk_alert_dispatcher(session, notifier):
+    return HoldingRiskAlertDispatcher(
+        report_generator=ReportGenerator(),
+        notification_service=NotificationService(
+            notifier=notifier,
+            log_repository=NotificationLogRepository(session),
+        ),
+        holding_check_repository=HoldingCheckRepository(session),
+        snapshot_repository=DataSnapshotRepository(session),
+        log_repository=NotificationLogRepository(session),
+    )
+
+
 # ---------- recommendation seeding ----------
 
 def _seed_recommendation_run(session) -> tuple[int, int]:
@@ -160,15 +174,23 @@ def _seed_recommendation_run(session) -> tuple[int, int]:
     return run.run_id, snapshot.snapshot_id
 
 
-def _seed_holding_check(session, *, level: str, flags: list[str]) -> int:
+def _seed_holding_check(
+    session,
+    *,
+    level: str,
+    flags: list[str],
+    alert: bool = True,
+    symbol: str = "005930",
+    check_type: str = "PRE_MARKET",
+) -> int:
     snapshot = DataSnapshotRepository(session).add(
         DataSnapshot(
             snapshot_time=datetime(2026, 5, 4, 8, 30, tzinfo=timezone.utc),
-            symbol="005930",
+            symbol=symbol,
             snapshot_type="HOLDING_CHECK",
             market_context_json={
                 "check_date": "2026-05-04",
-                "check_type": "PRE_MARKET",
+                "check_type": check_type,
                 "phase": "5-3",
                 "risk_summary": {
                     "level": level,
@@ -181,8 +203,8 @@ def _seed_holding_check(session, *, level: str, flags: list[str]) -> int:
     HoldingCheckRepository(session).add(
         HoldingCheck(
             check_date=date(2026, 5, 4),
-            check_type="PRE_MARKET",
-            symbol="005930",
+            check_type=check_type,
+            symbol=symbol,
             current_price=Decimal("65000"),
             avg_buy_price=Decimal("70000"),
             return_rate=Decimal("-7.1429"),
@@ -190,7 +212,7 @@ def _seed_holding_check(session, *, level: str, flags: list[str]) -> int:
             grade="D",
             decision="SELL_REVIEW",
             reason="매도 검토",
-            alert=True,
+            alert=alert,
             snapshot_id=snapshot.snapshot_id,
         ),
     )
@@ -426,12 +448,16 @@ def test_holding_dispatcher_success_path_records_sent_at(session):
 
 # ---------- HoldingRiskAlertDispatcher ----------
 
-def test_holding_risk_alert_dispatcher_dedup(session):
-    _seed_holding_check(session, level="HIGH", flags=["MA20_BREAKDOWN"])
+def test_holding_risk_alert_dispatcher_sends_high_risk_dry_run_and_dedups(session):
+    _seed_holding_check(
+        session,
+        level="HIGH",
+        flags=["MA20_BREAKDOWN"],
+        alert=False,
+    )
     notifier = _notifier(_settings(telegram_enabled=False))
     dispatcher = _build_holding_risk_alert_dispatcher(session, notifier)
 
-    # 1. 최초 발송 (경고 조건 만족하므로 1건이 발송되어야 함)
     sent_count = dispatcher.dispatch(
         check_date=date(2026, 5, 4),
         check_type="PRE_MARKET",
@@ -439,13 +465,95 @@ def test_holding_risk_alert_dispatcher_dedup(session):
     session.commit()
     assert sent_count == 1
 
-    logs = [log for log in NotificationLogRepository(session).list() if log.message_type == "ALERT"]
+    logs = [
+        log for log in NotificationLogRepository(session).list()
+        if log.message_type == MESSAGE_TYPE_ALERT
+    ]
     assert len(logs) == 1
-    assert logs[0].target == "ALERT_HOLDING:005930:2026-05-04:PRE_MARKET"
+    assert logs[0].status == "DRY_RUN"
+    assert logs[0].sent_at is None
+    assert logs[0].target == (
+        "ALERT_HOLDING:005930:2026-05-04:PRE_MARKET:HIGH_RISK"
+    )
 
-    # 2. 2차 발송 시도 (동일한 조건이므로 dedup 정책에 의해 0건이 발송되어야 함)
     sent_count_retry = dispatcher.dispatch(
         check_date=date(2026, 5, 4),
         check_type="PRE_MARKET",
     )
     assert sent_count_retry == 0
+
+
+def test_holding_risk_alert_dispatcher_sends_alert_flag_when_risk_is_not_high(session):
+    _seed_holding_check(
+        session,
+        level="MEDIUM",
+        flags=["SCORE_DROP"],
+        alert=True,
+    )
+    notifier = _notifier(_settings(telegram_enabled=False))
+    dispatcher = _build_holding_risk_alert_dispatcher(session, notifier)
+
+    sent_count = dispatcher.dispatch(
+        check_date=date(2026, 5, 4),
+        check_type="PRE_MARKET",
+    )
+    session.commit()
+
+    assert sent_count == 1
+    log = [
+        log for log in NotificationLogRepository(session).list()
+        if log.message_type == MESSAGE_TYPE_ALERT
+    ][0]
+    assert log.target == (
+        "ALERT_HOLDING:005930:2026-05-04:PRE_MARKET:CHECK_ALERT"
+    )
+
+
+def test_holding_risk_alert_dispatcher_skips_non_alert_low_risk_check(session):
+    _seed_holding_check(session, level="LOW", flags=[], alert=False)
+    notifier = _notifier(_settings(telegram_enabled=False))
+    dispatcher = _build_holding_risk_alert_dispatcher(session, notifier)
+
+    sent_count = dispatcher.dispatch(
+        check_date=date(2026, 5, 4),
+        check_type="PRE_MARKET",
+    )
+
+    assert sent_count == 0
+    assert NotificationLogRepository(session).list() == []
+
+
+def test_holding_risk_alert_dispatcher_links_related_job_id(session):
+    _seed_holding_check(session, level="HIGH", flags=["MA20_BREAKDOWN"])
+    job = JobRunRepository(session).add(
+        JobRun(
+            job_name="run_pre_market_holding_check",
+            started_at=datetime(2026, 5, 4, 8, 30),
+            status="RUNNING",
+        ),
+    )
+    session.commit()
+
+    notifier = _notifier(_settings(telegram_enabled=False))
+    dispatcher = _build_holding_risk_alert_dispatcher(session, notifier)
+    dispatcher.dispatch(
+        check_date=date(2026, 5, 4),
+        check_type="PRE_MARKET",
+        related_job_id=job.job_id,
+    )
+    session.commit()
+
+    log = NotificationLogRepository(session).list()[0]
+    assert log.message_type == MESSAGE_TYPE_ALERT
+    assert log.related_job_id == job.job_id
+
+
+def test_holding_risk_alert_dispatcher_rejects_invalid_check_type(session):
+    notifier = _notifier(_settings(telegram_enabled=False))
+    dispatcher = _build_holding_risk_alert_dispatcher(session, notifier)
+
+    with pytest.raises(ValueError):
+        dispatcher.dispatch(
+            check_date=date(2026, 5, 4),
+            check_type="MIDDAY",
+        )

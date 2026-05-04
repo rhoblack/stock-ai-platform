@@ -16,6 +16,13 @@ Phase 7 후속에서 추천 성과(`recommendation_results`)가 응답에 노출
   각 recommendation 항목에 `results: List[RecommendationResultSchema]` 필드 포함
   (`days_after`, `result_date`, `open/high/low/close/max_return`, `max_drawdown`,
   `result_status`).
+* 추천 실행 객체(`run`)에는 `telegram_sent`가 포함된다. DRY_RUN/FAILED/DISABLED는
+  실제 발송이 아니므로 `false`로 유지된다.
+* 각 recommendation 항목에는 component score 확인용 `technical_score`,
+  `news_score`, `supply_score`, `fundamental_score`, `ai_score`, `risk_score`가
+  문자열 Decimal로 포함된다.
+* 각 recommendation 항목에는 기존 `risk_summary`와 함께 대시보드 표시용
+  `risk_level`, `risk_flags` 평탄 필드도 포함된다.
 * `GET /api/reports/today` 응답의 `top_recommendations`도 동일 `results` 필드 노출.
 * `GET /api/recommendations/history` 응답의 각 항목에 `success_rate` (days_after=5
   finalized 행 기준 0~100 백분율) 및 `avg_close_return_1d/3d/5d/20d` 집계 필드 포함.

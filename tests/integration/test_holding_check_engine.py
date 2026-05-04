@@ -213,13 +213,13 @@ def test_engine_persists_check_snapshot_and_decision_log(session):
     assert check.avg_buy_price == Decimal("100.0000")
     assert check.return_rate == Decimal("10.0000")
     assert check.technical_score == Decimal("80.0000")
-    assert check.news_score is None
-    assert check.earnings_score is None
-    assert check.ai_score is None
+    assert check.news_score == Decimal("50.0000")
+    assert check.earnings_score == Decimal("50.0000")
+    assert check.ai_score == Decimal("55.0000")
     assert check.risk_score == Decimal("0.0000")
-    assert check.total_score == Decimal("28.0000")  # 80 * 0.35; no penalty -> final = 28
-    assert check.grade == "D"
-    assert check.decision == DECISION_SELL_REVIEW  # tech-only Phase setup -> low total
+    assert check.total_score == Decimal("56.2500")
+    assert check.grade == "B"
+    assert check.decision == "WATCH"
     assert check.alert is False
     assert check.snapshot_id is not None
 
@@ -231,6 +231,9 @@ def test_engine_persists_check_snapshot_and_decision_log(session):
     assert snapshot.market_context_json["check_date"] == "2026-05-04"
     assert snapshot.market_context_json["check_type"] == "PRE_MARKET"
     assert snapshot.market_context_json["phase"] == "5-3"
+    assert snapshot.market_context_json["component_score_metadata"]["producer"] == (
+        "DummyScoreProducer"
+    )
     assert snapshot.market_context_json["risk_summary"] == {
         "level": RISK_LEVEL_LOW,
         "flags": [],
@@ -242,13 +245,20 @@ def test_engine_persists_check_snapshot_and_decision_log(session):
     log = logs[0]
     assert log.decision_type == "HOLDING"
     assert log.input_snapshot_id == check.snapshot_id
-    assert log.final_decision == DECISION_SELL_REVIEW
+    assert log.final_decision == "WATCH"
     assert log.ai_result_json is None
     assert log.rule_result_json["return_rate"] == "10.0000"
     assert log.rule_result_json["current_price"] == "110.0000"
     assert log.rule_result_json["avg_buy_price"] == "100.0000"
     assert log.rule_result_json["weighted_components"]["technical"] == "28.0000"
-    assert log.rule_result_json["placeholder_components"] == ["news", "earnings", "ai"]
+    assert log.rule_result_json["weighted_components"]["news"] == "10.0000"
+    assert log.rule_result_json["weighted_components"]["earnings"] == "10.0000"
+    assert log.rule_result_json["weighted_components"]["ai"] == "8.2500"
+    assert log.rule_result_json["component_scores"] == {
+        "news": "50",
+        "earnings": "50",
+        "ai": "55",
+    }
     assert log.risk_result_json["alerts"] == []
     assert log.risk_result_json["risk_level"] == RISK_LEVEL_LOW
     assert log.risk_result_json["risk_penalty"] == "0.0000"
@@ -362,7 +372,7 @@ def test_alert_score_drop_when_total_score_falls_15_or_more_vs_previous(session)
     assert result.alert_count == 1
     log = DecisionLogRepository(session).list_by_symbol("005930")[0]  # newest first
     assert ALERT_SCORE_DROP in log.risk_result_json["alerts"]
-    assert log.risk_result_json["previous_total_score"] == "35.0000"
+    assert log.risk_result_json["previous_total_score"] == "63.2500"
 
 
 def test_alert_score_drop_does_not_fire_for_first_check(session):

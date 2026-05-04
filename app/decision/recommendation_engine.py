@@ -25,6 +25,10 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.analysis.score_producers import (
+    DummyScoreProducer,
+    RecommendationComponentScores,
+)
 from app.data.repositories.decision_logs import DecisionLogRepository
 from app.data.repositories.recommendations import (
     RecommendationRepository,
@@ -65,6 +69,7 @@ _DECISION_TYPE_RECOMMENDATION = "RECOMMENDATION"
 class _Candidate:
     stock: Stock
     indicator: StockIndicator
+    components: RecommendationComponentScores
     score: ScoreBreakdown
     risk: RiskAssessment
 
@@ -133,7 +138,6 @@ def _serialize_score_components(score: ScoreBreakdown) -> dict[str, Any]:
         "raw_total": str(score.raw_total),
         "total_score": str(score.total_score),
         "risk_penalty": str(score.risk_penalty),
-        "placeholder_components": ["news", "supply", "fundamental", "ai"],
     }
 
 
@@ -172,9 +176,11 @@ class RecommendationEngine:
         run_repository: RecommendationRunRepository,
         recommendation_repository: RecommendationRepository,
         decision_log_repository: DecisionLogRepository,
+        score_producer: DummyScoreProducer | None = None,
     ) -> None:
         self._scoring_engine = scoring_engine
         self._risk_engine = risk_engine
+        self._score_producer = score_producer or DummyScoreProducer()
         self._universe_repository = universe_repository
         self._member_repository = member_repository
         self._stock_repository = stock_repository
@@ -229,14 +235,28 @@ class RecommendationEngine:
                 ma_alignment=indicator.ma_alignment,
                 volume_ratio_20d=indicator.volume_ratio_20d,
             )
+            components = self._score_producer.score_recommendation(
+                stock=stock,
+                indicator=indicator,
+            )
             score = self._scoring_engine.score_new_recommendation(
                 NewRecommendationScoreInputs(
                     technical_score=indicator.technical_score,
+                    news_score=components.news_score,
+                    supply_score=components.supply_score,
+                    fundamental_score=components.fundamental_score,
+                    ai_score=components.ai_score,
                     risk_penalty=risk.risk_penalty,
                 ),
             )
             candidates.append(
-                _Candidate(stock=stock, indicator=indicator, score=score, risk=risk),
+                _Candidate(
+                    stock=stock,
+                    indicator=indicator,
+                    components=components,
+                    score=score,
+                    risk=risk,
+                ),
             )
 
         # Stable deterministic ordering: secondary asc by symbol, primary desc by score.
@@ -265,7 +285,8 @@ class RecommendationEngine:
             "skipped_no_indicator": skipped_no_indicator,
             "skipped_no_stock_master": skipped_no_stock,
             "phase": self.PHASE_TAG,
-            "placeholder_components": ["news", "supply", "fundamental", "ai"],
+            "score_components": ["news", "supply", "fundamental", "ai"],
+            "score_producer": "DummyScoreProducer",
         }
         self._run_repository.session.flush()
 
@@ -302,6 +323,7 @@ class RecommendationEngine:
                     "run_date": run_date.isoformat(),
                     "run_id": run.run_id,
                     "phase": self.PHASE_TAG,
+                    "component_score_metadata": candidate.components.metadata,
                     "risk_summary": _serialize_risk_summary(candidate.risk),
                 },
             ),
@@ -320,14 +342,14 @@ class RecommendationEngine:
                 grade=grade,
                 total_score=candidate.score.total_score,
                 technical_score=candidate.indicator.technical_score,
-                news_score=None,
-                supply_score=None,
-                fundamental_score=None,
-                ai_score=None,
+                news_score=candidate.components.news_score,
+                supply_score=candidate.components.supply_score,
+                fundamental_score=candidate.components.fundamental_score,
+                ai_score=candidate.components.ai_score,
                 risk_score=candidate.risk.risk_penalty,
                 reason=reason,
                 risk_note=(
-                    "Phase 5-3: 뉴스/수급/실적/AI 점수 미적용; "
+                    "Phase 5-3: dummy/rule-based component scores; "
                     f"risk_level={candidate.risk.risk_level}"
                 ),
                 watch_condition=None,
@@ -341,7 +363,16 @@ class RecommendationEngine:
                 decision_type=_DECISION_TYPE_RECOMMENDATION,
                 symbol=candidate.stock.symbol,
                 input_snapshot_id=snapshot.snapshot_id,
-                rule_result_json=_serialize_score_components(candidate.score),
+                rule_result_json={
+                    **_serialize_score_components(candidate.score),
+                    "component_scores": {
+                        "news": str(candidate.components.news_score),
+                        "supply": str(candidate.components.supply_score),
+                        "fundamental": str(candidate.components.fundamental_score),
+                        "ai": str(candidate.components.ai_score),
+                    },
+                    "score_producer": candidate.components.metadata,
+                },
                 ai_result_json=None,
                 risk_result_json=_serialize_risk_details(candidate.risk),
                 final_decision=f"WATCH_CANDIDATE_RANK_{rank}",

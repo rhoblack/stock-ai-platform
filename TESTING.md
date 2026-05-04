@@ -60,6 +60,12 @@ tests/
 - risk_penalty 반영
 - AI 점수 비중 제한
 
+### DummyScoreProducer
+
+- 뉴스/수급/재무/실적/AI placeholder 기본 50점
+- 사용 가능한 지표 기반 rule 보정
+- 외부 뉴스/API/LLM 호출 없음
+
 ### RecommendationEngine
 
 - 시총 TOP 500 필터링
@@ -186,6 +192,14 @@ Phase 4-2 `ScoringEngine` 단위 테스트는 순수 계산 검증이며 외부 
 - `ScoreBreakdown` 컴포넌트 합계 - penalty == raw_total 일치
 - 추천 후보 선정/보유 판단/텔레그램/AI 호출 없음
 
+`DummyScoreProducer` 단위 테스트는 실제 뉴스/재무/AI 파이프라인이 없는 v0.1에서
+중립 component score를 안정적으로 제공하는지 검증한다.
+
+- recommendation: news/supply/fundamental/ai 기본 50점
+- holding: news/earnings/ai 기본 50점
+- `volume_ratio_20d`, `ma_alignment`가 있으면 보수적 rule 보정
+- KIS/뉴스/텔레그램/AI 호출 없음
+
 Phase 5-1 `RecommendationEngine` 통합 테스트는 SQLite in-memory DB와 Repository 9종을
 연결해 추천 흐름 전체를 검증한다.
 
@@ -194,8 +208,9 @@ Phase 5-1 `RecommendationEngine` 통합 테스트는 SQLite in-memory DB와 Repo
 - TOP N 정렬 (`total_score desc`, 동점 시 `symbol asc`)
 - `recommendation_runs` `started_at`/`finished_at`/`status`/`market_summary` 기록
 - `recommendations` 행이 `data_snapshots`와 `decision_logs`에 같은 `snapshot_id`로 연결
-- `news_score`/`supply_score`/`fundamental_score`/`ai_score`/`risk_score` 모두 None
-- `reason` = "관찰 후보 …" / `risk_note` = "Phase 5-1 placeholder"
+- `news_score`/`supply_score`/`fundamental_score`/`ai_score`가 dummy/rule 기반으로 저장
+- `risk_score`는 `RiskEngine` penalty로 저장
+- `reason` = "관찰 후보 …" / `risk_note` = dummy score producer + risk level
 - `decision_logs.final_decision` = `"WATCH_CANDIDATE_RANK_{n}"`
 - 등급 `_grade_for_score` 임계값 (S≥85, A≥70, B≥55, C≥40, D<40)
 - 같은 날짜에 두 번 호출하면 별도 run_id 생성
@@ -266,9 +281,11 @@ Phase 8 follow-up `Dispatcher` 통합 테스트는 ORM → `ReportGenerator` →
   - SUCCESS 경로 (`httpx.MockTransport`): `notification_logs.sent_at` 채워짐
   
 - `HoldingRiskAlertDispatcher`:
-  - `holding_checks` 중 `alert=True` 인 항목에 대해 `risk_alert` 포맷터로 알림 생성
+  - `holding_checks` 중 `alert=True` 또는 `risk_level=HIGH` 인 항목에 대해
+    `risk_alert` 포맷터로 알림 생성
   - `notification_logs.message_type = "ALERT"` 로 저장
-  - 동일한 `symbol + check_date + check_type` 대상은 재실행 시 중복 발송 방지 (Skip)
+  - 동일한 `symbol + check_date + check_type + alert_type` 대상은 재실행 시
+    중복 발송 방지 (Skip)
   - DRY_RUN: `settings.telegram_enabled=False`일 경우 HTTP 호출 없이 DB에만 로깅됨
   - `related_job_id` 연결 확인
 
@@ -348,8 +365,9 @@ upsert + `data_snapshots`/`decision_logs` 기록 경로를 검증한다.
 - 비활성 holding (`is_active=False`)는 분석 대상 제외
 - 정상 경로: `holding_checks` 한 행 + `data_snapshots`(`HOLDING_CHECK`) +
   `decision_logs`(`HOLDING`) 가 동일 `snapshot_id`로 연결
-- `news_score`/`earnings_score`/`ai_score`/`risk_score` 모두 None,
-  `decision_logs.ai_result_json` = None, `placeholder_components` 명시
+- `news_score`/`earnings_score`/`ai_score`가 dummy/rule 기반으로 저장
+- `risk_score`는 `RiskEngine` penalty로 저장,
+  `decision_logs.ai_result_json` = None, component score metadata 기록
 - 같은 (date, type, symbol) 재실행 시 행이 1개로 유지 (upsert)
 - 같은 날 PRE_MARKET / POST_MARKET 두 번 실행 시 별도 행 2개
 - 위험 경고:

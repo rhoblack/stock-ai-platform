@@ -280,6 +280,10 @@ def _seed_full_dataset(session) -> dict:
             grade="A",
             total_score=Decimal("82"),
             technical_score=Decimal("82"),
+            news_score=Decimal("50"),
+            supply_score=Decimal("55"),
+            fundamental_score=Decimal("50"),
+            ai_score=Decimal("55"),
             risk_score=Decimal("0.0000"),
             reason="관찰 후보 · 기술점수 82",
             risk_note="Phase 5-3 placeholder",
@@ -404,7 +408,14 @@ def test_recommendations_latest_returns_run_with_recommendations(client, session
     assert rec["symbol"] == "005930"
     assert rec["grade"] == "A"
     assert rec["total_score"] == "82.0000"
+    assert rec["technical_score"] == "82.0000"
+    assert rec["news_score"] == "50.0000"
+    assert rec["supply_score"] == "55.0000"
+    assert rec["fundamental_score"] == "50.0000"
+    assert rec["ai_score"] == "55.0000"
     assert rec["risk_score"] == "0.0000"
+    assert rec["risk_level"] == "LOW"
+    assert rec["risk_flags"] == []
     assert rec["risk_summary"]["level"] == "LOW"
     assert rec["risk_summary"]["penalty"] == "0.0000"
 
@@ -454,7 +465,15 @@ def test_recommendations_run_detail_for_known_id(client, session):
     assert response.status_code == 200
     body = response.json()
     assert body["run"]["run_id"] == seeded["run"].run_id
-    assert body["recommendations"][0]["risk_summary"]["level"] == "LOW"
+    assert body["run"]["telegram_sent"] is False
+    rec = body["recommendations"][0]
+    assert rec["risk_level"] == "LOW"
+    assert rec["risk_flags"] == []
+    assert rec["risk_summary"]["level"] == "LOW"
+    assert rec["news_score"] == "50.0000"
+    assert rec["supply_score"] == "55.0000"
+    assert rec["fundamental_score"] == "50.0000"
+    assert rec["ai_score"] == "55.0000"
 
 
 def test_recommendations_run_detail_includes_result_rows(client, session):

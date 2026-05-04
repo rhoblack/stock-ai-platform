@@ -1,32 +1,55 @@
-version: "3.8"
-
 services:
   db:
     image: postgres:15-alpine
     container_name: stock_ai_db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: stock_user
-      POSTGRES_PASSWORD: stock_password
-      POSTGRES_DB: stock_db
+      POSTGRES_USER: ${POSTGRES_USER:-stock_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stock_password}
+      POSTGRES_DB: ${POSTGRES_DB:-stock_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stock_user} -d ${POSTGRES_DB:-stock_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: .
     container_name: stock_ai_backend
+    restart: unless-stopped
     volumes:
       - .:/app
+      - ./logs:/app/logs
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+psycopg2://stock_user:stock_password@db:5432/stock_db
-      - SCHEDULER_ENABLED=false
-    env_file:
-      - .env
+      APP_ENV: ${APP_ENV:-docker}
+      APP_NAME: ${APP_NAME:-stock_ai_platform}
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_DIR: ${LOG_DIR:-/app/logs}
+      LOG_TO_FILE: ${LOG_TO_FILE:-false}
+      TIMEZONE: ${TIMEZONE:-Asia/Seoul}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-stock_user}:${POSTGRES_PASSWORD:-stock_password}@db:5432/${POSTGRES_DB:-stock_db}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-false}
+      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
+      KIS_USE_PAPER: ${KIS_USE_PAPER:-true}
+      KIS_APP_KEY: ${KIS_APP_KEY:-mock_app_key_here}
+      KIS_APP_SECRET: ${KIS_APP_SECRET:-mock_app_secret_here}
+      KIS_ACCOUNT_NO: ${KIS_ACCOUNT_NO:-12345678-01}
+      FEATURE_REAL_ORDER_EXECUTION: ${FEATURE_REAL_ORDER_EXECUTION:-false}
+      FEATURE_FULL_AUTO: ${FEATURE_FULL_AUTO:-false}
+      FEATURE_PAPER_TRADING: ${FEATURE_PAPER_TRADING:-false}
+      FEATURE_BACKTEST: ${FEATURE_BACKTEST:-false}
+      FEATURE_CUSTOM_AI_TRAINING: ${FEATURE_CUSTOM_AI_TRAINING:-false}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
