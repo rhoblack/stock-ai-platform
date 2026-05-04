@@ -116,9 +116,14 @@ def _recommendation_to_schema(
     rec: Recommendation,
     snapshot: Optional[DataSnapshot],
     results: list[RecommendationResult],
+    run: Optional[RecommendationRun] = None,
 ) -> RecommendationItemSchema:
     risk_summary = _risk_summary_from_snapshot(snapshot)
     return RecommendationItemSchema(
+        recommendation_id=rec.id,
+        run_id=rec.run_id,
+        run_date=run.run_date if run is not None else None,
+        telegram_sent=run.telegram_sent if run is not None else None,
         rank=rec.rank,
         market=rec.market,
         symbol=rec.symbol,
@@ -145,6 +150,7 @@ def _holding_check_to_schema(
     check,
     snapshot: Optional[DataSnapshot],
 ) -> HoldingCheckSchema:
+    risk_summary = _risk_summary_from_snapshot(snapshot)
     return HoldingCheckSchema(
         id=check.id,
         check_date=check.check_date,
@@ -164,7 +170,9 @@ def _holding_check_to_schema(
         reason=check.reason,
         alert=check.alert,
         snapshot_id=check.snapshot_id,
-        risk_summary=_risk_summary_from_snapshot(snapshot),
+        risk_level=risk_summary.level if risk_summary is not None else None,
+        risk_flags=risk_summary.flags if risk_summary is not None else [],
+        risk_summary=risk_summary,
     )
 
 
@@ -172,6 +180,7 @@ def _resolve_recommendation_items(
     recommendations: list[Recommendation],
     snapshot_repo: DataSnapshotRepository,
     result_repo: RecommendationResultRepository,
+    run: Optional[RecommendationRun] = None,
 ) -> list[RecommendationItemSchema]:
     items: list[RecommendationItemSchema] = []
     for rec in recommendations:
@@ -179,7 +188,33 @@ def _resolve_recommendation_items(
             snapshot_repo.get(rec.snapshot_id) if rec.snapshot_id is not None else None
         )
         results = result_repo.list_by_recommendation_id(rec.id)
-        items.append(_recommendation_to_schema(rec, snapshot, results))
+        items.append(_recommendation_to_schema(rec, snapshot, results, run))
+    return items
+
+
+def _resolve_recent_recommendations_for_symbol(
+    *,
+    session: Session,
+    symbol: str,
+    snapshot_repo: DataSnapshotRepository,
+    result_repo: RecommendationResultRepository,
+    limit: int,
+) -> list[RecommendationItemSchema]:
+    statement = (
+        select(Recommendation, RecommendationRun)
+        .join(RecommendationRun, Recommendation.run_id == RecommendationRun.run_id)
+        .where(Recommendation.symbol == symbol)
+        .order_by(desc(RecommendationRun.run_date), desc(RecommendationRun.run_id), Recommendation.rank)
+        .limit(limit)
+    )
+    rows = list(session.execute(statement).all())
+    items: list[RecommendationItemSchema] = []
+    for rec, run in rows:
+        snapshot = (
+            snapshot_repo.get(rec.snapshot_id) if rec.snapshot_id is not None else None
+        )
+        results = result_repo.list_by_recommendation_id(rec.id)
+        items.append(_recommendation_to_schema(rec, snapshot, results, run))
     return items
 
 
@@ -273,7 +308,12 @@ def get_today_report(session: Session = Depends(get_session)) -> TodayReportResp
     top_recs: list[RecommendationItemSchema] = []
     if latest_run is not None:
         recs = RecommendationRepository(session).list_by_run_id(latest_run.run_id)
-        top_recs = _resolve_recommendation_items(recs[:5], snapshot_repo, result_repo)
+        top_recs = _resolve_recommendation_items(
+            recs[:5],
+            snapshot_repo,
+            result_repo,
+            latest_run,
+        )
 
     alerts = HoldingCheckRepository(session).list_recent_alerts(limit=10)
     alert_items = _resolve_holding_checks(alerts, snapshot_repo)
@@ -311,7 +351,7 @@ def get_latest_recommendation_run(
     return RecommendationRunDetailResponse(
         run=RecommendationRunSchema.from_orm(latest_run),
         recommendations=_resolve_recommendation_items(
-            recs, snapshot_repo, result_repo,
+            recs, snapshot_repo, result_repo, latest_run,
         ),
     )
 
@@ -369,7 +409,7 @@ def get_recommendation_run(
     return RecommendationRunDetailResponse(
         run=RecommendationRunSchema.from_orm(run),
         recommendations=_resolve_recommendation_items(
-            recs, snapshot_repo, result_repo,
+            recs, snapshot_repo, result_repo, run,
         ),
     )
 
@@ -424,6 +464,8 @@ def get_holding_checks_for_symbol(
 )
 def get_stock_detail(
     symbol: str,
+    recommendation_limit: int = Query(10, ge=0, le=100),
+    holding_check_limit: int = Query(20, ge=0, le=200),
     session: Session = Depends(get_session),
 ) -> StockDetailResponse:
     stock = StockRepository(session).get_by_symbol(symbol)
@@ -431,6 +473,19 @@ def get_stock_detail(
         raise HTTPException(status_code=404, detail=f"symbol {symbol} not found")
     latest_price = DailyPriceRepository(session).get_latest_by_symbol(symbol)
     latest_indicator = StockIndicatorRepository(session).get_latest_by_symbol(symbol)
+    snapshot_repo = DataSnapshotRepository(session)
+    result_repo = RecommendationResultRepository(session)
+    recent_recommendations = _resolve_recent_recommendations_for_symbol(
+        session=session,
+        symbol=symbol,
+        snapshot_repo=snapshot_repo,
+        result_repo=result_repo,
+        limit=recommendation_limit,
+    )
+    recent_holding_checks = _resolve_holding_checks(
+        HoldingCheckRepository(session).list_by_symbol(symbol)[:holding_check_limit],
+        snapshot_repo,
+    )
     return StockDetailResponse(
         stock=StockBriefSchema.from_orm(stock),
         latest_price=(
@@ -443,6 +498,8 @@ def get_stock_detail(
             if latest_indicator is not None
             else None
         ),
+        recent_recommendations=recent_recommendations,
+        recent_holding_checks=recent_holding_checks,
     )
 
 

@@ -688,7 +688,7 @@ def test_holdings_checks_for_unknown_symbol_returns_empty(client):
 # ---------- /api/stocks/{symbol} ----------
 
 def test_stock_detail_returns_stock_with_latest_price_and_indicator(client, session):
-    _seed_full_dataset(session)
+    seeded = _seed_full_dataset(session)
     response = client.get("/api/stocks/005930")
     assert response.status_code == 200
     body = response.json()
@@ -697,6 +697,31 @@ def test_stock_detail_returns_stock_with_latest_price_and_indicator(client, sess
     assert body["latest_price"]["close"] == "70500.0000"
     assert body["latest_indicator"]["technical_score"] == "82.0000"
     assert body["latest_indicator"]["ma_alignment"] == "PERFECT_BULL"
+
+    assert len(body["recent_recommendations"]) == 1
+    rec = body["recent_recommendations"][0]
+    assert rec["recommendation_id"] == seeded["recommendation"].id
+    assert rec["run_id"] == seeded["run"].run_id
+    assert rec["run_date"] == "2026-05-04"
+    assert rec["telegram_sent"] is False
+    assert rec["symbol"] == "005930"
+    assert rec["news_score"] == "50.0000"
+    assert rec["supply_score"] == "55.0000"
+    assert rec["fundamental_score"] == "50.0000"
+    assert rec["ai_score"] == "55.0000"
+    assert rec["risk_level"] == "LOW"
+    assert rec["risk_flags"] == []
+    assert {r["days_after"] for r in rec["results"]} == {1, 3, 5, 20}
+    assert rec["results"][2]["result_status"] == "SUCCESS"
+
+    assert len(body["recent_holding_checks"]) == 1
+    check = body["recent_holding_checks"][0]
+    assert check["symbol"] == "005930"
+    assert check["decision"] == "SELL_REVIEW"
+    assert check["alert"] is True
+    assert check["risk_level"] == "HIGH"
+    assert set(check["risk_flags"]) == {"MA20_BREAKDOWN", "STOP_LOSS_NEAR"}
+    assert check["risk_summary"]["penalty"] == "23.0000"
 
 
 def test_stock_detail_404_for_unknown_symbol(client):
@@ -712,6 +737,19 @@ def test_stock_detail_returns_null_price_when_only_stock_seeded(client, session)
     body = response.json()
     assert body["latest_price"] is None
     assert body["latest_indicator"] is None
+    assert body["recent_recommendations"] == []
+    assert body["recent_holding_checks"] == []
+
+
+def test_stock_detail_respects_history_limits(client, session):
+    _seed_full_dataset(session)
+    response = client.get(
+        "/api/stocks/005930?recommendation_limit=0&holding_check_limit=0",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recent_recommendations"] == []
+    assert body["recent_holding_checks"] == []
 
 
 # ---------- /api/universe/market-cap-top ----------

@@ -113,7 +113,23 @@ Query:
 
 ### GET /api/stocks/{symbol}
 
-종목 기본정보, 최신 가격, 지표, 뉴스, 추천 이력을 조회한다.
+종목 상세 화면용 데이터를 조회한다.
+
+응답에는 다음 필드가 포함된다:
+
+* `stock`: 종목 기본정보
+* `latest_price`: 최신 일봉 가격 (`daily_prices`)
+* `latest_indicator`: 최신 기술 지표 (`stock_indicators`)
+* `recent_recommendations`: 최근 추천 이력. 각 항목은 `run_id`, `run_date`,
+  `telegram_sent`, component score, `risk_level`, `risk_flags`, `risk_summary`,
+  `results[]` 추천 성과를 포함한다.
+* `recent_holding_checks`: 최근 보유 점검 이력. 각 항목은 `decision`, `alert`,
+  `risk_level`, `risk_flags`, `risk_summary`를 포함한다.
+
+Query:
+
+- `recommendation_limit`: default 10, max 100
+- `holding_check_limit`: default 20, max 200
 
 ## 9. 시가총액 TOP 500
 

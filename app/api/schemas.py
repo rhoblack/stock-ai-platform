@@ -81,6 +81,10 @@ class RecommendationResultSchema(_BaseSchema):
 
 
 class RecommendationItemSchema(_BaseSchema):
+    recommendation_id: Optional[int] = None
+    run_id: Optional[int] = None
+    run_date: Optional[date_type] = None
+    telegram_sent: Optional[bool] = None
     rank: int
     market: str
     symbol: str
@@ -168,6 +172,8 @@ class HoldingCheckSchema(_BaseSchema):
     reason: Optional[str]
     alert: bool
     snapshot_id: Optional[int]
+    risk_level: Optional[str] = None
+    risk_flags: List[str] = []
     risk_summary: Optional[RiskSummarySchema] = None
 
 
@@ -179,6 +185,8 @@ class StockDetailResponse(_BaseSchema):
     stock: StockBriefSchema
     latest_price: Optional[DailyPriceSchema] = None
     latest_indicator: Optional[StockIndicatorSchema] = None
+    recent_recommendations: List[RecommendationItemSchema] = []
+    recent_holding_checks: List[HoldingCheckSchema] = []
 
 
 class MarketCapRankingSchema(_BaseSchema):
