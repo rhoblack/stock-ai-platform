@@ -63,6 +63,11 @@ class KisClient(DataProviderInterface):
     TR_ID_DAILY_PRICE = "FHKST03010100"
     TR_ID_MARKET_CAP_RANKING = "FHPST01740000"
 
+    # KIS 시총 상위 화면(screen) 카테고리 코드. KIS 모의투자 서버는 이
+    # 파라미터를 강제하므로 누락 시 OPSQ2001 ERROR INPUT FIELD NOT FOUND
+    # 응답이 돌아온다.
+    MARKET_CAP_SCREEN_DIV_CODE = "20174"
+
     def __init__(
         self,
         settings: Settings | None = None,
@@ -175,6 +180,7 @@ class KisClient(DataProviderInterface):
             self.MARKET_CAP_RANKING_PATH,
             params={
                 "FID_COND_MRKT_DIV_CODE": self._market_division_code(market),
+                "FID_COND_SCR_DIV_CODE": self.MARKET_CAP_SCREEN_DIV_CODE,
                 "FID_INPUT_ISCD": "0000",
                 "FID_DIV_CLS_CODE": "0",
                 "FID_BLNG_CLS_CODE": "0",

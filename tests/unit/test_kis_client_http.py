@@ -107,6 +107,7 @@ def test_fetch_market_cap_rankings_uses_mock_http_response_and_limit():
     def handler(request: httpx.Request) -> httpx.Response:
         seen["path"] = request.url.path
         seen["market"] = request.url.params["FID_COND_MRKT_DIV_CODE"]
+        seen["screen_div"] = request.url.params["FID_COND_SCR_DIV_CODE"]
         seen["tr_id"] = request.headers["tr_id"]
         return httpx.Response(200, json=MARKET_CAP_RANKING_RESPONSE)
 
@@ -115,9 +116,12 @@ def test_fetch_market_cap_rankings_uses_mock_http_response_and_limit():
     result = client.fetch_market_cap_rankings("KOSPI", date(2026, 5, 4), limit=1)
 
     assert result == MARKET_CAP_RANKING_RESPONSE["output"][:1]
+    # FID_COND_SCR_DIV_CODE="20174" 가 누락되면 KIS paper 서버는 OPSQ2001
+    # ERROR INPUT FIELD NOT FOUND 로 거절한다 (실 KIS 서버 검증 결과).
     assert seen == {
         "path": "/uapi/domestic-stock/v1/ranking/market-cap",
         "market": "J",
+        "screen_div": "20174",
         "tr_id": "FHPST01740000",
     }
 
