@@ -79,62 +79,90 @@ v0.1은 다음 기능을 구현하는 안정적인 분석/리포트 시스템입
 9. FastAPI 대시보드 API
 10. 테스트와 문서화
 
-## 6. 현재 구현 상태
+## 6. v0.1 백엔드 완료 상태
 
-Phase 1~3까지 진행되어 데이터 수집·정규화·검증·저장 흐름이 갖춰졌습니다.
+**v0.1 백엔드 마감 (tag `v0.1-backend-accepted`).** Phase 0~9 모두 완료, 통합
+시나리오 1회 수행 검증 완료. 전체 회귀 테스트: **296 passed**.
 
-- `app/main.py`: FastAPI 최소 앱과 `/health` 엔드포인트
-- `app/config/`: 환경 설정과 logging 기본 구조
-- `app/data/interfaces.py`: `DataProviderInterface`
-- `app/ai/`: AI 보조 계층 경계와 `AIProviderInterface`
-- `app/broker/`: 미래 확장용 `BrokerInterface` placeholder
-- `app/decision/`: 미래 전략 확장용 `StrategyInterface` placeholder
-- `app/db/`: SQLAlchemy 2.0 Base/Session, v0.1 필수 17개 테이블 ORM 모델
-- `app/data/repositories/`: 테이블별 Repository (Stock/Daily/Indicator/Universe/Recommendation/Snapshot/DecisionLog 등)
-- `app/data/collectors/kis_client.py`: httpx 기반 `KisClient` (토큰 발급, 현재가, 일봉, 시총 상위)
-- `app/data/normalizers/kis.py`: KIS 응답 → DTO 변환
-- `app/data/validators/quality.py`: `DataQualityChecker`
-- `app/data/collectors/daily_price_collector.py`: KIS 일봉 raw → normalize → 품질 검사 → `daily_prices` upsert
-- `app/data/collectors/market_cap_ranking_collector.py`: KIS 시총 raw → normalize → `market_cap_rankings` 스냅샷 교체 + `stocks`/`stock_universes`/`stock_universe_members` 동기화
-- `app/analysis/technical_analyzer.py`: 일봉 DTO 시퀀스 → MA5/20/60/120, RSI14, MACD, volume_ratio_20d, breakout_20d/60d, ma_alignment, technical_score 산출 (`IndicatorSnapshot` 반환)
-- `app/analysis/indicator_service.py`: `daily_prices` 조회 → `TechnicalAnalyzer` 실행 → `stock_indicators` upsert (단일/다중 종목)
-- `app/decision/scoring_engine.py`: 신규 추천/보유 점수 산식 (`technical/news/supply/fundamental/ai`, `technical/news/earnings/ai/profit_management`), `risk_penalty` 반영, 0~100 clamp, `ScoreBreakdown` 반환
-- `app/decision/recommendation_engine.py`: MARKET_CAP_TOP_500 유니버스 → 종목별 최신 `stock_indicators` → `ScoringEngine` → TOP N 관찰 후보 생성. `recommendation_runs`/`recommendations`/`data_snapshots`/`decision_logs`까지 일괄 저장. 뉴스/수급/실적/AI 점수는 Phase 5-1에서 placeholder
-- `app/decision/holding_check_engine.py`: 활성 `holdings` → 최신 `daily_prices` + 최신 `stock_indicators` → `ScoringEngine.score_holding` → `holding_checks` upsert + `data_snapshots`/`decision_logs` 기록. PRE_MARKET / POST_MARKET 지원, 위험 경고 (점수 15점 이상 하락 / 20일선 이탈 / 손절 근접) 평가
-- `app/decision/risk_engine.py`: 추천/보유 결과의 점수·경고·가격 위치를 바탕으로 risk_penalty + risk_level(LOW/MEDIUM/HIGH) + risk_flags 산출. ScoringEngine과 양 Engine에 연결
-- `app/notification/report_generator.py`: 추천 리포트 / 장전·장후 보유 점검 리포트 / 위험 경고 텍스트 포맷터. HIGH risk_level 보유는 보고서 상단 우선 노출
-- `app/notification/telegram_notifier.py`: Telegram BOT API 클라이언트. `TELEGRAM_ENABLED=false`면 dry-run, 자격증명 누락 시 DISABLED, 실패 시 FAILED 결과 반환 (실제 발송은 `httpx.Client` 주입으로 mock 가능)
-- `app/notification/notification_service.py`: notifier + `notification_logs` 저장 글루
-- `app/api/`: 13개 read-only GET 라우터 (`/api/reports/today`, `/api/recommendations/*`, `/api/holdings/*`, `/api/stocks/{symbol}`, `/api/universe/market-cap-top`, `/api/market-regime/latest`, `/api/news`, `/api/jobs`, `/api/settings`). risk_summary / decision / alert를 응답에 포함. `/api/settings`는 토큰·키·계좌번호를 마스킹
-- `app/scheduler/jobs.py`: `run_job` 래퍼(2-session 패턴, `session.info["job_run_id"]`로 `notification_logs.related_job_id` 자동 연결) + 6개 v0.1 잡 함수
-- `app/scheduler/scheduler.py`: APScheduler `BackgroundScheduler` 빌드 (Asia/Seoul 기본, cron 트리거, misfire 5분 허용, coalesce). FastAPI lifespan에서 `SCHEDULER_ENABLED=true`일 때 lazy import로 시작/종료
-- `collect_market_close_data` 잡: `MarketCapRankingCollector` + `DailyPriceCollector` 배선 완료 (테스트는 fake provider 사용). `COLLECT_MARKET`, `MARKET_CAP_LIMIT`, `MARKET_CAP_UNIVERSE_NAME`, `DAILY_PRICE_LOOKBACK_DAYS`, `DAILY_PRICE_BATCH_SIZE`로 수집 범위 조정
-- `calculate_technical_indicators` 잡: 설정된 universe의 멤버를 배치 단위로 읽고 `TechnicalIndicatorService`를 호출해 `stock_indicators` upsert. `INDICATOR_UNIVERSE_NAME`, `INDICATOR_LOOKBACK_DAYS`, `INDICATOR_BATCH_SIZE`로 계산 범위 조정
-- `app/notification/dispatchers.py`: `RecommendationReportDispatcher` / `HoldingCheckReportDispatcher`. ORM 행 → `ReportGenerator` → `NotificationService` 흐름. `recommendation_runs.telegram_sent`는 실제 발송(`SUCCESS`)일 때만 True로 갱신, DRY_RUN/FAILED는 그대로 False
-- `send_recommendation_report` / `run_pre_market_holding_check` / `run_post_market_holding_check` 잡: dispatcher와 연결되어 각 실행마다 `notification_logs` 행 생성 (DRY_RUN이 기본). job 결과 summary에 `notification_status`/`telegram_sent`/`notification_log_id`/`message_length` 노출
-- `app/decision/recommendation_result_service.py`: 추천일 종가 기준 1/3/5/20일 후 open/high/low/close/max return + max_drawdown + result_status 산출. (recommendation_id, days_after) upsert로 멱등 재실행. SUCCESS(고가≥+3% 또는 종가≥+1%) / FAILED(저가≤-5%, 우선순위) / PENDING(데이터 부족 또는 신호 없음)
-- `update_recommendation_results` 잡 (17:00): 위 서비스에 연결되어 `lookback_days=60` 범위의 모든 추천에 대해 결과 행을 upsert
-- `tests/`: Phase 1~8 + dispatcher + result service 단위/통합 테스트, mock KIS 응답, mock Telegram transport, FastAPI TestClient 기반 API 테스트, `BackgroundScheduler.start` 없는 잡 함수 단위 테스트
+| 영역 | 상태 |
+|---|---|
+| DB 모델 / Repository | 17개 테이블 ORM, 16개 Repository |
+| KIS 데이터 수집 | `KisClient` + 정규화 / 품질 검사 / `DailyPriceCollector` / `MarketCapRankingCollector` (mock-injectable) |
+| 분석 / 점수 | `TechnicalAnalyzer` (MA/RSI/MACD/breakout/ma_alignment), `ScoringEngine`, `RiskEngine`, `DummyScoreProducer` (News/Supply/Fundamental/Earnings/AI placeholder) |
+| 추천 / 보유 점검 | `RecommendationEngine`, `HoldingCheckEngine` (PRE/POST), `RecommendationResultService` (1/3/5/20일 성과) |
+| 알림 / 리포트 | `ReportGenerator` + `TelegramNotifier` (DRY_RUN 기본) + `NotificationService` + 3개 dispatcher (REPORT / ALERT) |
+| Backend API | 13개 read-only GET, `/api/holdings/{symbol}/checks` summary metric 포함, `/api/jobs` 진단 |
+| Scheduler | APScheduler + `run_job` 래퍼 + 6개 잡 (NO_DATA / PARTIAL 분기, dispatcher 연동, `notification_logs.related_job_id` 자동 연결) |
+| 통합 검증 | `scripts/seed_mock_data.py` (멱등) + `INTEGRATION_RUNBOOK.md` (6잡 + 13API + 로그 검증), 1회 수행 결과는 `PROJECT_STATUS.md` §2 |
 
-아직 구현하지 않은 범위:
+세부 산출물 / 테스트 카운트 / 변경 이력은 [`PROJECT_STATUS.md`](./PROJECT_STATUS.md)
+와 [`TASKS.md`](./TASKS.md) 참고.
 
-- 뉴스/수급/실적/AI 점수 producer (Phase 6+ rule/dummy)
-- 캔들 패턴 / ATR 변동성 점수 보강 (Phase 4 후속)
-- 단일 종목 위험 발생 시 즉시 ALERT dispatch (`alert=True` 또는 `risk_level=HIGH`, DRY_RUN 기본)
-- `recommendation_results` 결과를 대시보드 API에 노출 (현재 DB에는 저장되지만 라우터 미연결)
-- 텔레그램 발송 (Phase 6)
-- FastAPI 대시보드 라우터 (Phase 7)
-- 스케줄러 작업 (Phase 8)
-- 주문 실행 또는 자동매매 기능 (v1.0+)
+**v0.1 제외 범위 재확인 (코드 미존재 또는 placeholder만 유지):**
 
-## 7. 로컬 실행
+- 실거래 자동매매, FULL_AUTO 모드, 가상 증권사 서버, 실제 KIS 주문 API 실행
+  (`BrokerInterface`는 placeholder만 유지)
+- 전략 자동 튜닝, 전용 AI 모델 학습, 백테스트 엔진
+- React / Next.js PC 대시보드 프론트엔드
 
-현재 프로젝트는 `pyproject.toml`로 Python 의존성을 관리합니다.
+**v0.2 Backlog로 이동된 항목:**
+
+- 캔들 패턴 (망치형/장악형 등) + ATR 변동성 컴포넌트 → `technical_score` 산식 보강
+- 실 News / Supply / Fundamental / Earnings 파이프라인 (현 v0.1은 `DummyScoreProducer`)
+- Strategy / Backtest / MockBroker / APPROVAL·SMALL_AUTO 모드
+
+## 7. 실행 순서 (권장)
+
+v0.1 인수자 / 새 세션 / QA 가 한 번에 따라가야 할 표준 순서. 각 단계는
+모두 dry-run / mock-only — 실 KIS 호출, 실 텔레그램 발송, 자동매매 코드는
+이 순서 안에서 절대 동작하지 않는다.
+
+| 단계 | 명령 | 출력 / 검증 |
+|---|---|---|
+| 7.1 의존성 | `.\.venv\bin\python.exe -m pip install -e ".[dev]"` | 정상 설치 |
+| 7.2 Docker (권장) 또는 로컬 uvicorn | §8 또는 §9 | `/health` 200 |
+| 7.3 Mock seed | `.\.venv\bin\python.exe -m scripts.seed_mock_data --reset` | stocks 5 / daily_prices 150 등 (§10) |
+| 7.4 통합 시나리오 (6잡 + 13API) | [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) §3 ~ §5 그대로 따라감 | 모든 잡 SUCCESS, 13/13 API 200, notification_logs DRY_RUN |
+| 7.5 회귀 게이트 | `.\.venv\bin\python.exe -m pytest -q` | 296 passed |
+| 7.6 (운영 전) 실 KIS 키 사전 검증 | [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) | 체크리스트 항목별 통과 — 코드 변경 없음 |
+
+## 8. Docker 로컬 실행
+
+Docker Compose는 v0.1 로컬 검증용으로 PostgreSQL과 FastAPI backend를 함께 실행한다.
+기본 설정은 안전하게 `SCHEDULER_ENABLED=false`, `TELEGRAM_ENABLED=false`,
+`FEATURE_REAL_ORDER_EXECUTION=false`, `FEATURE_FULL_AUTO=false`로 고정되어 실제 KIS 주문,
+자동매매, 텔레그램 발송을 하지 않는다.
+
+```powershell
+docker compose up --build
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+Compose 기본 DB URL:
+
+```text
+postgresql+psycopg2://stock_user:stock_password@db:5432/stock_db
+```
+
+종료 / 볼륨 정리:
+
+```powershell
+docker compose down       # 컨테이너만 종료
+docker compose down -v    # DB 볼륨까지 삭제 (필요 시에만)
+```
+
+로그 파일을 남기고 싶으면 `.env` 또는 Compose 환경변수에서 `LOG_TO_FILE=true`로 설정한다.
+로그 디렉터리는 기본적으로 `logs/`이며, Git에는 `.gitkeep`만 유지된다.
+
+## 9. 로컬 uvicorn 실행 (대안)
+
+Docker 를 쓰지 않을 때.
 
 ```powershell
 C:\msys64\ucrt64\bin\python.exe -m venv .venv
 .\.venv\bin\python.exe -m pip install -e ".[dev]"
 .\.venv\bin\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
 MSYS2 Python에서 `greenlet` 빌드 오류로 SQLAlchemy 설치가 실패하면 현재 동기식 DB
@@ -146,51 +174,7 @@ MSYS2 Python에서 `greenlet` 빌드 오류로 SQLAlchemy 설치가 실패하면
 .\.venv\bin\python.exe -m pip install -e . --no-deps
 ```
 
-상태 확인:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-```
-
-## 8. Docker 로컬 실행
-
-Docker Compose는 v0.1 로컬 검증용으로 PostgreSQL과 FastAPI backend를 함께 실행한다.
-기본 설정은 안전하게 `SCHEDULER_ENABLED=false`, `TELEGRAM_ENABLED=false`,
-`FEATURE_REAL_ORDER_EXECUTION=false`, `FEATURE_FULL_AUTO=false`로 고정되어 실제 KIS 주문,
-자동매매, 텔레그램 발송을 하지 않는다.
-
-```powershell
-docker compose up --build
-```
-
-상태 확인:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-```
-
-Compose 기본 DB URL:
-
-```text
-postgresql+psycopg2://stock_user:stock_password@db:5432/stock_db
-```
-
-컨테이너 중지:
-
-```powershell
-docker compose down
-```
-
-DB 볼륨까지 삭제해야 할 때만 다음 명령을 사용한다.
-
-```powershell
-docker compose down -v
-```
-
-로그 파일을 남기고 싶으면 `.env` 또는 Compose 환경변수에서 `LOG_TO_FILE=true`로 설정한다.
-로그 디렉터리는 기본적으로 `logs/`이며, Git에는 `.gitkeep`만 유지된다.
-
-## 9. Mock Seed 데이터 / 통합 실행 시나리오
+## 10. Mock Seed 데이터 / 통합 실행 시나리오
 
 실 KIS 키 / 실 텔레그램 없이 v0.1 백엔드 전체 흐름을 로컬에서 검증하려면
 `scripts/seed_mock_data.py` 로 결정론적 mock 데이터를 적재한 뒤,
@@ -208,15 +192,26 @@ stock_indicators, holdings, recommendation_runs, recommendations, data_snapshots
 holding_checks. 자세한 건수와 종목 / 점검 데이터 구성은
 [INTEGRATION_RUNBOOK.md §1.2](./INTEGRATION_RUNBOOK.md) 참고.
 
-## 10. 테스트
+가장 최근 통합 실행 결과(6잡 SUCCESS, 13/13 API 200, notification_logs 7건 등)는
+[`PROJECT_STATUS.md` §2 "v0.1 통합 실행 결과"](./PROJECT_STATUS.md) 에 인수
+스냅샷으로 보관되어 있다.
+
+## 11. 테스트
 
 ```powershell
 .\.venv\bin\python.exe -m pytest
 ```
 
 외부 API, 텔레그램, 주문 기능은 테스트에서 실제로 호출하지 않습니다.
+현재 회귀 기준선: **296 passed**.
 
-## 11. Codex 첫 실행 프롬프트 예시
+## 12. 운영 전 KIS 실 키 검증
+
+운영 환경에서 실 KIS 키 + 실 텔레그램으로 한 번 검증하기 전에는
+[`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) 의 체크리스트를 항목 단위로
+확인한다. 코드 변경 없이 `.env` / 운영 SOP 만으로 통과해야 한다.
+
+## 13. Codex 첫 실행 프롬프트 예시
 
 ```text
 AGENTS.md, stock_ai_project_codex_brief.md, stock_ai_detailed_spec.md,
@@ -225,7 +220,7 @@ v0.1 범위를 벗어나지 않는 개발 계획을 작성해줘.
 아직 코드는 수정하지 말고 TASKS.md 업데이트 계획만 제안해줘.
 ```
 
-## 12. 주의
+## 14. 주의
 
 이 프로젝트는 투자 판단 보조 도구입니다.  
 v0.1에서는 실제 주문이나 자동매매를 구현하지 않습니다.

@@ -164,17 +164,20 @@ change=12.0000`.
 
 ## 4. 아직 하지 않은 작업
 
-**v0.1 범위 안에서 남은 것 (코드 변경)**
+**v0.1 범위 안에서 남은 것 (코드 변경 0건)**
 
-- 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (Phase 4 후속, 신규 분석 기능 — 본 세션에서는 의도적으로 손대지 않음. Backlog 이동도 무방)
+코드 작업은 모두 완료. 운영 / 문서 단계만 남아있다.
 
-**v0.1 범위 안에서 남은 것 (운영)**
-
-- `collect_market_close_data` 잡의 실 KIS 키 운영 검증 — 코드 경로는 완성되어 있고 `KisClient`가 `settings`에서 자동 연결됨. 남은 것은 실제 발급 키를 `.env`에 채워 dry-run 외 환경에서 한 번 검증하는 운영 단계 (코드 변경 없음)
+- 실 KIS 키 + 실 텔레그램으로 1회 운영 검증 — 코드 경로는 완성되어 있고
+  `KisClient`가 `settings`에서 자동 연결됨. `.env` 채움 + 안전 플래그 확인 +
+  체크리스트 항목별 통과만 필요. 절차는 [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md)
+  로 분리 정리.
 - PROJECT_STATUS.md / TASKS.md — 신규 세션마다 수동 갱신 필요
 
 **v0.2 이후로 미룬 범위 (Backlog)**
 
+- 캔들 패턴 (망치형/장악형 등) + ATR 변동성 컴포넌트 → `technical_score` 산식 보강
+  (Phase 4 후속, 신규 분석 기능 — v0.1 마감 시점에 명시적으로 v0.2 이동)
 - React/Next.js PC 대시보드 프론트엔드
 - 전략(장기/중기/단기) 관리, SIGNAL/PAPER 모드
 - 백테스트 엔진, walk-forward 검증, 그리드 서치 튜닝
@@ -187,12 +190,17 @@ change=12.0000`.
 
 ## 5. 다음에 이어서 할 첫 번째 작업
 
-**v0.1 백엔드는 마감 상태.** 남은 코드 작업은 캔들 패턴 / ATR 컴포넌트 추가 1건뿐이며, 본 작업은 신규 분석 기능이라 v0.2 Backlog로 이동 가능. 사용자가 신규 기능 진행을 명시하기 전까지 다음 세션이 우선 처리할 항목은 다음 둘 중 하나:
+**v0.1 백엔드는 마감 상태 (tag `v0.1-backend-accepted`).** 남은 코드 작업 없음.
+다음 세션이 우선 처리할 항목은 다음 1건:
 
-1. **운영 검증 1회** — `.env` 에 실 KIS 키 + dry-run 환경(파일 SQLite 또는 docker-compose Postgres)에서 `INTEGRATION_RUNBOOK.md` §1 → §3 → §4 시나리오 1회 수행 후 결과를 PROJECT_STATUS.md §2에 기록. 코드 변경 없음.
-2. **(선택) 캔들 패턴 / ATR 컴포넌트** — `technical_analyzer.py` 에 hammer / engulfing / 14-day ATR 계산 추가, `technical_score` 합산 가중치 미세 조정. 단위 테스트 동반.
+- **운영 검증 1회** — [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) 항목별로
+  실 KIS 키 + 실 텔레그램(검증용 비공개 채팅방)에서 1회 통과 후 결과를
+  PROJECT_STATUS.md §2 "v0.1 통합 실행 결과" 아래 새 하위 절로 기록한다.
+  코드 변경 없음.
 
-이 외 잡 / 라우터 / 엔진 / dispatcher 변경은 v0.1 마감 후의 새 기능이라 명시적 요청 없이는 진행하지 않는다.
+캔들 패턴 / ATR / 그 외 신규 분석·전략·프론트엔드는 모두 v0.2 Backlog (§4)로
+이동했으므로, 사용자의 명시적 v0.2 진입 요청 없이는 진행하지 않는다.
+v0.1 마감 후의 새 기능 (잡 / 라우터 / 엔진 / dispatcher 추가)도 마찬가지.
 
 ---
 

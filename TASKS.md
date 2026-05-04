@@ -150,18 +150,19 @@ v0.1 백엔드 마감**).
 
 ## 남은 v0.1 작업
 
-v0.1 백엔드 코드는 마감 상태. 다음 두 항목은 신규 분석 기능 / 운영 검증
-영역이라 명시적 요청 없이는 진행하지 않는다.
+v0.1 백엔드 코드는 마감 상태 (tag `v0.1-backend-accepted`). 코드 변경이
+필요한 v0.1 항목은 없다. 운영 단계 1건만 남아있다.
 
-- [ ] (선택) 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강
-  (Phase 4 후속 신규 분석 기능 — Backlog 이동도 무방)
-- [ ] (운영) `collect_market_close_data` 실 KIS 키 운영 검증
-  (코드 경로 완성, `.env` 실 키 + dry-run 외 환경에서 1회 검증 — 코드 변경 없음)
+- [ ] (운영) 실 KIS 키 + 실 텔레그램으로 1회 운영 검증 —
+  [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) 항목별 통과 후
+  결과를 PROJECT_STATUS.md §2에 기록. 코드 변경 없음.
 
 ## Backlog (v0.2 이후)
 
 v0.1 범위 외. 명시적 요청 없는 한 손대지 않는다.
 
+- [ ] 캔들 패턴 (망치형/장악형 등) + ATR 변동성 컴포넌트 → `technical_score` 산식 보강
+  (Phase 4 후속 신규 분석 기능 — v0.1 마감 시점에 v0.2 이동 결정)
 - [ ] React / Next.js PC 대시보드 프론트엔드
 - [ ] Strategy 모듈 (장기/중기/단기 관리, SIGNAL / PAPER 모드)
 - [ ] Backtest 엔진 (walk-forward 검증, 그리드 서치 튜닝)
