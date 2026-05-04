@@ -27,6 +27,8 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 | **8** Scheduler + 6개 Job | APScheduler + `run_job` 래퍼 | `app/scheduler/{jobs,scheduler}.py`, FastAPI lifespan에서 lazy import 후 시작/종료, `SCHEDULER_ENABLED` 제어 |
 | **8 후속** Dispatcher 연결 | 추천/보유/ALERT 잡 → 텔레그램 자동 발송 | `app/notification/dispatchers.py`, 잡에서 `session.info["job_run_id"]`로 `notification_logs.related_job_id` 자동 연결, `HoldingRiskAlertDispatcher` 연동 완료 |
 | **8 후속** 잡 최종 점검 | 6개 잡 모두 dispatcher / engine / NO_DATA·PARTIAL 분기 정리 | `send_recommendation_report`은 최신 run을 dispatcher로 발송 (NO_DATA 단락), `run_pre/post_market_holding_check`은 활성 보유 없으면 NO_DATA 단락, `update_recommendation_results`는 `data_status` SUCCESS/PARTIAL/NO_DATA + skipped_no_reference 시 PARTIAL |
+| **4 후속** Dummy score producer | News/Supply/Fundamental/Earnings/AI 컴포넌트 점수 placeholder | `app/analysis/score_producers.py` (`DummyScoreProducer`), `RecommendationEngine`/`HoldingCheckEngine` 생성자 default 주입 — neutral 50 + volume_ratio_20d / ma_alignment 기반 룰베이스 ±5 nudge, 메타데이터 `decision_logs.rule_result_json["score_producer"]`에 저장 |
+| **7 후속** Stock detail 추천 이력 join | `/api/stocks/{symbol}` 응답에 추천 이력 + 1/3/5/20일 성과 | `_resolve_recent_recommendations_for_symbol` (Recommendation+RecommendationRun join, run_date desc), `RecommendationItemSchema.results: List[RecommendationResultSchema]` 채움, `recommendation_limit`/`holding_check_limit` 쿼리 파라미터 |
 
 브리프 전체 v0.1 범위 + 일부 v0.2 후속 (성과 검증, dispatcher) 까지 도달. 6개 잡 result_summary는 모두 dashboard `/api/jobs` 진단에 적합한 키 (`data_status` / `notification_status` / `dry_run` / 카운트들)을 노출한다.
 
@@ -96,33 +98,33 @@ tests/unit/test_telegram_notifier.py                     14
 
 **v0.1 범위 안에서 남은 것**
 
-- `collect_market_close_data` 잡의 실제 KIS 수집 연결 (현재 placeholder; 실 KIS API 키 + Phase 3-3 collector 호출 연결 필요)
-- 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (Phase 4 후속)
-- News / Supply / Fundamental / Earnings / AI dummy score producer → 등급 분포 활성화 (현재 technical 단독으로 D~C에 머무름)
-- `/api/stocks/{symbol}` 응답에 그 종목의 최근 추천 이력 + `recommendation_results` join
-- `/api/holdings/{symbol}/checks` 응답에 일별 손익률 추세 등 metric 추가
-- PROJECT_STATUS.md (현재 파일) — 신규 세션마다 수동 갱신 필요
+- `/api/holdings/{symbol}/checks` 응답에 일별 손익률 추세 / 누적 alert 카운트 등 metric 보강 (현재 raw `items[]`만 반환)
+- 캔들 패턴 / ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (Phase 4 후속, 신규 분석 기능)
+- `collect_market_close_data` 잡의 실 KIS 키 운영 검증 — 코드 경로는 완성되어 있고 `KisClient`가 `settings`에서 자동 연결됨. 남은 것은 실제 발급 키를 `.env`에 채워 dry-run 외 환경에서 한 번 검증하는 운영 단계 (코드 변경 없음)
+- PROJECT_STATUS.md / TASKS.md — 신규 세션마다 수동 갱신 필요
 
-**v0.2 이후로 미룬 범위**
+**v0.2 이후로 미룬 범위 (Backlog)**
 
 - React/Next.js PC 대시보드 프론트엔드
 - 전략(장기/중기/단기) 관리, SIGNAL/PAPER 모드
 - 백테스트 엔진, walk-forward 검증, 그리드 서치 튜닝
 - MockBroker / ReplayBroker / SimulationBroker, 가상 증권사 서버
 - 전용 ML 모델 (Market Regime / Strategy Selection / Risk Prediction)
+- 실 News / Supply / Fundamental / Earnings 파이프라인 (현재 v0.1은 `DummyScoreProducer` 룰베이스 placeholder)
 - APPROVAL / SMALL_AUTO / FULL_AUTO 모드 (실거래)
 
 ---
 
 ## 5. 다음에 이어서 할 첫 번째 작업
 
-**News/Supply/Fundamental/Earnings/AI dummy score producer 활성화 (등급 분포 정상화) 및 API 응답에 추천 이력 Join 보강**
+**`/api/holdings/{symbol}/checks` 응답에 일별 손익률 추세 / 누적 alert 카운트 등 metric 보강**
 
 이유:
-- 6개 스케줄러 잡 (수집 / 지표 / 추천 발송 / 장전 점검 / 장후 점검 / 성과 검증) 의 dispatcher / engine / NO_DATA·PARTIAL 분기가 모두 일관된 `result_summary` 구조로 정리되어 잡 자동화 골격은 완료된 상태.
-- 현재 점수는 사실상 technical(기술적 분석) 단독으로만 책정되고 있어 등급 분포가 D~C 하위권에 몰려 있음. `app/analysis/score_producers.py`의 dummy producer를 News/Fundamental/Earnings/AI 축까지 확장해 S~D 분포를 정상화하는 작업이 우선 순위.
-- 이어서 `/api/stocks/{symbol}` 응답에 그 종목의 `recommendation_results`(1/3/5/20일 성과)를 join해 프론트엔드가 추천 신뢰도를 즉시 시각화할 수 있게 확장.
-- 그 다음 후속: `collect_market_close_data`의 KIS 실 키 연결, 캔들 패턴/ATR 변동성 컴포넌트 보강.
+- v0.1 백엔드의 마지막 read-only API 보강 항목. 현재 `/api/holdings/{symbol}/checks`는 `items: List[HoldingCheckSchema]` 만 반환 (`app/api/routes.py:528-539`).
+- 이미 동일한 패턴이 `/api/stocks/{symbol}` 에서 검증되어 있어 (`recent_recommendations[*].results[]` join + 집계 필드), 같은 구조로 확장 가능.
+- DB 스키마 변경 / 새 잡 / 새 service 도입 없이 `HoldingCheckRepository.list_by_symbol` 결과만 가공하면 되므로 회귀 위험이 가장 낮은 안전한 작업.
+- 추천되는 추가 필드: `summary.return_rate_trend[]` (date, return_rate), `summary.alert_count`, `summary.last_decision`, `summary.first_check_date` 등.
+- 그 다음 후속: 캔들 패턴/ATR 컴포넌트(Phase 4 후속, 신규 분석 기능), 실 KIS 키 운영 검증.
 
 ---
 
