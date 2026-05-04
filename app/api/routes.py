@@ -27,6 +27,7 @@ from app.api.schemas import (
     HoldingCheckSchema,
     HoldingSchema,
     HoldingsResponse,
+    JobRunDetailSchema,
     JobRunSchema,
     JobsResponse,
     MarketCapRankingResponse,
@@ -305,6 +306,11 @@ def _summary_int(summary: dict, *keys: str) -> int | None:
     return None
 
 
+def _summary_list(summary: dict, key: str) -> list[dict]:
+    value = summary.get(key)
+    return value if isinstance(value, list) else []
+
+
 def _job_run_to_schema(row: JobRun) -> JobRunSchema:
     summary = row.result_summary or {}
     success_count = _summary_int(
@@ -357,6 +363,18 @@ def _job_run_to_schema(row: JobRun) -> JobRunSchema:
         provider_type=summary.get("provider_type"),
         universe_name=summary.get("universe") or summary.get("universe_name"),
         batch_size=_summary_int(summary, "batch_size"),
+    )
+
+
+def _job_run_to_detail_schema(row: JobRun) -> JobRunDetailSchema:
+    summary = row.result_summary or {}
+    base = _job_run_to_schema(row).dict()
+    return JobRunDetailSchema(
+        **base,
+        successes=_summary_list(summary, "successes"),
+        skipped=_summary_list(summary, "skipped"),
+        failures=_summary_list(summary, "failures"),
+        batches=_summary_list(summary, "batches"),
     )
 
 
@@ -679,6 +697,17 @@ def get_jobs(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/api/jobs/{job_id}", response_model=JobRunDetailSchema, tags=["jobs"])
+def get_job(
+    job_id: int,
+    session: Session = Depends(get_session),
+) -> JobRunDetailSchema:
+    row = JobRunRepository(session).get(job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Job run not found")
+    return _job_run_to_detail_schema(row)
 
 
 # ---------- /api/settings ----------

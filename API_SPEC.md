@@ -189,6 +189,31 @@ Query:
 - `start_date`
 - `end_date`
 
+### GET /api/jobs/{job_id}
+
+job_runs 단건 상세를 조회한다.
+
+응답은 `/api/jobs`와 동일한 평탄화 필드를 포함하고, 원본 `result_summary` JSON을 그대로 반환한다.
+`result_summary`에 다음 상세 배열이 있으면 최상위 필드로도 그대로 노출한다:
+
+- `successes`
+- `skipped`
+- `failures`
+- `batches`
+
+공통 평탄화 필드:
+
+- `success_count`
+- `failed_count`
+- `skipped_count`
+- `partial_count`
+- `total_count`
+- `provider_type`
+- `universe_name`
+- `batch_size`
+
+존재하지 않는 `job_id`는 `404`를 반환한다.
+
 ## 13. 설정
 
 ### GET /api/settings

@@ -207,7 +207,7 @@ def _seed_full_dataset(session) -> dict:
         ),
     )
 
-    JobRunRepository(session).add(
+    job = JobRunRepository(session).add(
         JobRun(
             job_name="collect_close_data",
             started_at=datetime(2026, 5, 4, 18, 0),
@@ -364,6 +364,7 @@ def _seed_full_dataset(session) -> dict:
         "stock_sk_hynix": sk_hynix,
         "holding": holding,
         "universe": universe,
+        "job": job,
         "run": run,
         "recommendation": rec,
         "holding_check": holding_check,
@@ -886,6 +887,70 @@ def test_jobs_filters_by_status(client, session):
     _seed_full_dataset(session)
     assert client.get("/api/jobs?status=SUCCESS").json()["items"]
     assert client.get("/api/jobs?status=FAILED").json()["items"] == []
+
+
+def test_job_detail_returns_raw_summary_and_flattened_counts(client, session):
+    seeded = _seed_full_dataset(session)
+
+    response = client.get(f"/api/jobs/{seeded['job'].job_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_id"] == seeded["job"].job_id
+    assert body["job_name"] == "collect_close_data"
+    assert body["result_summary"]["rows"] == 500
+    assert body["success_count"] == 2
+    assert body["failed_count"] == 0
+    assert body["skipped_count"] == 0
+    assert body["total_count"] == 2
+    assert body["provider_type"] == "FakeKisDataProvider"
+    assert body["universe_name"] == "MARKET_CAP_TOP_500"
+    assert body["batch_size"] == 100
+    assert body["successes"] == []
+    assert body["skipped"] == []
+    assert body["failures"] == []
+    assert body["batches"] == []
+
+
+def test_job_detail_exposes_summary_detail_arrays(client, session):
+    job = JobRunRepository(session).add(
+        JobRun(
+            job_name="calculate_technical_indicators",
+            started_at=datetime(2026, 5, 4, 18, 30),
+            finished_at=datetime(2026, 5, 4, 18, 31),
+            status="PARTIAL",
+            result_summary={
+                "universe_name": "CUSTOM_TOP",
+                "batch_size": 2,
+                "total_count": 3,
+                "success_count": 1,
+                "failure_count": 1,
+                "skipped_count": 1,
+                "successes": [{"symbol": "005930"}],
+                "skipped": [{"symbol": "000660", "reason": "NO_DAILY_PRICES"}],
+                "failures": [{"symbol": "035420", "message": "boom"}],
+                "batches": [{"batch": 1, "symbol_count": 2}],
+            },
+        ),
+    )
+    session.commit()
+
+    response = client.get(f"/api/jobs/{job.job_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success_count"] == 1
+    assert body["failed_count"] == 1
+    assert body["skipped_count"] == 1
+    assert body["partial_count"] == 1
+    assert body["total_count"] == 3
+    assert body["successes"] == [{"symbol": "005930"}]
+    assert body["skipped"] == [{"symbol": "000660", "reason": "NO_DAILY_PRICES"}]
+    assert body["failures"] == [{"symbol": "035420", "message": "boom"}]
+    assert body["batches"] == [{"batch": 1, "symbol_count": 2}]
+
+
+def test_job_detail_returns_404_for_missing_job(client):
+    response = client.get("/api/jobs/999999")
+    assert response.status_code == 404
 
 
 # ---------- /api/settings ----------

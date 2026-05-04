@@ -256,6 +256,13 @@ class JobRunSchema(_BaseSchema):
     batch_size: Optional[int] = None
 
 
+class JobRunDetailSchema(JobRunSchema):
+    successes: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+    batches: List[Dict[str, Any]] = []
+
+
 class JobsResponse(_BaseSchema):
     items: List[JobRunSchema]
     limit: int
