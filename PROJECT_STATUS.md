@@ -76,6 +76,72 @@ tests/unit/test_telegram_notifier.py                     14
 
 회귀 0건. 모든 외부 호출(KIS, Telegram)은 mock transport / dry-run 으로만 접근.
 
+### v0.1 통합 실행 결과 (1회 수행)
+
+`INTEGRATION_RUNBOOK.md` §1 ~ §5 시나리오를 실제로 1회 수행한 결과 (UTC
+2026-05-04 22:52 / Asia/Seoul 2026-05-05 07:52, throwaway SQLite 파일).
+
+**1. Seed (`scripts.seed_mock_data --reset`)**
+
+```text
+stocks:5  market_cap_rankings:5  universe_members:5  daily_prices:150
+stock_indicators:5  holdings:2  recommendation_runs:3  recommendations:8
+holding_checks:4  data_snapshots:12
+```
+
+**2~7. 6개 잡 수동 트리거 (모두 SUCCESS, dry-run)**
+
+| 잡 | status | 핵심 result_summary |
+|---|---|---|
+| `collect_market_close_data` | SUCCESS | mock provider 주입, market_cap_status=SUCCESS, daily=5/5 success |
+| `calculate_technical_indicators` | SUCCESS | members=5, snapshots_saved=5, skipped=0, fail=0 |
+| `send_recommendation_report` | SUCCESS | notification_status=DRY_RUN, run_date=2026-05-04, recs=3, msg_len=364 |
+| `run_pre_market_holding_check` | SUCCESS | check_type=PRE_MARKET, checked=2, alert_count=2, alert_sent=2, dry_run=True |
+| `run_post_market_holding_check` | SUCCESS | check_type=POST_MARKET, checked=2, alert_count=2, alert_sent=2, dry_run=True |
+| `update_recommendation_results` | SUCCESS | data_status=SUCCESS, runs=3, processed=8, upserted=32, pending=29, success=0, failed=3, skipped_no_ref=0 |
+
+**8. notification_logs / job_runs**
+
+- `notification_logs`: 7건 — REPORT 3 (recommendation 1 + holding pre/post 2) + ALERT 4 (HIGH_RISK 3 + CHECK_ALERT 1, target dedup 키 정상)
+- `job_runs`: 6건, 모두 SUCCESS. result_summary / status / error_message / finished_at 정상 기록
+- `holding_checks`: 8건 (005930 5 + 000660 3) — 시드의 4건 + 잡이 새 일자(Asia/Seoul today)에 추가한 4건
+
+**9. 13개 GET API 응답**
+
+```text
+200 /health
+200 /api/reports/today
+200 /api/recommendations/latest    (recommendations=3)
+200 /api/recommendations/history   (items=3 — 시드한 3개 run)
+200 /api/holdings                  (holdings=2)
+200 /api/holdings/checks/latest    (items=2)
+200 /api/holdings/005930/checks    (items=5 + summary)
+200 /api/stocks/005930
+200 /api/universe/market-cap-top   (items=2 — 잡이 limit=2로 갱신)
+200 /api/market-regime/latest
+200 /api/news                      (items=0 — 시드 미적재)
+200 /api/jobs                      (items=6)
+200 /api/settings                  (KIS/Telegram 자격증명 마스킹)
+```
+
+`/api/holdings/005930/checks` summary 표본:
+`total=5, alert=3, high_risk=2, latest_decision=SELL_REVIEW,
+latest_risk_level=MEDIUM, latest_total_score=16.2500, previous=4.2500,
+change=12.0000`.
+
+**관찰 / 알아둘 점**
+
+- `seed_mock_data`는 `datetime.now(UTC).date()`를 "today"로 사용하지만,
+  스케줄러 잡은 `_today_in_default_timezone()` (`settings.timezone`,
+  default Asia/Seoul)을 사용. 시드 실행 시각이 UTC 15:00 이후 (≈ Seoul
+  24:00 이후) 이면 시드 "today"가 잡의 "today"보다 하루 빠르게 나오고,
+  잡은 새 일자에 fresh 행을 만들어 둘 다 공존한다. 데이터 손상은 아니며
+  대시보드 추세 metric도 정상 동작.
+- `update_recommendation_results`는 시드 가격 30봉 안에서 1/3/5/20일 후
+  검증을 수행 — 가장 오래된 run (today-7) 만 1/3/5일 모두 평가 가능, 나머지는
+  PENDING이 다수.
+- 회귀 게이트 `pytest`: **296 passed in 5.87s** (이번 실행 직후 동일 결과 확인).
+
 ---
 
 ## 3. 변경된 주요 모듈
