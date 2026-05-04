@@ -142,6 +142,84 @@ change=12.0000`.
   PENDING이 다수.
 - 회귀 게이트 `pytest`: **296 passed in 5.87s** (이번 실행 직후 동일 결과 확인).
 
+### 실 KIS 운영 검증 결과 (1회 수행)
+
+`KIS_OPS_CHECKLIST.md` 절차에 따라 실 KIS 모의투자 키 + 검증용 비공개 텔레그램
+채팅방 기준으로 1회 시도. read-only 인증과 일봉 조회는 통과, 시총 상위
+endpoint 에서 KIS contract 결함 1건이 발견되어 **collect 잡은 FAILED**.
+
+**검증 모드**
+
+- `KIS_USE_PAPER=true` (모의투자 서버 `openapivts.koreainvestment.com:29443`)
+- `TELEGRAM_ENABLED=false`
+- `SCHEDULER_ENABLED=false`
+- `FEATURE_REAL_ORDER_EXECUTION=false`
+- `FEATURE_FULL_AUTO=false`
+- 검증용 DB: `sqlite:///./stock_ai_kis_check.db` (운영 / 시드 DB 와 격리)
+
+**사전 안전 점검 (모두 통과)**
+
+- `.env` git ignore / 미커밋 / 이력 부재
+- `.env` ACL 좁히기 적용 (Owner + Admins + SYSTEM 만 FullControl, CodexSandboxUsers 는 Read 만)
+- `Settings()` 로딩 시 `kis_app_key` / `kis_app_secret` / `kis_account_no` /
+  `telegram_bot_token` / `telegram_chat_id` 모두 마스킹된 형태로만 표시
+- `/api/settings` 라우터 응답에서도 동일한 마스킹 + 안전 플래그 모두 false
+- 실주문 / 자동매매 코드 부재: `place_order` / `order_execute` / KIS 주문
+  엔드포인트 / `BrokerInterface` 구체 구현 모두 0건 — `BrokerInterface` 는
+  `app/broker/interfaces.py` 의 ABC 정의(`raise NotImplementedError`) 로만 존재
+
+**KIS read-only 단건 검증**
+
+- 토큰 발급 (`/oauth2/tokenP`): ✅ SUCCESS (token length=346, 본문 비노출)
+- 005930 일봉 조회 (`/uapi/domestic-stock/v1/quotations/inquire-daily-price`): ✅ SUCCESS
+  - 조회 기간: 2026-04-28 ~ 2026-05-05 (영업일 4건)
+  - 반환 row 수: 4
+  - 첫 행 (최신순): `date=20260504, close=232500`
+  - 마지막 행: `date=20260428, close=222000`
+  - 모의투자 시세는 paper 서버 자체 시뮬레이션 값이므로 실시장과 다름 (정상)
+
+**`collect_market_close_data` 잡 결과**
+
+- 잡 자체는 정상 호출 (스키마 자동 생성, 안전 가드 통과, `job_runs` 행 정상 기록)
+- 시총 상위 endpoint 호출에서 KIS 서버가 거절 →
+  `KIS API error OPSQ2001: ERROR INPUT FIELD NOT FOUND [FID_COND_SCR_DIV_CODE]`
+- 결과: `status=FAILED`, `market_cap_status=FAILED`, `daily_price_status=SKIPPED`
+  (시총 단계 실패로 daily 수집은 의도적으로 실행되지 않음)
+
+**영향 범위 (이번 1회 검증 기준)**
+
+| KIS 경로 | 결과 |
+|---|---|
+| 토큰 발급 | ✅ |
+| 일봉 조회 | ✅ |
+| 시총 상위 ranking | ❌ contract 결함 1개 (필드 누락) |
+
+따라서 v0.1 KIS 클라이언트의 read-only 경로 중 **시총 상위 endpoint 1개만**
+paper 서버와 contract 가 어긋남. 인증 / 일봉은 정상 동작.
+
+**Known Issue**
+
+- `app/data/collectors/kis_client.py:fetch_market_cap_rankings` 의 query
+  파라미터에 `FID_COND_SCR_DIV_CODE` 가 누락. KIS 시총 상위 화면 카테고리
+  코드(후보값 `"20174"`) 추가 필요.
+- `tests/unit/test_kis_client_http.py` 의 captured query params 도 실 KIS
+  contract 에 맞춰 신규 파라미터 transmit 검증으로 갱신 필요.
+- mock HTTP 테스트만으로는 이 누락이 드러나지 않으므로, 후속 픽스 시 paper
+  서버 1회 재검증을 절차에 명시.
+
+**다음 조치**
+
+1. 별도 코드 수정 세션에서 `fetch_market_cap_rankings` 파라미터 보정 1줄 추가 + 단위 테스트 갱신.
+2. 픽스 commit 후 `collect_market_close_data` 잡을 paper 서버에서 1회 재실행 → market_cap → daily_prices → 시총 + 일봉 모두 SUCCESS 확인.
+3. 그 다음 단계로 `calculate_technical_indicators` → `send_recommendation_report` (DRY_RUN) → 보유 점검 → 성과 업데이트 순서로 시범 운행 진입.
+
+**비밀 / 토큰**
+
+본 절에는 KIS 앱키 / 시크릿 / 계좌번호 / 텔레그램 봇 토큰 / chat_id 평문이
+일체 기록되지 않았다. 모든 비밀은 마스킹 형태(예: `5015****1-01`)로만
+참조한다. 운영 검증 도중 발급된 KIS 액세스 토큰도 디스크 / 로그에 남지 않음
+(`LOG_TO_FILE=false`).
+
 ---
 
 ## 3. 변경된 주요 모듈
