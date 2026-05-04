@@ -818,7 +818,43 @@ def test_send_recommendation_report_via_run_job_failed_when_dispatcher_fails(
 
 # ---------- pre/post-market holding check ----------
 
-def test_pre_market_holding_check_with_no_holdings(session_factory):
+def _seed_active_holding(
+    session,
+    *,
+    symbol: str = "005930",
+    quantity: Decimal = Decimal("10"),
+    avg_buy_price: Decimal = Decimal("100"),
+    close_price: Decimal = Decimal("110"),
+    ma20: Decimal | None = Decimal("100"),
+    technical_score: Decimal = Decimal("80"),
+    price_date: date = date(2026, 5, 4),
+) -> None:
+    HoldingRepository(session).add(
+        Holding(
+            symbol=symbol,
+            quantity=quantity,
+            avg_buy_price=avg_buy_price,
+            is_active=True,
+        ),
+    )
+    DailyPriceRepository(session).upsert(
+        symbol=symbol,
+        price_date=price_date,
+        open_price=close_price,
+        high_price=close_price,
+        low_price=close_price,
+        close_price=close_price,
+        volume=1_000_000,
+    )
+    StockIndicatorRepository(session).upsert(
+        symbol=symbol,
+        indicator_date=price_date,
+        technical_score=technical_score,
+        ma20=ma20,
+    )
+
+
+def test_pre_market_holding_check_with_no_holdings_returns_no_data(session_factory):
     session = _open_session(session_factory)
     try:
         result = run_pre_market_holding_check(session)
@@ -828,39 +864,66 @@ def test_pre_market_holding_check_with_no_holdings(session_factory):
 
     assert result.status == JOB_STATUS_SUCCESS
     assert result.summary["check_type"] == "PRE_MARKET"
+    assert isinstance(result.summary["check_date"], str)
+    assert result.summary["checked_count"] == 0
     assert result.summary["saved_count"] == 0
-    assert result.summary["telegram_sent"] is False
-    assert result.summary["notification_status"] == "DRY_RUN"
+    assert result.summary["alert_count"] == 0
+    assert result.summary["alert_sent_count"] == 0
     assert result.summary["holding_check_count"] == 0
+    assert result.summary["telegram_sent"] is False
+    assert result.summary["dry_run"] is False
+    assert result.summary["notification_status"] == "NO_DATA"
+    assert result.summary["notification_log_id"] is None
+    assert result.summary["message_length"] == 0
+
+    session2 = _read_session(session_factory)
+    try:
+        assert NotificationLogRepository(session2).list() == []
+        assert HoldingCheckRepository(session2).list_by_symbol("005930") == []
+    finally:
+        session2.close()
+
+
+def test_pre_market_holding_check_processes_active_holdings(session_factory):
+    session = _open_session(session_factory)
+    try:
+        _seed_active_holding(session)
+        session.commit()
+
+        result = run_pre_market_holding_check(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_SUCCESS
+    assert result.summary["check_type"] == "PRE_MARKET"
+    assert result.summary["checked_count"] == 1
+    assert result.summary["saved_count"] == 1
+    assert result.summary["alert_count"] == 0
+    assert result.summary["alert_sent_count"] == 0
+    assert result.summary["holding_check_count"] == 1
+    assert result.summary["dry_run"] is True
+    assert result.summary["notification_status"] == "DRY_RUN"
+    assert result.summary["telegram_sent"] is False
+    assert result.summary["notification_log_id"] is not None
     assert result.summary["message_length"] > 0
+
+    session2 = _read_session(session_factory)
+    try:
+        checks = HoldingCheckRepository(session2).list_by_symbol("005930")
+        assert len(checks) == 1
+        assert checks[0].check_type == "PRE_MARKET"
+        log = NotificationLogRepository(session2).list()[0]
+        assert log.status == "DRY_RUN"
+        assert log.message_type == "REPORT"
+    finally:
+        session2.close()
 
 
 def test_post_market_holding_check_processes_active_holdings(session_factory):
     session = _open_session(session_factory)
     try:
-        HoldingRepository(session).add(
-            Holding(
-                symbol="005930",
-                quantity=Decimal("10"),
-                avg_buy_price=Decimal("100"),
-                is_active=True,
-            ),
-        )
-        DailyPriceRepository(session).upsert(
-            symbol="005930",
-            price_date=date(2026, 5, 4),
-            open_price=Decimal("110"),
-            high_price=Decimal("110"),
-            low_price=Decimal("110"),
-            close_price=Decimal("110"),
-            volume=1_000_000,
-        )
-        StockIndicatorRepository(session).upsert(
-            symbol="005930",
-            indicator_date=date(2026, 5, 4),
-            technical_score=Decimal("80"),
-            ma20=Decimal("100"),
-        )
+        _seed_active_holding(session)
         session.commit()
 
         result = run_post_market_holding_check(session)
@@ -870,8 +933,10 @@ def test_post_market_holding_check_processes_active_holdings(session_factory):
 
     assert result.status == JOB_STATUS_SUCCESS
     assert result.summary["check_type"] == "POST_MARKET"
+    assert result.summary["checked_count"] == 1
     assert result.summary["saved_count"] == 1
     assert result.summary["holding_check_count"] == 1
+    assert result.summary["dry_run"] is True
     assert result.summary["notification_status"] == "DRY_RUN"
     assert result.summary["telegram_sent"] is False
 
@@ -882,6 +947,144 @@ def test_post_market_holding_check_processes_active_holdings(session_factory):
         assert checks[0].check_type == "POST_MARKET"
         log = NotificationLogRepository(session2).list()[0]
         assert log.status == "DRY_RUN"
+    finally:
+        session2.close()
+
+
+def test_pre_market_holding_check_dispatches_alert_for_high_risk_holding(
+    session_factory,
+):
+    """avg=100, current=80, ma20=100 → MA20_BREAKDOWN + STOP_LOSS_NEAR
+    → risk_level=HIGH, alert=True. The alert dispatcher records both a REPORT
+    notification_logs row and a HIGH_RISK ALERT row."""
+    session = _open_session(session_factory)
+    try:
+        _seed_active_holding(
+            session,
+            avg_buy_price=Decimal("100"),
+            close_price=Decimal("80"),
+            ma20=Decimal("100"),
+            technical_score=Decimal("80"),
+        )
+        session.commit()
+
+        result = run_pre_market_holding_check(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_SUCCESS
+    assert result.summary["check_type"] == "PRE_MARKET"
+    assert result.summary["saved_count"] == 1
+    assert result.summary["alert_count"] == 1
+    assert result.summary["alert_sent_count"] == 1
+    assert result.summary["dry_run"] is True
+    assert result.summary["notification_status"] == "DRY_RUN"
+
+    session2 = _read_session(session_factory)
+    try:
+        checks = HoldingCheckRepository(session2).list_by_symbol("005930")
+        assert len(checks) == 1
+        assert checks[0].alert is True
+
+        logs = NotificationLogRepository(session2).list()
+        report_logs = [log for log in logs if log.message_type == "REPORT"]
+        alert_logs = [log for log in logs if log.message_type == "ALERT"]
+        assert len(report_logs) == 1
+        assert len(alert_logs) == 1
+        assert alert_logs[0].status == "DRY_RUN"
+        assert alert_logs[0].target == (
+            f"ALERT_HOLDING:005930:{result.summary['check_date']}:"
+            "PRE_MARKET:HIGH_RISK"
+        )
+    finally:
+        session2.close()
+
+
+def test_holding_check_via_run_job_failed_when_dispatcher_fails(
+    session_factory,
+    monkeypatch,
+):
+    """Dispatcher exception inside the holding-check job propagates to run_job,
+    which records FAILED and rolls back the work session — no holding_checks
+    persisted, no notification_logs."""
+    seed = _open_session(session_factory)
+    try:
+        _seed_active_holding(seed)
+        seed.commit()
+    finally:
+        seed.close()
+
+    class FailingDispatcher:
+        def dispatch(self, *, check_date, check_type, related_job_id=None):
+            raise RuntimeError("holding dispatcher failed")
+
+    monkeypatch.setattr(
+        scheduler_jobs,
+        "_build_holding_check_dispatcher",
+        lambda session, *, notifier: FailingDispatcher(),
+    )
+
+    def wrapped(session):
+        session.info["settings"] = _dry_run_settings()
+        return run_pre_market_holding_check(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_PRE_MARKET_HOLDING_CHECK,
+        fn=wrapped,
+    )
+
+    assert outcome.status == JOB_STATUS_FAILED
+    assert outcome.result_summary is None
+    assert "holding dispatcher failed" in outcome.error_message
+
+    session2 = _read_session(session_factory)
+    try:
+        # work session rolled back → no holding_checks, no notification_logs
+        assert HoldingCheckRepository(session2).list_by_symbol("005930") == []
+        assert NotificationLogRepository(session2).list() == []
+        # job_runs row still recorded
+        runs = JobRunRepository(session2).list()
+        assert len(runs) == 1
+        assert runs[0].job_name == JOB_NAME_PRE_MARKET_HOLDING_CHECK
+        assert runs[0].status == JOB_STATUS_FAILED
+    finally:
+        session2.close()
+
+
+def test_holding_check_via_run_job_links_notification_log_to_job(session_factory):
+    """End-to-end: run_job → run_pre_market_holding_check → dispatcher →
+    notification_logs.related_job_id == this run_job's job_run_id."""
+    seed = _open_session(session_factory)
+    try:
+        _seed_active_holding(seed)
+        seed.commit()
+    finally:
+        seed.close()
+
+    def wrapped(session):
+        session.info["settings"] = _dry_run_settings()
+        return run_pre_market_holding_check(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_PRE_MARKET_HOLDING_CHECK,
+        fn=wrapped,
+    )
+
+    assert outcome.status == JOB_STATUS_SUCCESS
+    assert outcome.result_summary["notification_status"] == "DRY_RUN"
+    assert outcome.result_summary["dry_run"] is True
+    assert outcome.result_summary["check_type"] == "PRE_MARKET"
+
+    session2 = _read_session(session_factory)
+    try:
+        log = [
+            log for log in NotificationLogRepository(session2).list()
+            if log.message_type == "REPORT"
+        ][0]
+        assert log.related_job_id == outcome.job_run_id
     finally:
         session2.close()
 

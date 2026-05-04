@@ -705,9 +705,32 @@ def _run_holding_check_job(
 ) -> JobResult:
     job_run_id = session.info.get("job_run_id")
     settings = _resolve_settings(session)
+    check_date = _today_in_default_timezone()
+
+    active_holdings = list(HoldingRepository(session).list_active())
+    if not active_holdings:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "8-followup",
+                "check_date": check_date.isoformat(),
+                "check_type": check_type,
+                "checked_count": 0,
+                "saved_count": 0,
+                "skipped_no_price": 0,
+                "skipped_no_indicator": 0,
+                "alert_count": 0,
+                "holding_check_count": 0,
+                "alert_sent_count": 0,
+                "telegram_sent": False,
+                "dry_run": False,
+                "notification_status": "NO_DATA",
+                "notification_log_id": None,
+                "message_length": 0,
+            },
+        )
 
     engine = _build_holding_check_engine(session)
-    check_date = _today_in_default_timezone()
     result = engine.run(check_date=check_date, check_type=check_type)
 
     notifier = TelegramNotifier(settings=settings)
@@ -718,9 +741,11 @@ def _run_holding_check_job(
             check_type=check_type,
             related_job_id=job_run_id,
         )
-        
-        alert_dispatcher = _build_holding_risk_alert_dispatcher(session, notifier=notifier)
-        alert_count = alert_dispatcher.dispatch(
+
+        alert_dispatcher = _build_holding_risk_alert_dispatcher(
+            session, notifier=notifier,
+        )
+        alert_sent_count = alert_dispatcher.dispatch(
             check_date=check_date,
             check_type=check_type,
             related_job_id=job_run_id,
@@ -741,13 +766,15 @@ def _run_holding_check_job(
             "phase": "8-followup",
             "check_date": check_date.isoformat(),
             "check_type": check_type,
+            "checked_count": result.saved_count,
             "saved_count": result.saved_count,
             "skipped_no_price": result.skipped_no_price,
             "skipped_no_indicator": result.skipped_no_indicator,
             "alert_count": result.alert_count,
             "holding_check_count": dispatch.holding_check_count,
-            "alert_sent_count": alert_count,
+            "alert_sent_count": alert_sent_count,
             "telegram_sent": dispatch.notification.sent,
+            "dry_run": dispatch.notification.status == "DRY_RUN",
             "notification_status": dispatch.notification.status,
             "notification_log_id": dispatch.notification.notification_log_id,
             "message_length": len(dispatch.message_text),
