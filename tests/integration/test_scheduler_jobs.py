@@ -1101,33 +1101,141 @@ def test_update_recommendation_results_with_no_runs(session_factory):
 
     assert result.status == JOB_STATUS_SUCCESS
     assert result.summary["phase"] == "5-followup"
+    assert result.summary["data_status"] == "NO_DATA"
     assert result.summary["processed_runs"] == 0
+    assert result.summary["processed_count"] == 0
     assert result.summary["processed_recommendations"] == 0
     assert result.summary["upserted_results"] == 0
     assert result.summary["pending_count"] == 0
     assert result.summary["success_count"] == 0
     assert result.summary["failed_count"] == 0
+    assert result.summary["skipped_no_reference"] == 0
+    assert result.summary["lookback_days"] >= 1
+    assert result.error_message is None
+
+
+def _seed_run_with_recommendation(
+    session,
+    *,
+    symbol: str,
+    name: str = "테스트종목",
+    run_date: date = date(2026, 5, 4),
+    rank: int = 1,
+    run: RecommendationRun | None = None,
+) -> tuple[RecommendationRun, int]:
+    if run is None:
+        run = RecommendationRunRepository(session).add(
+            RecommendationRun(
+                run_date=run_date,
+                started_at=datetime(run_date.year, run_date.month, run_date.day, tzinfo=timezone.utc),
+                status="SUCCESS",
+                telegram_sent=False,
+            ),
+        )
+        session.flush()
+    rec = RecommendationRepository(session).add(
+        Recommendation(
+            run_id=run.run_id, rank=rank, market="KOSPI",
+            symbol=symbol, name=name,
+            grade="A", total_score=Decimal("80"),
+        ),
+    )
+    return run, rec.id
 
 
 def test_update_recommendation_results_processes_seeded_run(session_factory):
     session = session_factory()
     rec_id: int
     try:
-        run = RecommendationRunRepository(session).add(
-            RecommendationRun(
-                run_date=date(2026, 5, 4),
-                started_at=datetime(2026, 5, 4, tzinfo=timezone.utc),
-                status="SUCCESS",
-                telegram_sent=False,
-            ),
+        _, rec_id = _seed_run_with_recommendation(session, symbol="005930", name="삼성전자")
+        DailyPriceRepository(session).upsert(
+            symbol="005930", price_date=date(2026, 5, 4),
+            open_price=Decimal("100"), high_price=Decimal("100"),
+            low_price=Decimal("100"), close_price=Decimal("100"),
+            volume=1_000_000,
         )
-        session.flush()
-        rec = RecommendationRepository(session).add(
-            Recommendation(
-                run_id=run.run_id, rank=1, market="KOSPI",
-                symbol="005930", name="삼성전자",
-                grade="A", total_score=Decimal("80"),
-            ),
+        DailyPriceRepository(session).upsert(
+            symbol="005930", price_date=date(2026, 5, 5),
+            open_price=Decimal("100"), high_price=Decimal("105"),
+            low_price=Decimal("99"), close_price=Decimal("104"),
+            volume=1_000_000,
+        )
+        session.commit()
+
+        result = update_recommendation_results(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_SUCCESS
+    assert result.summary["data_status"] == "SUCCESS"
+    assert result.summary["processed_runs"] == 1
+    assert result.summary["processed_count"] == 1
+    assert result.summary["processed_recommendations"] == 1
+    assert result.summary["skipped_no_reference"] == 0
+    assert result.summary["upserted_results"] == 4
+    assert result.summary["success_count"] >= 1
+    assert result.error_message is None
+
+    session2 = _read_session(session_factory)
+    try:
+        from app.data.repositories import RecommendationResultRepository
+
+        rows = RecommendationResultRepository(session2).list_by_recommendation_id(rec_id)
+        assert {r.days_after for r in rows} == {1, 3, 5, 20}
+    finally:
+        session2.close()
+
+
+def test_update_recommendation_results_partial_when_no_reference_price(
+    session_factory,
+):
+    """Recommendation exists but no daily_prices on/before run_date → all 4
+    days_after rows upserted as PENDING with skipped_no_reference=1, job
+    returns PARTIAL with data_status=PARTIAL."""
+    session = session_factory()
+    rec_id: int
+    try:
+        _, rec_id = _seed_run_with_recommendation(session, symbol="000660", name="SK하이닉스")
+        session.commit()
+
+        result = update_recommendation_results(session)
+        session.commit()
+    finally:
+        session.close()
+
+    assert result.status == JOB_STATUS_PARTIAL
+    assert result.summary["data_status"] == "PARTIAL"
+    assert result.summary["processed_count"] == 1
+    assert result.summary["skipped_no_reference"] == 1
+    assert result.summary["upserted_results"] == 4
+    assert result.summary["pending_count"] == 4
+    assert result.summary["success_count"] == 0
+    assert result.summary["failed_count"] == 0
+    assert "1 recommendations had no reference price" in result.error_message
+
+    session2 = _read_session(session_factory)
+    try:
+        from app.data.repositories import RecommendationResultRepository
+
+        rows = RecommendationResultRepository(session2).list_by_recommendation_id(rec_id)
+        assert {r.days_after for r in rows} == {1, 3, 5, 20}
+        assert all(r.result_status == "PENDING" for r in rows)
+        assert all(r.close_return is None for r in rows)
+    finally:
+        session2.close()
+
+
+def test_update_recommendation_results_partial_when_one_symbol_missing_prices(
+    session_factory,
+):
+    """Two recommendations in the same run: one with prices (SUCCESS path),
+    one without (PENDING + skipped_no_reference). Job returns PARTIAL."""
+    session = session_factory()
+    try:
+        run, _ = _seed_run_with_recommendation(session, symbol="005930", name="삼성전자", rank=1)
+        _seed_run_with_recommendation(
+            session, symbol="000660", name="SK하이닉스", rank=2, run=run,
         )
         DailyPriceRepository(session).upsert(
             symbol="005930", price_date=date(2026, 5, 4),
@@ -1142,24 +1250,46 @@ def test_update_recommendation_results_processes_seeded_run(session_factory):
             volume=1_000_000,
         )
         session.commit()
-        rec_id = rec.id
 
         result = update_recommendation_results(session)
         session.commit()
     finally:
         session.close()
 
-    assert result.status == JOB_STATUS_SUCCESS
-    assert result.summary["processed_recommendations"] == 1
+    assert result.status == JOB_STATUS_PARTIAL
+    assert result.summary["data_status"] == "PARTIAL"
+    assert result.summary["processed_count"] == 2
+    assert result.summary["skipped_no_reference"] == 1
+    assert result.summary["upserted_results"] == 8  # 4 days_after × 2 recs
+    assert result.summary["success_count"] >= 1
+    assert "1 recommendations had no reference price" in result.error_message
 
-    session2 = _read_session(session_factory)
+
+def test_update_recommendation_results_via_run_job_records_partial_summary(
+    session_factory,
+):
+    def wrapped(session):
+        _, _ = _seed_run_with_recommendation(session, symbol="000660", name="SK하이닉스")
+        return update_recommendation_results(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_UPDATE_RECOMMENDATION_RESULTS,
+        fn=wrapped,
+    )
+
+    assert outcome.status == JOB_STATUS_PARTIAL
+    assert outcome.result_summary["data_status"] == "PARTIAL"
+    assert outcome.result_summary["skipped_no_reference"] == 1
+    assert "1 recommendations had no reference price" in outcome.error_message
+
+    session = _read_session(session_factory)
     try:
-        from app.data.repositories import RecommendationResultRepository
-
-        rows = RecommendationResultRepository(session2).list_by_recommendation_id(rec_id)
-        assert {r.days_after for r in rows} == {1, 3, 5, 20}
+        row = JobRunRepository(session).list()[0]
+        assert row.status == JOB_STATUS_PARTIAL
+        assert row.result_summary["data_status"] == "PARTIAL"
     finally:
-        session2.close()
+        session.close()
 
 
 # ---------- registry sanity ----------

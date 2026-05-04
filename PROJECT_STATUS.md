@@ -26,35 +26,36 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 | **7 후속** API 성과 노출 | 추천 항목에 `results[]` + history 집계 | `RecommendationResultSchema`, `RecommendationHistoryItem` 확장 (`success_rate`, `avg_close_return_{1,3,5,20}d`) |
 | **8** Scheduler + 6개 Job | APScheduler + `run_job` 래퍼 | `app/scheduler/{jobs,scheduler}.py`, FastAPI lifespan에서 lazy import 후 시작/종료, `SCHEDULER_ENABLED` 제어 |
 | **8 후속** Dispatcher 연결 | 추천/보유/ALERT 잡 → 텔레그램 자동 발송 | `app/notification/dispatchers.py`, 잡에서 `session.info["job_run_id"]`로 `notification_logs.related_job_id` 자동 연결, `HoldingRiskAlertDispatcher` 연동 완료 |
+| **8 후속** 잡 최종 점검 | 6개 잡 모두 dispatcher / engine / NO_DATA·PARTIAL 분기 정리 | `send_recommendation_report`은 최신 run을 dispatcher로 발송 (NO_DATA 단락), `run_pre/post_market_holding_check`은 활성 보유 없으면 NO_DATA 단락, `update_recommendation_results`는 `data_status` SUCCESS/PARTIAL/NO_DATA + skipped_no_reference 시 PARTIAL |
 
-브리프 전체 v0.1 범위 + 일부 v0.2 후속 (성과 검증, dispatcher) 까지 도달.
+브리프 전체 v0.1 범위 + 일부 v0.2 후속 (성과 검증, dispatcher) 까지 도달. 6개 잡 result_summary는 모두 dashboard `/api/jobs` 진단에 적합한 키 (`data_status` / `notification_status` / `dry_run` / 카운트들)을 노출한다.
 
 ---
 
 ## 2. 현재 테스트 결과
 
 ```text
-266 passed in 5.00s
+294 passed in 6.62s
 ```
 
 | 영역 | 파일 수 | 테스트 수 |
 |---|---:|---:|
-| `tests/unit/` | 10 | 124 |
-| `tests/integration/` | 11 | 142 |
+| `tests/unit/` | 11 | 127 |
+| `tests/integration/` | 11 | 167 |
 
 **테스트 파일별 카운트:**
 
 ```text
-tests/integration/test_api_routes.py                     35
+tests/integration/test_api_routes.py                     40
 tests/integration/test_collectors.py                      8
-tests/integration/test_dispatchers.py                    11
+tests/integration/test_dispatchers.py                    16
 tests/integration/test_holding_check_engine.py           17
 tests/integration/test_indicator_service.py               7
 tests/integration/test_notification_service.py            6
 tests/integration/test_recommendation_engine.py          13
 tests/integration/test_recommendation_result_service.py  13
 tests/integration/test_repositories.py                    6
-tests/integration/test_scheduler_jobs.py                 19
+tests/integration/test_scheduler_jobs.py                 34
 tests/integration/test_v01_required_repositories.py       7
 tests/unit/test_data_quality_checker.py                   4
 tests/unit/test_kis_client_http.py                        9
@@ -63,6 +64,7 @@ tests/unit/test_project_structure.py                      4
 tests/unit/test_report_generator.py                      12
 tests/unit/test_risk_engine.py                           25
 tests/unit/test_scheduler_module.py                       5
+tests/unit/test_score_producers.py                        3
 tests/unit/test_scoring_engine.py                        16
 tests/unit/test_technical_analyzer.py                    32
 tests/unit/test_telegram_notifier.py                     14
@@ -114,13 +116,13 @@ tests/unit/test_telegram_notifier.py                     14
 
 ## 5. 다음에 이어서 할 첫 번째 작업
 
-**News/Supply/Fundamental/Earnings/AI dummy score producer (등급 분포 활성화) 및 API 응답에 추천 이력 Join**
+**News/Supply/Fundamental/Earnings/AI dummy score producer 활성화 (등급 분포 정상화) 및 API 응답에 추천 이력 Join 보강**
 
 이유:
-- 즉시 ALERT dispatcher 연동까지 포함해 추천 및 점검, 알림(Dispatcher)의 기초 흐름이 모두 완료되었습니다.
-- 현재 신규 추천 및 보유 점수 산출 시 technical(기술적 분석) 단독으로만 점수가 책정되어 있어, 등급 분포가 D~C 하위권에 머물고 있습니다. 
-- 이를 해소하기 위해 나머지 정성적/정량적 지표(News, Fundamental 등)에 대한 Dummy Score를 부여하여 S~D 등급이 정상적으로 분포되도록 활성화하는 작업이 필수적입니다.
-- 연이어 대시보드 API(`.api/stocks/{symbol}`)에서 그 종목의 과거 추천 이력(`recommendation_results`)을 Join하여 프론트엔드가 활용할 수 있게 완성도를 높입니다.
+- 6개 스케줄러 잡 (수집 / 지표 / 추천 발송 / 장전 점검 / 장후 점검 / 성과 검증) 의 dispatcher / engine / NO_DATA·PARTIAL 분기가 모두 일관된 `result_summary` 구조로 정리되어 잡 자동화 골격은 완료된 상태.
+- 현재 점수는 사실상 technical(기술적 분석) 단독으로만 책정되고 있어 등급 분포가 D~C 하위권에 몰려 있음. `app/analysis/score_producers.py`의 dummy producer를 News/Fundamental/Earnings/AI 축까지 확장해 S~D 분포를 정상화하는 작업이 우선 순위.
+- 이어서 `/api/stocks/{symbol}` 응답에 그 종목의 `recommendation_results`(1/3/5/20일 성과)를 join해 프론트엔드가 추천 신뢰도를 즉시 시각화할 수 있게 확장.
+- 그 다음 후속: `collect_market_close_data`의 KIS 실 키 연결, 캔들 패턴/ATR 변동성 컴포넌트 보강.
 
 ---
 

@@ -797,21 +797,49 @@ def run_post_market_holding_check(session: Session) -> JobResult:
 # ---------- 17:00 update_recommendation_results ----------
 
 def update_recommendation_results(session: Session) -> JobResult:
-    """Compute 1/3/5/20-day post-recommendation returns and upsert results."""
+    """Compute 1/3/5/20-day post-recommendation returns and upsert results.
+
+    JobResult.status mapping:
+        * No recommendations in the lookback window  → SUCCESS, data_status=NO_DATA
+        * One or more recommendations missing a reference price  → PARTIAL,
+          data_status=PARTIAL (those rows are upserted as PENDING and re-checked
+          on the next run)
+        * Otherwise  → SUCCESS, data_status=SUCCESS
+    """
     service = RecommendationResultService(
         recommendation_run_repository=RecommendationRunRepository(session),
         recommendation_repository=RecommendationRepository(session),
         recommendation_result_repository=RecommendationResultRepository(session),
         daily_price_repository=DailyPriceRepository(session),
     )
+    lookback_days = service.DEFAULT_LOOKBACK_DAYS
     as_of = _today_in_default_timezone()
-    result = service.update_results(as_of=as_of)
+    result = service.update_results(as_of=as_of, lookback_days=lookback_days)
+
+    if result.processed_recommendations == 0:
+        data_status = "NO_DATA"
+        job_status = JOB_STATUS_SUCCESS
+        error_message = None
+    elif result.skipped_no_reference > 0:
+        data_status = "PARTIAL"
+        job_status = JOB_STATUS_PARTIAL
+        error_message = (
+            f"{result.skipped_no_reference} recommendations had no reference price"
+        )
+    else:
+        data_status = "SUCCESS"
+        job_status = JOB_STATUS_SUCCESS
+        error_message = None
+
     return JobResult(
-        status=JOB_STATUS_SUCCESS,
+        status=job_status,
         summary={
             "phase": "5-followup",
             "as_of": result.as_of.isoformat(),
+            "lookback_days": lookback_days,
+            "data_status": data_status,
             "processed_runs": result.processed_runs,
+            "processed_count": result.processed_recommendations,
             "processed_recommendations": result.processed_recommendations,
             "upserted_results": result.upserted_results,
             "pending_count": result.pending_count,
@@ -819,6 +847,7 @@ def update_recommendation_results(session: Session) -> JobResult:
             "failed_count": result.failed_count,
             "skipped_no_reference": result.skipped_no_reference,
         },
+        error_message=error_message,
     )
 
 
