@@ -23,8 +23,10 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import (
     DailyPriceSchema,
-    HoldingChecksResponse,
     HoldingCheckSchema,
+    HoldingCheckSymbolMetrics,
+    HoldingCheckSymbolResponse,
+    HoldingChecksResponse,
     HoldingSchema,
     HoldingsResponse,
     JobRunDetailSchema,
@@ -295,6 +297,65 @@ def _resolve_holding_checks(
     return items
 
 
+_CHECK_TYPE_ORDER = {"PRE_MARKET": 0, "POST_MARKET": 1}
+
+
+def _summarize_holding_check_history(
+    sorted_checks: list,
+    snapshot_repo: DataSnapshotRepository,
+) -> HoldingCheckSymbolMetrics:
+    """Aggregate metrics across the full per-symbol holding_check history.
+
+    ``sorted_checks`` must already be in latest-first order (by ``check_date``
+    desc, with same-day POST_MARKET ranked after PRE_MARKET). Empty input
+    returns the schema's zero/None defaults so the dashboard can render
+    without conditional checks.
+    """
+    if not sorted_checks:
+        return HoldingCheckSymbolMetrics()
+
+    risk_levels: list[Optional[str]] = []
+    for check in sorted_checks:
+        snapshot = (
+            snapshot_repo.get(check.snapshot_id)
+            if check.snapshot_id is not None
+            else None
+        )
+        level, _flags = extract_risk_summary(snapshot)
+        risk_levels.append(level)
+
+    latest = sorted_checks[0]
+    previous = sorted_checks[1] if len(sorted_checks) > 1 else None
+
+    if (
+        previous is not None
+        and latest.total_score is not None
+        and previous.total_score is not None
+    ):
+        total_score_change: Decimal | None = latest.total_score - previous.total_score
+    else:
+        total_score_change = None
+
+    return_rates = [c.return_rate for c in sorted_checks if c.return_rate is not None]
+    best_return_rate = max(return_rates) if return_rates else None
+    worst_return_rate = min(return_rates) if return_rates else None
+
+    return HoldingCheckSymbolMetrics(
+        total_check_count=len(sorted_checks),
+        alert_count=sum(1 for c in sorted_checks if c.alert),
+        high_risk_count=sum(1 for level in risk_levels if level == "HIGH"),
+        latest_check_date=latest.check_date,
+        latest_total_score=latest.total_score,
+        previous_total_score=(previous.total_score if previous is not None else None),
+        total_score_change=total_score_change,
+        latest_return_rate=latest.return_rate,
+        best_return_rate=best_return_rate,
+        worst_return_rate=worst_return_rate,
+        latest_decision=latest.decision,
+        latest_risk_level=risk_levels[0],
+    )
+
+
 def _summary_int(summary: dict, *keys: str) -> int | None:
     for key in keys:
         value = summary.get(key)
@@ -526,17 +587,24 @@ def get_latest_holding_checks(
 
 @router.get(
     "/api/holdings/{symbol}/checks",
-    response_model=HoldingChecksResponse,
+    response_model=HoldingCheckSymbolResponse,
     tags=["holdings"],
 )
 def get_holding_checks_for_symbol(
     symbol: str,
     limit: int = Query(20, ge=1, le=200),
     session: Session = Depends(get_session),
-) -> HoldingChecksResponse:
-    checks = HoldingCheckRepository(session).list_by_symbol(symbol)[:limit]
+) -> HoldingCheckSymbolResponse:
+    checks = HoldingCheckRepository(session).list_by_symbol(symbol)
+    sorted_checks = sorted(
+        checks,
+        key=lambda c: (c.check_date, _CHECK_TYPE_ORDER.get(c.check_type, 0)),
+        reverse=True,
+    )
     snapshot_repo = DataSnapshotRepository(session)
-    return HoldingChecksResponse(items=_resolve_holding_checks(checks, snapshot_repo))
+    summary = _summarize_holding_check_history(sorted_checks, snapshot_repo)
+    items = _resolve_holding_checks(sorted_checks[:limit], snapshot_repo)
+    return HoldingCheckSymbolResponse(items=items, summary=summary)
 
 
 # ---------- /api/stocks/{symbol} ----------

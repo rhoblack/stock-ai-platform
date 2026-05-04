@@ -181,6 +181,26 @@ class HoldingChecksResponse(_BaseSchema):
     items: List[HoldingCheckSchema]
 
 
+class HoldingCheckSymbolMetrics(_BaseSchema):
+    total_check_count: int = 0
+    alert_count: int = 0
+    high_risk_count: int = 0
+    latest_check_date: Optional[date_type] = None
+    latest_total_score: Optional[str] = None
+    previous_total_score: Optional[str] = None
+    total_score_change: Optional[str] = None
+    latest_return_rate: Optional[str] = None
+    best_return_rate: Optional[str] = None
+    worst_return_rate: Optional[str] = None
+    latest_decision: Optional[str] = None
+    latest_risk_level: Optional[str] = None
+
+
+class HoldingCheckSymbolResponse(_BaseSchema):
+    items: List[HoldingCheckSchema]
+    summary: HoldingCheckSymbolMetrics
+
+
 class StockDetailResponse(_BaseSchema):
     stock: StockBriefSchema
     latest_price: Optional[DailyPriceSchema] = None

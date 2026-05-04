@@ -681,18 +681,176 @@ def test_holdings_checks_latest_rejects_invalid_check_type(client):
 
 
 def test_holdings_checks_for_symbol(client, session):
-    _seed_full_dataset(session)
+    seeded = _seed_full_dataset(session)
     response = client.get("/api/holdings/005930/checks")
     assert response.status_code == 200
     body = response.json()
     assert len(body["items"]) == 1
     assert body["items"][0]["symbol"] == "005930"
 
+    summary = body["summary"]
+    assert summary["total_check_count"] == 1
+    assert summary["alert_count"] == 1
+    assert summary["high_risk_count"] == 1
+    assert summary["latest_check_date"] == seeded["today"].isoformat()
+    assert summary["latest_decision"] == "SELL_REVIEW"
+    assert summary["latest_risk_level"] == "HIGH"
+    assert Decimal(summary["latest_return_rate"]) == Decimal("-7.1429")
+    assert Decimal(summary["best_return_rate"]) == Decimal("-7.1429")
+    assert Decimal(summary["worst_return_rate"]) == Decimal("-7.1429")
+    assert Decimal(summary["latest_total_score"]) == Decimal("0")
+    # previous_total_score and total_score_change require >= 2 checks
+    assert summary["previous_total_score"] is None
+    assert summary["total_score_change"] is None
+
 
 def test_holdings_checks_for_unknown_symbol_returns_empty(client):
     response = client.get("/api/holdings/UNKNOWN/checks")
     assert response.status_code == 200
-    assert response.json()["items"] == []
+    body = response.json()
+    assert body["items"] == []
+    summary = body["summary"]
+    assert summary == {
+        "total_check_count": 0,
+        "alert_count": 0,
+        "high_risk_count": 0,
+        "latest_check_date": None,
+        "latest_total_score": None,
+        "previous_total_score": None,
+        "total_score_change": None,
+        "latest_return_rate": None,
+        "best_return_rate": None,
+        "worst_return_rate": None,
+        "latest_decision": None,
+        "latest_risk_level": None,
+    }
+
+
+def test_holdings_checks_for_symbol_aggregates_multi_check_summary(client, session):
+    """Latest is sorted by (check_date desc, POST_MARKET after PRE_MARKET).
+    Three seeded checks → summary aggregates totals, alerts, high-risk count,
+    score change between latest and previous, and best/worst return rates."""
+    today = date(2026, 5, 4)
+    yesterday = date(2026, 5, 3)
+
+    snap_low = DataSnapshotRepository(session).add(
+        DataSnapshot(
+            snapshot_time=datetime(2026, 5, 3, 8, 30, tzinfo=timezone.utc),
+            symbol="000660", snapshot_type="HOLDING_CHECK",
+            market_context_json={
+                "risk_summary": {"level": "LOW", "flags": [], "penalty": "0"},
+            },
+        ),
+    )
+    snap_med = DataSnapshotRepository(session).add(
+        DataSnapshot(
+            snapshot_time=datetime(2026, 5, 4, 8, 30, tzinfo=timezone.utc),
+            symbol="000660", snapshot_type="HOLDING_CHECK",
+            market_context_json={
+                "risk_summary": {
+                    "level": "MEDIUM", "flags": ["SCORE_DROP"], "penalty": "12",
+                },
+            },
+        ),
+    )
+    snap_high = DataSnapshotRepository(session).add(
+        DataSnapshot(
+            snapshot_time=datetime(2026, 5, 4, 16, 30, tzinfo=timezone.utc),
+            symbol="000660", snapshot_type="HOLDING_CHECK",
+            market_context_json={
+                "risk_summary": {
+                    "level": "HIGH", "flags": ["MA20_BREAKDOWN", "STOP_LOSS_NEAR"],
+                    "penalty": "23",
+                },
+            },
+        ),
+    )
+    session.flush()
+
+    repo = HoldingCheckRepository(session)
+    repo.add(HoldingCheck(
+        check_date=yesterday, check_type="PRE_MARKET", symbol="000660",
+        return_rate=Decimal("2"), total_score=Decimal("70"),
+        decision="HOLD", alert=False, snapshot_id=snap_low.snapshot_id,
+    ))
+    repo.add(HoldingCheck(
+        check_date=today, check_type="PRE_MARKET", symbol="000660",
+        return_rate=Decimal("-1"), total_score=Decimal("50"),
+        decision="WATCH", alert=False, snapshot_id=snap_med.snapshot_id,
+    ))
+    repo.add(HoldingCheck(
+        check_date=today, check_type="POST_MARKET", symbol="000660",
+        return_rate=Decimal("-3"), total_score=Decimal("30"),
+        decision="SELL_REVIEW", alert=True, snapshot_id=snap_high.snapshot_id,
+    ))
+    session.commit()
+
+    response = client.get("/api/holdings/000660/checks")
+    assert response.status_code == 200
+    body = response.json()
+
+    # items[] is the same list, latest-first (POST_MARKET ranked after
+    # PRE_MARKET for same-date)
+    assert [i["check_type"] for i in body["items"]] == [
+        "POST_MARKET", "PRE_MARKET", "PRE_MARKET",
+    ]
+    assert [i["check_date"] for i in body["items"]] == [
+        today.isoformat(), today.isoformat(), yesterday.isoformat(),
+    ]
+
+    summary = body["summary"]
+    assert summary["total_check_count"] == 3
+    assert summary["alert_count"] == 1
+    assert summary["high_risk_count"] == 1
+    assert summary["latest_check_date"] == today.isoformat()
+    assert Decimal(summary["latest_total_score"]) == Decimal("30")
+    assert Decimal(summary["previous_total_score"]) == Decimal("50")
+    assert Decimal(summary["total_score_change"]) == Decimal("-20")
+    assert Decimal(summary["latest_return_rate"]) == Decimal("-3")
+    assert Decimal(summary["best_return_rate"]) == Decimal("2")
+    assert Decimal(summary["worst_return_rate"]) == Decimal("-3")
+    assert summary["latest_decision"] == "SELL_REVIEW"
+    assert summary["latest_risk_level"] == "HIGH"
+
+
+def test_holdings_checks_for_symbol_summary_handles_missing_score_and_return(
+    client, session,
+):
+    """When total_score / return_rate are NULL, summary skips them gracefully:
+    score_change stays None when either side is missing, and best/worst
+    return are None when no return is recorded."""
+    today = date(2026, 5, 4)
+    snap = DataSnapshotRepository(session).add(
+        DataSnapshot(
+            snapshot_time=datetime(2026, 5, 4, 8, 30, tzinfo=timezone.utc),
+            symbol="009999", snapshot_type="HOLDING_CHECK",
+            market_context_json={
+                "risk_summary": {"level": "LOW", "flags": [], "penalty": "0"},
+            },
+        ),
+    )
+    session.flush()
+    HoldingCheckRepository(session).add(HoldingCheck(
+        check_date=today, check_type="PRE_MARKET", symbol="009999",
+        return_rate=None, total_score=None,
+        decision="HOLD", alert=False, snapshot_id=snap.snapshot_id,
+    ))
+    session.commit()
+
+    response = client.get("/api/holdings/009999/checks")
+    assert response.status_code == 200
+    summary = response.json()["summary"]
+    assert summary["total_check_count"] == 1
+    assert summary["alert_count"] == 0
+    assert summary["high_risk_count"] == 0
+    assert summary["latest_total_score"] is None
+    assert summary["previous_total_score"] is None
+    assert summary["total_score_change"] is None
+    assert summary["latest_return_rate"] is None
+    assert summary["best_return_rate"] is None
+    assert summary["worst_return_rate"] is None
+    assert summary["latest_decision"] == "HOLD"
+    assert summary["latest_risk_level"] == "LOW"
 
 
 # ---------- /api/stocks/{symbol} ----------

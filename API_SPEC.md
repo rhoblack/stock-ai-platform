@@ -109,6 +109,24 @@ Query:
 
 특정 종목의 점검 이력을 조회한다.
 
+응답:
+
+* `items`: 최신순(`check_date` desc, 동일 일자에서는 POST_MARKET 이 PRE_MARKET 보다 뒤)
+  으로 정렬된 보유 점검 이력. 각 항목은 `decision`, `alert`, `risk_level`,
+  `risk_flags`, `risk_summary`를 포함한다.
+* `summary`: 동일 종목 전체 점검 이력에 대한 추세/카운트 metric. 데이터가
+  없으면 카운트 필드는 0, 그 외 필드는 `null`로 일관 처리된다. 필드:
+  * `total_check_count`, `alert_count`, `high_risk_count`
+  * `latest_check_date`, `latest_decision`, `latest_risk_level`
+  * `latest_total_score`, `previous_total_score`, `total_score_change`
+    (점검 1건뿐이면 previous/change 는 `null`)
+  * `latest_return_rate`, `best_return_rate`, `worst_return_rate`
+
+Query:
+
+- `limit`: items 만 잘라낸다 (default 20, max 200). `summary` 는 limit 과 무관하게
+  종목 전체 이력을 기준으로 집계된다.
+
 ## 8. 종목 상세
 
 ### GET /api/stocks/{symbol}
