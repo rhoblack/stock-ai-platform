@@ -115,17 +115,35 @@ frontend/
 | 시스템 로그 / 잡 | `/jobs`, `/jobs/:jobId` | `/api/jobs`, `/api/jobs/{job_id}` |
 | 설정 | `/settings` | `/api/settings` |
 
-## v0.2 Phase A 범위 (현재)
+## v0.2 진행 상태
 
-- [x] 프로젝트 초기화, Tailwind, Router, QueryClientProvider
-- [x] Sidebar (8 메뉴) + Header (페이지 제목 / health badge / 다크모드 토글)
-- [x] 8 페이지 placeholder
-- [x] `/health` hook + 테스트 (vitest + msw)
-- [ ] (Phase B) Today Report + Jobs 실 데이터 연동
-- [ ] (Phase C) Recommendations + History
+- [x] **Phase A** — 프로젝트 초기화, Tailwind, Router, QueryClientProvider, Sidebar (8 메뉴), Header (페이지 제목 / health badge / 다크모드 토글), 8 페이지 placeholder, `/health` hook + 테스트
+- [x] **Phase B** — Today Report 화면 + 시스템 로그/잡 화면 실 데이터 연동
+  - hooks: `useJobs`, `useJobDetail`, `useTodayReport`
+  - shared components: `DataStatusBadge`, `RiskBadge`, `GradePill`, `DecisionPill`, `ReturnRate`, `JsonViewer`
+  - Jobs: TanStack Table 기반 list + 우측 패널 detail (`result_summary` JSON 뷰), 30초 자동 새로고침, 행 클릭 → `/jobs/:jobId`
+  - Today Report: 추천 TOP / 보유 점검 알림 / HIGH risk / 마지막 run 4 카드, 60초 자동 새로고침
+  - 테스트: Jobs + Today 각각 happy / empty / error 3종
+- [ ] (Phase C) Recommendations + Recommendation History
 - [ ] (Phase D) Holdings + Stock Detail
 - [ ] (Phase E) MarketCap Top + Settings
 - [ ] (Phase F) Playwright e2e + Docker 배포 + `RELEASE_NOTES_v0.2_FRONTEND.md`
+
+### Phase B 실행 빠른 가이드
+
+1. 백엔드 + mock seed 적재 (별도 터미널, 프로젝트 루트):
+   ```powershell
+   .\.venv\bin\python.exe -m scripts.seed_mock_data --reset
+   .\.venv\bin\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+   ```
+2. 프런트 dev:
+   ```powershell
+   cd frontend
+   npm run dev
+   ```
+3. 브라우저에서 `http://127.0.0.1:5173/today` (Today Report) 와 `http://127.0.0.1:5173/jobs` (Jobs) 확인.
+4. `/jobs` 에서 행 클릭 → URL 이 `/jobs/:jobId` 로 변하고 우측 패널에 `result_summary` JSON 노출.
+5. 회귀: `npm run test` (vitest) + `npm run build` (tsc + vite build).
 
 ## 보안 / 보안 정책
 
