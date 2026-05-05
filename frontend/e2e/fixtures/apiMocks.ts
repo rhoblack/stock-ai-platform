@@ -386,6 +386,86 @@ const MARKET_CAP_KOSDAQ = {
   ],
 }
 
+const THEME_RANKING = {
+  items: [
+    {
+      theme_id: 41,
+      theme_name: 'HBM',
+      theme_category: 'SEMICONDUCTOR',
+      direction: 'POSITIVE',
+      time_horizon: 'MID',
+      summary: 'AI 서버 메모리 수요',
+      confidence: '0.800',
+      source_report_id: 12,
+      mapping_count: 2,
+      signal_event_count: 1,
+    },
+    {
+      theme_id: 42,
+      theme_name: '거래정지',
+      theme_category: 'RISK',
+      direction: 'NEGATIVE',
+      time_horizon: 'SHORT',
+      summary: '거래정지 위험',
+      confidence: null,
+      source_report_id: 12,
+      mapping_count: 0,
+      signal_event_count: 1,
+    },
+  ],
+  category: null,
+  direction: null,
+  limit: 50,
+}
+
+const THEME_DETAIL_41 = {
+  theme: THEME_RANKING.items[0],
+  stock_mappings: [
+    {
+      mapping_id: 51,
+      theme_id: 41,
+      symbol: '005930',
+      company_name: '삼성전자',
+      market: 'KOSPI',
+      relation_type: 'SUPPLIER',
+      impact_direction: 'POSITIVE',
+      impact_strength: '0.800',
+      impact_path: 'DEMAND_INCREASE',
+      benefit_type: 'PRICE_POWER',
+      time_lag: 'MID',
+      reason: 'HBM 공급사',
+    },
+    {
+      mapping_id: 52,
+      theme_id: 41,
+      symbol: '000660',
+      company_name: 'SK하이닉스',
+      market: 'KOSPI',
+      relation_type: null,
+      impact_direction: 'POSITIVE',
+      impact_strength: '0.900',
+      impact_path: 'MARKET_SHARE_GAIN',
+      benefit_type: null,
+      time_lag: null,
+      reason: null,
+    },
+  ],
+  signal_events: [
+    {
+      id: 71,
+      report_id: 32,
+      symbol: '005930',
+      theme_id: 41,
+      event_type: 'SUPPLY_SHORTAGE',
+      direction: 'POSITIVE',
+      strength: '0.700',
+      time_horizon: 'MID',
+      summary: 'HBM 공급 부족 지속',
+      evidence_json: { source: 'fixture' },
+    },
+  ],
+}
+
 const SETTINGS_SAFE = {
   app_env: 'e2e',
   app_name: 'stock_ai_platform',
@@ -421,6 +501,8 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number }> = 
   { pattern: /\/api\/universe\/market-cap-top/, payload: MARKET_CAP_KOSPI },
   { pattern: /\/api\/jobs\/101$/, payload: JOB_DETAIL_101 },
   { pattern: /\/api\/jobs(\?|$)/, payload: JOBS_LIST },
+  { pattern: /\/api\/themes\/ranking(\?|$)/, payload: THEME_RANKING },
+  { pattern: /\/api\/themes\/41(\?|$)/, payload: THEME_DETAIL_41 },
   { pattern: /\/api\/market-regime\/latest/, payload: TODAY.market_regime },
   { pattern: /\/api\/news/, payload: { items: [], limit: 20, offset: 0 } },
   { pattern: /\/api\/settings$/, payload: SETTINGS_SAFE },

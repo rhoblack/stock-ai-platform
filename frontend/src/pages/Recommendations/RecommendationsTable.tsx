@@ -6,7 +6,12 @@ import {
   useReactTable,
   type ColumnDef,
 } from '@tanstack/react-table'
-import type { RecommendationItem, RecommendationResult } from '@/api/types'
+import type {
+  DisclosureRiskEvidence,
+  NewsEvidence,
+  RecommendationItem,
+  RecommendationResult,
+} from '@/api/types'
 import { GradePill } from '@/components/common/GradePill'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { ReturnRate } from '@/components/common/ReturnRate'
@@ -44,6 +49,24 @@ function evidenceSummary(evidence: Record<string, unknown> | null | undefined) {
     topThemes.length > 0 ? topThemes.join(', ') : null,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(' · ') : '—'
+}
+
+function newsEvidenceSummary(evidence: NewsEvidence | null | undefined): string {
+  if (!evidence) return '—'
+  const counts = `+${evidence.positive_count}/0:${evidence.neutral_count}/-${evidence.negative_count}`
+  const top = evidence.top_news?.[0]?.title?.slice(0, 24) ?? null
+  if (top) return `n=${evidence.news_count} ${counts} · ${top}`
+  return `n=${evidence.news_count} ${counts}`
+}
+
+function disclosureEvidenceSummary(
+  evidence: DisclosureRiskEvidence | null | undefined,
+): string {
+  if (!evidence) return '—'
+  const count = evidence.risk_disclosure_count
+  if (!count) return '0'
+  const top = evidence.recent_risk_disclosures?.[0]?.title?.slice(0, 24) ?? null
+  return top ? `${count} · ${top}` : String(count)
 }
 
 export function RecommendationsTable({ rows }: RecommendationsTableProps) {
@@ -118,6 +141,30 @@ export function RecommendationsTable({ rows }: RecommendationsTableProps) {
             className="text-xs text-muted-foreground"
           >
             {evidenceSummary(row.original.report_evidence)}
+          </span>
+        ),
+      },
+      {
+        id: 'news_evidence',
+        header: 'news evidence',
+        cell: ({ row }) => (
+          <span
+            data-testid={`rec-news-evidence-${row.original.symbol}`}
+            className="text-xs text-muted-foreground"
+          >
+            {newsEvidenceSummary(row.original.news_evidence)}
+          </span>
+        ),
+      },
+      {
+        id: 'disclosure_evidence',
+        header: 'disclosure risk',
+        cell: ({ row }) => (
+          <span
+            data-testid={`rec-disclosure-evidence-${row.original.symbol}`}
+            className="text-xs text-muted-foreground"
+          >
+            {disclosureEvidenceSummary(row.original.disclosure_risk_evidence)}
           </span>
         ),
       },

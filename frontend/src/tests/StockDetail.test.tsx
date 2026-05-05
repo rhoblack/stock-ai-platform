@@ -203,6 +203,13 @@ describe('StockDetailPage', () => {
     expect(screen.getByText('Analyst Consensus')).toBeInTheDocument()
     expect(screen.getByText('삼성전자 HBM 수요 회복')).toBeInTheDocument()
     expect(screen.getByTestId('stock-detail-theme-51')).toHaveTextContent('HBM')
+    // v0.5 Phase D — theme name is a clickable Link to /themes/:theme_id
+    const themeLink = screen.getByTestId('stock-detail-theme-link-41')
+    expect(themeLink).toHaveAttribute('href', '/themes/41')
+    // impact_path renders as a dedicated badge
+    expect(screen.getByTestId('stock-detail-theme-impact-51')).toHaveTextContent(
+      'DEMAND_INCREASE',
+    )
     expect(screen.getByTestId('stock-detail-signal-61')).toHaveTextContent(
       'SUPPLY_SHORTAGE',
     )

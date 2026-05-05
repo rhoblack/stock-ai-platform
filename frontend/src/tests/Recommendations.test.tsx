@@ -46,6 +46,33 @@ const HAPPY_LATEST = {
         theme_signal_adjustment: '1.00',
         top_themes: [{ theme_name: 'HBM' }],
       },
+      news_evidence: {
+        news_count: 3,
+        positive_count: 2,
+        neutral_count: 1,
+        negative_count: 0,
+        latest_news_at: '2026-05-04T07:00:00+00:00',
+        top_news: [
+          {
+            title: 'HBM 공급 부족 지속',
+            url: 'https://example.com/n/1',
+            provider: '뉴스원',
+            published_at: '2026-05-04T07:00:00+00:00',
+            sentiment: 'POSITIVE',
+          },
+        ],
+      },
+      disclosure_risk_evidence: {
+        risk_disclosure_count: 1,
+        recent_risk_disclosures: [
+          {
+            title: '감사의견 비적정',
+            url: 'https://example.com/d/1',
+            provider: 'DART',
+            published_at: '2026-05-03T09:00:00+00:00',
+          },
+        ],
+      },
       results: [
         {
           days_after: 1,
@@ -105,6 +132,14 @@ describe('RecommendationsPage', () => {
     expect(screen.getByTestId('rec-report-evidence-005930')).toHaveTextContent(
       'HBM',
     )
+    // v0.5 Phase D — news_evidence + disclosure_risk_evidence cells
+    expect(screen.getByTestId('rec-news-evidence-005930')).toHaveTextContent('n=3')
+    expect(screen.getByTestId('rec-news-evidence-005930')).toHaveTextContent(
+      'HBM 공급 부족',
+    )
+    expect(screen.getByTestId('rec-disclosure-evidence-005930')).toHaveTextContent(
+      '감사의견 비적정',
+    )
     // 1/3/5/20 day result columns: 1d → +1.50%, 5d → +3.00%, 3d/20d → "—"
     expect(screen.getAllByTestId('return-rate').length).toBeGreaterThanOrEqual(4)
   })
@@ -120,6 +155,8 @@ describe('RecommendationsPage', () => {
               report_score: null,
               theme_signal_score: null,
               report_evidence: null,
+              news_evidence: null,
+              disclosure_risk_evidence: null,
             },
           ],
         }),
@@ -133,6 +170,8 @@ describe('RecommendationsPage', () => {
     expect(screen.getByTestId('rec-report-score-005930')).toHaveTextContent('—')
     expect(screen.getByTestId('rec-theme-score-005930')).toHaveTextContent('—')
     expect(screen.getByTestId('rec-report-evidence-005930')).toHaveTextContent('—')
+    expect(screen.getByTestId('rec-news-evidence-005930')).toHaveTextContent('—')
+    expect(screen.getByTestId('rec-disclosure-evidence-005930')).toHaveTextContent('—')
   })
 
   it('shows empty table when run has no recommendations', async () => {

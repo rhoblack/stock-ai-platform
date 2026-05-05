@@ -5,8 +5,8 @@ test.beforeEach(async ({ page }) => {
   await installApiMocks(page)
 })
 
-test.describe('v0.2 Phase F — dashboard happy paths (8 screens, mocked API)', () => {
-  test('all 8 sidebar menus are reachable and render their main content', async ({
+test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', () => {
+  test('all 9 sidebar menus are reachable and render their main content', async ({
     page,
   }) => {
     await page.goto('/')
@@ -33,6 +33,9 @@ test.describe('v0.2 Phase F — dashboard happy paths (8 screens, mocked API)', 
 
     await nav.getByRole('link', { name: '시가총액 TOP' }).click()
     await expect(page.getByTestId('mcap-row-005930')).toBeVisible()
+
+    await nav.getByRole('link', { name: '테마 (β)' }).click()
+    await expect(page.getByTestId('theme-row-41')).toBeVisible()
 
     await nav.getByRole('link', { name: '시스템 로그 / 잡' }).click()
     await expect(page.getByTestId('job-row-101')).toBeVisible()
@@ -173,6 +176,46 @@ test.describe('v0.2 Phase F — dashboard happy paths (8 screens, mocked API)', 
     }
   })
 
+  test('Themes ranking + detail expose read-only summaries; theme link from StockDetail navigates', async ({
+    page,
+  }) => {
+    await page.goto('/themes')
+    await expect(page.getByTestId('themes-table')).toBeVisible()
+    await expect(page.getByTestId('theme-row-41')).toBeVisible()
+    await expect(page.getByTestId('theme-row-42')).toBeVisible()
+    await expect(page.getByTestId('theme-mapping-count-41')).toContainText('2')
+    await expect(page.getByTestId('theme-direction-42')).toContainText('NEGATIVE')
+
+    await page.getByTestId('theme-row-41').click()
+    await expect(page).toHaveURL(/\/themes\/41$/)
+    await expect(page.getByTestId('theme-detail')).toBeVisible()
+    await expect(page.getByTestId('theme-mapping-51')).toContainText('삼성전자')
+    await expect(page.getByTestId('theme-detail-signal-71')).toContainText(
+      'SUPPLY_SHORTAGE',
+    )
+    await expect(page.getByText(/source_file_path/)).toHaveCount(0)
+
+    // StockDetail RelatedThemesCard → theme link → /themes/:theme_id
+    await page.goto('/stocks/005930')
+    await page.getByTestId('stock-detail-theme-link-41').click()
+    await expect(page).toHaveURL(/\/themes\/41$/)
+    await expect(page.getByTestId('theme-detail')).toBeVisible()
+  })
+
+  test('Recommendations table surfaces news / disclosure evidence cells', async ({
+    page,
+  }) => {
+    await page.goto('/recommendations')
+    await expect(page.getByTestId('rec-news-evidence-005930')).toBeVisible()
+    await expect(page.getByTestId('rec-disclosure-evidence-005930')).toBeVisible()
+    // The default fixture (TODAY.top_recommendations) wires neither news_evidence
+    // nor disclosure_risk_evidence so both cells render the dash placeholder.
+    await expect(page.getByTestId('rec-news-evidence-005930')).toContainText('—')
+    await expect(page.getByTestId('rec-disclosure-evidence-005930')).toContainText(
+      '—',
+    )
+  })
+
   test('no automation / order UI is exposed anywhere in v0.2 frontend', async ({
     page,
   }) => {
@@ -184,6 +227,8 @@ test.describe('v0.2 Phase F — dashboard happy paths (8 screens, mocked API)', 
       '/holdings/005930',
       '/stocks/005930',
       '/universe/market-cap-top',
+      '/themes',
+      '/themes/41',
       '/jobs',
       '/jobs/101',
       '/settings',

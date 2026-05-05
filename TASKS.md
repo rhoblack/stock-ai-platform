@@ -507,6 +507,18 @@ StockDetail 의 "관련 테마" 카드도 `impact_path` icon + reason 으로 가
 - [ ] `frontend/e2e/dashboard.spec.ts` — 9 메뉴 nav 검증 + `/themes` 화면 visit + 자동매매 부재 가드 통과 확인 ~1건 (e2e 9 → 10)
 - 완료 기준: backend pytest ~415 → ~419, frontend vitest 60 → ~63, e2e 9 → 10. 태그 `v0.5-frontend-themes`.
 
+#### Phase D 인수 결과 ✅ (실측)
+
+- [x] backend `/api/themes/ranking` + `/api/themes/{theme_id}` (read-only). `ThemeRankingItemSchema` / `ThemeRankingResponse` / `ThemeStockMappingSchema` / `ThemeDetailResponse` 신규
+- [x] `RecommendationItemSchema` 에 `news_evidence` + `disclosure_risk_evidence` nullable 필드 추가 (Phase C 가 snapshot 에 저장만 해 둔 evidence 를 surface)
+- [x] frontend `/themes` + `/themes/:themeId` 신규 페이지 + Sidebar 9th menu (`테마 (β)`) + lazy router
+- [x] `RelatedThemesCard` 테마 → `/themes/:id` 클릭 + impact_path / impact_direction badge
+- [x] `RecommendationsTable` news/disclosure evidence 두 컬럼 추가
+- [x] `mswServer.ts` 기본 핸들러 + `apiMocks.ts` fixture 보강
+- [x] tests: backend pytest **470 → 481 (+11)** / frontend vitest **60 → 68 (+8)** / e2e **9 → 11 (+2)** / build 그린
+- [x] source_file_path 0건 노출 가드 — 테마 ranking / detail / RecommendationsTable 응답 + e2e
+- [x] 회귀 0건. KIS / Telegram / scheduler / 자동매매 / POST 라우터 / 산식 본 weight 변경 0건. 태그 `v0.5-frontend-themes` 부여 예정
+
 ### Phase E — v0.5 릴리스 문서 / 마감
 
 - [ ] `RELEASE_NOTES_v0.5.md` 신규 (산출물 / 검증 / 제외 / 한계 / v0.6 후보 / 운영 가이드 / 저작권·보안)

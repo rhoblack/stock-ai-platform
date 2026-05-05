@@ -29,7 +29,7 @@ ai 10% - risk_penalty) 는 변경하지 않는다 — `news_score` 가 placehold
 | A | News data layer (`NewsProviderInterface` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 19:00 KST) | ✅ 인수 (PR1: pytest 382 → 401 / PR2: 401 → 406, 회귀 0건) | `v0.5-news-collector` |
 | B | Disclosure subset + 분류 5종 + `collect_disclosures` 잡 (20:00 KST) | ✅ 인수 (backend pytest 406 → 440, 회귀 0건) | `v0.5-disclosure-pipeline` |
 | C | `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine·HoldingCheckEngine·RiskEngine 통합 | ✅ 인수 (backend pytest 440 → 470 passed (+30), 회귀 0건) | `v0.5-news-score` |
-| D | 백엔드 `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` + 프런트 `/themes` 9번째 화면 + StockDetail 영향 강화 | ⏳ | `v0.5-frontend-themes` |
+| D | 백엔드 `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` + 프런트 `/themes` 9번째 화면 + StockDetail 영향 강화 | ✅ 인수 (backend pytest 470 → 481 (+11), vitest 60 → 68 (+8), e2e 9 → 11 (+2), build 그린, 회귀 0건) | `v0.5-frontend-themes` |
 | E | `RELEASE_NOTES_v0.5.md` + README / PROJECT_STATUS / TASKS / ARCHITECTURE 마감 + tag `v0.5-final` | ⏳ | `v0.5-final` |
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0005`, 체크리스트는 [`TASKS.md`](./TASKS.md) `v0.5 — News, Disclosure & Theme Ranking` 섹션 참조.
@@ -145,6 +145,33 @@ if any(category=RISK_DISCLOSURE in last 14d):
 본 weight 산식은 손대지 않는다 — `news_score` 가 50 → real 로 교체되지만 가중치
 25% 그대로. `decision_logs.rule_result_json["news_evidence"]` 추가 (top 3 / sentiment
 분포 / recency).
+
+### Phase D 결과 (요약) — Theme ranking API + 9th menu + Recommendation evidence surfacing
+
+> v0.4 누적 테마·매핑·시그널 데이터를 **첫 surface**. v0.5 Phase C 가
+> JSON 컬럼에 저장만 해두었던 `news_evidence` / `disclosure_risk_evidence` 도
+> RecommendationItemSchema 의 명시적 nullable 필드로 노출. 4 게이트 모두 그린.
+
+- 백엔드 신규 read-only 엔드포인트 2건:
+  - `GET /api/themes/ranking` — query `category` / `direction` (POSITIVE/NEGATIVE/NEUTRAL, 다른 값 422) / `limit` (1~200, default 50). 응답 각 항목에 `mapping_count` + `signal_event_count` (단일 grouped query 로 계산). 정렬 `id` 내림차순 (가장 최근 삽입 순). `source_file_path` 0건 노출.
+  - `GET /api/themes/{theme_id}` — 단건 + 매핑 + 시그널 이벤트. 매핑은 `theme_*` 필드 제외 (theme 가 부모 컨텍스트). `mapping_limit` / `signal_limit` query (default 50, max 200).
+- 신규 schema (`app/api/schemas.py`): `ThemeRankingItemSchema`, `ThemeRankingResponse`, `ThemeStockMappingSchema`, `ThemeDetailResponse`. 기존 `ReportSignalEventSchema` 재사용.
+- `RecommendationItemSchema` 보강 — `news_evidence: Optional[Dict[str, Any]]` + `disclosure_risk_evidence: Optional[Dict[str, Any]]` 필드 추가. v0.5 Phase C 가 `DataSnapshot.market_context_json` 에 저장한 evidence 를 routes 의 `_recommendation_to_schema` 에서 추출해 surface. pre-v0.5 snapshot 은 두 필드 모두 `null` (backward compat).
+- 프런트 신규 페이지 2개: `/themes` (Themes ranking, TanStack Table + direction radio + search filter + impact badge styling) + `/themes/:themeId` (Theme detail, KeyValueGrid 개요 + 영향 종목 카드 grid + 시그널 이벤트 표). Sidebar 9th 메뉴 `테마 (β)` 추가 (Tags 아이콘). React Router lazy chunk 2개 추가.
+- 프런트 보강:
+  - `RelatedThemesCard` (StockDetail) — 테마명을 `<Link to="/themes/{theme_id}">` 로 클릭 가능. `impact_path` 가 별도 monospace badge 로 분리, `impact_direction` 도 색상 badge.
+  - `RecommendationsTable` — `news evidence` (count + top news 제목 prefix) + `disclosure risk` (count + top 공시 제목 prefix) 두 컬럼 추가. nullable 시 `—`.
+- `frontend/src/api/types.ts` — `NewsEvidence` / `NewsEvidenceTopItem` / `DisclosureRiskEvidence` / `DisclosureRiskItem` / `ThemeRankingItem` / `ThemeRankingResponse` / `ThemeStockMapping` / `ThemeDetailResponse` 신규.
+- 신규 hook 2개: `useThemeRanking` / `useThemeDetail` (TanStack Query v5 patterns 그대로 따름, staleTime 5분).
+- 테스트:
+  - backend pytest **470 → 481 (+11)** — 테마 ranking 6 (전체 + filter + invalid 422 + empty + limit + source_file_path 가드) + 테마 detail 4 (mappings + 404 + empty signals + source_file_path 가드 통합) + recommendation 2 (news/disclosure evidence whitelist 노출 + pre-v0.5 backward compat).
+  - frontend vitest **60 → 68 (+8)** — `Themes.test.tsx` 5 (랭킹 happy / direction filter / search / empty / 500) + 3 (detail happy / 404 / empty signals). 기존 Recommendations / StockDetail / App 테스트도 9th menu / theme link / news+disclosure cell 단언으로 보강.
+  - Playwright e2e **9 → 11 (+2)** — Themes 랭킹/상세 + StockDetail → Theme link 네비게이션 + Recommendations evidence cells. 기존 8-menu walk 테스트도 9-menu 로 갱신.
+  - frontend build 그린 (vendor-charts 청크 변동 0).
+- 안전 가드: 테마 ranking / detail / StockDetail / Recommendations 응답에 `source_file_path` 0건 노출 (`_assert_no_source_file_path` recursive helper 가 신규 케이스 3건에서 검증). evidence 필드의 키 집합 whitelist 단언 (top_news 정확히 `{title, url, provider, published_at, sentiment}`).
+- 회귀 0건. KIS / Telegram / scheduler / 자동매매 / POST 라우터 / 산식 본 weight 일체 변경 0건.
+
+**Phase E 진입 시 첫 작업**: `RELEASE_NOTES_v0.5.md` 작성 (Phase A~D 누적 산출 요약, 통계 481/68/build/11) + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE 마감 + 4 게이트 재검증 + tag `v0.5-final`.
 
 ### v0.5 에서 절대 하지 않을 것 (정책)
 

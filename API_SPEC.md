@@ -26,6 +26,11 @@ Phase 7 후속에서 추천 성과(`recommendation_results`)가 응답에 노출
 * v0.4 Phase C 부터 각 recommendation 항목에는 Analyst & Theme Intelligence
   보조 점수 `report_score`, `theme_signal_score`, `report_evidence`가 nullable
   필드로 포함된다. 값이 없으면 `null`이며, `source_file_path`는 노출하지 않는다.
+* v0.5 Phase D 부터 각 recommendation 항목에는 `news_evidence`,
+  `disclosure_risk_evidence` 필드가 nullable 로 포함된다 (Phase C 의
+  `RealNewsScoreProducer` / `DisclosureRiskProducer` 가 wired 된 run 에서만
+  값이 채워지며, 둘 다 `DataSnapshot.market_context_json` 에서 읽어와
+  whitelist 된 안전 필드만 노출 — 본문 / `source_file_path` 등 절대 미노출).
 * `GET /api/reports/today` 응답의 `top_recommendations`도 동일 `results` 필드 노출.
 * `GET /api/recommendations/history` 응답의 각 항목에 `success_rate` (days_after=5
   finalized 행 기준 0~100 백분율) 및 `avg_close_return_1d/3d/5d/20d` 집계 필드 포함.
@@ -293,6 +298,60 @@ job_runs 단건 상세를 조회한다.
 ### GET /api/settings
 
 현재 시스템 설정을 조회한다.
+
+## 14. 테마 (v0.5 Phase D)
+
+### GET /api/themes/ranking
+
+증권사 리포트에서 추출된 테마 랭킹을 조회한다. 정렬은 `id` 내림차순(가장 최근
+삽입 순)이며, 응답의 각 항목에는 `mapping_count`(연결 종목 수)와
+`signal_event_count`(연결 시그널 이벤트 수)가 포함된다. `source_file_path`는
+응답에 절대 노출되지 않는다.
+
+Query:
+
+- `category`: optional. 예) `SEMICONDUCTOR`, `RISK`, `SECONDARY_BATTERY`
+- `direction`: optional. `POSITIVE` / `NEGATIVE` / `NEUTRAL` 중 하나. 다른 값은 422
+- `limit`: default 50, min 1, max 200
+
+응답 예시:
+
+```json
+{
+  "items": [
+    {
+      "theme_id": 41,
+      "theme_name": "HBM",
+      "theme_category": "SEMICONDUCTOR",
+      "direction": "POSITIVE",
+      "time_horizon": "MID",
+      "summary": "AI 서버 메모리 수요",
+      "confidence": "0.800",
+      "source_report_id": 12,
+      "mapping_count": 2,
+      "signal_event_count": 1
+    }
+  ],
+  "category": null,
+  "direction": null,
+  "limit": 50
+}
+```
+
+### GET /api/themes/{theme_id}
+
+테마 단건 상세 + 연결된 종목 매핑 + 시그널 이벤트를 조회한다. 응답의 매핑
+항목은 `theme_*` 필드를 포함하지 않는다 (theme 가 부모 컨텍스트). 시그널
+이벤트는 기존 `ReportSignalEventSchema` 형태(`evidence_json` 포함, 본문 미노출).
+
+Query:
+
+- `mapping_limit`: default 50, min 1, max 200
+- `signal_limit`: default 50, min 1, max 200
+
+오류:
+
+- 404: 해당 `theme_id` 의 `report_themes` 레코드가 없음
 
 ## 금지 API
 

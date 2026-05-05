@@ -18,7 +18,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -54,6 +54,10 @@ from app.api.schemas import (
     StockIndicatorSchema,
     StockPriceSeriesResponse,
     StockReportsResponse,
+    ThemeDetailResponse,
+    ThemeRankingItemSchema,
+    ThemeRankingResponse,
+    ThemeStockMappingSchema,
     TodayReportResponse,
 )
 from app.config.settings import Settings, get_settings
@@ -74,6 +78,7 @@ from app.data.repositories import (
     ReportConsensusSnapshotRepository,
     ReportScoreLogRepository,
     ReportSignalEventRepository,
+    ReportThemeRepository,
     StockIndicatorRepository,
     StockRepository,
     ThemeStockMappingRepository,
@@ -85,6 +90,9 @@ from app.db.models import (
     Recommendation,
     RecommendationResult,
     RecommendationRun,
+    ReportSignalEvent,
+    ReportTheme,
+    ThemeStockMapping,
 )
 from app.db.session import get_session
 from app.notification.report_generator import extract_risk_summary
@@ -126,6 +134,25 @@ def _recommendation_result_to_schema(
     )
 
 
+def _evidence_from_snapshot(
+    snapshot: Optional[DataSnapshot],
+    key: str,
+) -> Optional[dict]:
+    """Pluck a v0.5 evidence dict (news / disclosure) out of market_context_json.
+
+    The recommendation / holding_check engines persist news_evidence and
+    disclosure_risk_evidence inside ``market_context_json`` (recommendations.py
+    Phase D · `_persist_candidate`). We only surface the dict if it exists and
+    is shaped like a dict — anything else is ignored so the response stays
+    well-typed for the dashboard.
+    """
+    if snapshot is None:
+        return None
+    context = snapshot.market_context_json or {}
+    value = context.get(key)
+    return value if isinstance(value, dict) else None
+
+
 def _recommendation_to_schema(
     rec: Recommendation,
     snapshot: Optional[DataSnapshot],
@@ -162,6 +189,10 @@ def _recommendation_to_schema(
         if report_log is not None
         else None,
         report_evidence=report_log.evidence_json if report_log is not None else None,
+        news_evidence=_evidence_from_snapshot(snapshot, "news_evidence"),
+        disclosure_risk_evidence=_evidence_from_snapshot(
+            snapshot, "disclosure_risk_evidence",
+        ),
         results=[_recommendation_result_to_schema(r) for r in results],
     )
 
@@ -872,6 +903,178 @@ def get_news(
         items=[NewsItemSchema.from_orm(row) for row in rows],
         limit=limit,
         offset=offset,
+    )
+
+
+# ---------- /api/themes/* ----------
+
+_THEME_DIRECTION_VALUES = {"POSITIVE", "NEGATIVE", "NEUTRAL"}
+
+
+def _theme_to_ranking_schema(
+    theme: ReportTheme,
+    *,
+    mapping_count: int,
+    signal_event_count: int,
+) -> ThemeRankingItemSchema:
+    return ThemeRankingItemSchema(
+        theme_id=theme.id,
+        theme_name=theme.theme_name,
+        theme_category=theme.theme_category,
+        direction=theme.direction,
+        time_horizon=theme.time_horizon,
+        summary=theme.summary,
+        confidence=theme.confidence,
+        source_report_id=theme.source_report_id,
+        mapping_count=mapping_count,
+        signal_event_count=signal_event_count,
+    )
+
+
+def _mapping_to_theme_stock_schema(
+    mapping: ThemeStockMapping,
+) -> ThemeStockMappingSchema:
+    return ThemeStockMappingSchema(
+        mapping_id=mapping.id,
+        theme_id=mapping.theme_id,
+        symbol=mapping.symbol,
+        company_name=mapping.company_name,
+        market=mapping.market,
+        relation_type=mapping.relation_type,
+        impact_direction=mapping.impact_direction,
+        impact_strength=mapping.impact_strength,
+        impact_path=mapping.impact_path,
+        benefit_type=mapping.benefit_type,
+        time_lag=mapping.time_lag,
+        reason=mapping.reason,
+    )
+
+
+@router.get(
+    "/api/themes/ranking",
+    response_model=ThemeRankingResponse,
+    tags=["themes"],
+)
+def get_theme_ranking(
+    category: Optional[str] = Query(None, max_length=32),
+    direction: Optional[str] = Query(None, max_length=16),
+    limit: int = Query(50, ge=1, le=200),
+    session: Session = Depends(get_session),
+) -> ThemeRankingResponse:
+    """Read-only theme ranking with category/direction filters.
+
+    Returns themes in id-desc order (most recently inserted first). Mapping
+    and signal-event counts are computed per-theme via a single grouped
+    query each, so endpoint cost is O(N + M) where N = themes returned and
+    M, S are the rows in theme_stock_mappings / report_signal_events.
+    """
+    if direction is not None and direction not in _THEME_DIRECTION_VALUES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"direction must be one of {sorted(_THEME_DIRECTION_VALUES)}",
+        )
+
+    statement = select(ReportTheme).order_by(desc(ReportTheme.id))
+    if category is not None:
+        statement = statement.where(ReportTheme.theme_category == category)
+    if direction is not None:
+        statement = statement.where(ReportTheme.direction == direction)
+    statement = statement.limit(limit)
+
+    themes = list(session.execute(statement).scalars().all())
+    if not themes:
+        return ThemeRankingResponse(
+            items=[],
+            category=category,
+            direction=direction,
+            limit=limit,
+        )
+
+    theme_ids = [t.id for t in themes]
+    mapping_counts = dict(
+        session.execute(
+            select(
+                ThemeStockMapping.theme_id,
+                func.count(ThemeStockMapping.id),
+            )
+            .where(ThemeStockMapping.theme_id.in_(theme_ids))
+            .group_by(ThemeStockMapping.theme_id),
+        ).all(),
+    )
+    signal_counts = dict(
+        session.execute(
+            select(
+                ReportSignalEvent.theme_id,
+                func.count(ReportSignalEvent.id),
+            )
+            .where(ReportSignalEvent.theme_id.in_(theme_ids))
+            .group_by(ReportSignalEvent.theme_id),
+        ).all(),
+    )
+
+    items = [
+        _theme_to_ranking_schema(
+            theme,
+            mapping_count=int(mapping_counts.get(theme.id, 0) or 0),
+            signal_event_count=int(signal_counts.get(theme.id, 0) or 0),
+        )
+        for theme in themes
+    ]
+    return ThemeRankingResponse(
+        items=items,
+        category=category,
+        direction=direction,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/api/themes/{theme_id}",
+    response_model=ThemeDetailResponse,
+    tags=["themes"],
+)
+def get_theme_detail(
+    theme_id: int,
+    mapping_limit: int = Query(50, ge=1, le=200),
+    signal_limit: int = Query(50, ge=1, le=200),
+    session: Session = Depends(get_session),
+) -> ThemeDetailResponse:
+    theme = ReportThemeRepository(session).get(theme_id)
+    if theme is None:
+        raise HTTPException(status_code=404, detail=f"theme_id {theme_id} not found")
+
+    all_mappings = ThemeStockMappingRepository(session).list_by_theme(theme.id)
+    mapping_count_total = int(
+        session.execute(
+            select(func.count(ThemeStockMapping.id)).where(
+                ThemeStockMapping.theme_id == theme.id,
+            ),
+        ).scalar()
+        or 0,
+    )
+    signal_count_total = int(
+        session.execute(
+            select(func.count(ReportSignalEvent.id)).where(
+                ReportSignalEvent.theme_id == theme.id,
+            ),
+        ).scalar()
+        or 0,
+    )
+    events = ReportSignalEventRepository(session).list_by_theme(
+        theme.id,
+        limit=signal_limit,
+    )
+
+    return ThemeDetailResponse(
+        theme=_theme_to_ranking_schema(
+            theme,
+            mapping_count=mapping_count_total,
+            signal_event_count=signal_count_total,
+        ),
+        stock_mappings=[
+            _mapping_to_theme_stock_schema(m) for m in all_mappings[:mapping_limit]
+        ],
+        signal_events=[ReportSignalEventSchema.from_orm(e) for e in events],
     )
 
 

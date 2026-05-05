@@ -23,7 +23,7 @@ function renderApp(initialPath = '/today') {
 }
 
 describe('App routes shell', () => {
-  it('renders sidebar with all 8 dashboard menus', () => {
+  it('renders sidebar with all 9 dashboard menus', () => {
     renderApp()
     // 사이드바와 헤더 둘 다 "오늘의 리포트" 를 노출하므로 getAllByText.
     expect(screen.getAllByText('오늘의 리포트').length).toBeGreaterThanOrEqual(1)
@@ -32,6 +32,7 @@ describe('App routes shell', () => {
     expect(screen.getByText('보유 종목 점검')).toBeInTheDocument()
     expect(screen.getByText('종목 상세')).toBeInTheDocument()
     expect(screen.getByText('시가총액 TOP')).toBeInTheDocument()
+    expect(screen.getByText('테마 (β)')).toBeInTheDocument()
     expect(screen.getByText('시스템 로그 / 잡')).toBeInTheDocument()
     expect(screen.getByText('설정')).toBeInTheDocument()
   })

@@ -8,6 +8,7 @@ import {
   ScrollText,
   Search,
   Settings as SettingsIcon,
+  Tags,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -19,7 +20,7 @@ interface NavItem {
   matchPrefix?: string
 }
 
-// 8 v0.2 dashboard menus.
+// 9 dashboard menus (v0.5 Phase D adds 테마).
 const NAV_ITEMS: NavItem[] = [
   { to: '/today', label: '오늘의 리포트', Icon: LayoutDashboard },
   { to: '/recommendations', label: '추천 종목', Icon: BarChart3 },
@@ -27,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/holdings', label: '보유 종목 점검', Icon: ListTree },
   { to: '/stocks', label: '종목 상세', Icon: Search, matchPrefix: '/stocks' },
   { to: '/universe/market-cap-top', label: '시가총액 TOP', Icon: Activity },
+  { to: '/themes', label: '테마 (β)', Icon: Tags, matchPrefix: '/themes' },
   { to: '/jobs', label: '시스템 로그 / 잡', Icon: ScrollText, matchPrefix: '/jobs' },
   { to: '/settings', label: '설정', Icon: SettingsIcon },
 ]

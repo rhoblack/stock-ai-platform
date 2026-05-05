@@ -1,4 +1,6 @@
+import { Link } from 'react-router-dom'
 import { KeyValueGrid } from '@/components/common/KeyValueGrid'
+import { cn } from '@/lib/utils'
 import type {
   AnalystReport,
   RelatedTheme,
@@ -166,17 +168,41 @@ function RelatedThemesCard({ themes }: { themes: RelatedTheme[] }) {
               className="rounded-md border border-border bg-muted/20 p-3"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">{theme.theme_name}</span>
+                <Link
+                  to={`/themes/${theme.theme_id}`}
+                  data-testid={`stock-detail-theme-link-${theme.theme_id}`}
+                  className="text-sm font-medium hover:underline"
+                >
+                  {theme.theme_name}
+                </Link>
                 <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
                   {theme.theme_category}
                 </span>
                 <span className="font-mono text-[11px] text-muted-foreground">
                   {theme.direction}/{theme.time_horizon}
                 </span>
+                <span
+                  className={cn(
+                    'rounded-md px-2 py-0.5 text-[11px]',
+                    theme.impact_direction === 'POSITIVE' &&
+                      'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+                    theme.impact_direction === 'NEGATIVE' &&
+                      'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+                    !['POSITIVE', 'NEGATIVE'].includes(theme.impact_direction) &&
+                      'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {theme.impact_direction}
+                </span>
+                {theme.impact_path ? (
+                  <span
+                    data-testid={`stock-detail-theme-impact-${theme.mapping_id}`}
+                    className="rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+                  >
+                    {theme.impact_path}
+                  </span>
+                ) : null}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                impact {theme.impact_direction} · {dash(theme.impact_path)}
-              </p>
               {theme.reason ? (
                 <p className="mt-1 text-xs text-muted-foreground">{theme.reason}</p>
               ) : null}

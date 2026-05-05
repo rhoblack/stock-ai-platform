@@ -1409,6 +1409,342 @@ def test_settings_feature_flags_off_by_default(client):
     assert body["feature_custom_ai_training"] is False
 
 
+# ---------- /api/themes/* (v0.5 Phase D) ----------
+
+def _seed_theme_ranking_dataset(session) -> dict:
+    """Three themes across two reports + mappings + signal events.
+
+    Theme breakdown:
+      * HBM (SEMICONDUCTOR / POSITIVE)        — 2 mappings, 1 signal event
+      * 2차전지 (SECONDARY_BATTERY / POSITIVE) — 1 mapping, 0 signal events
+      * 거래정지 (RISK / NEGATIVE)             — 0 mappings, 1 signal event
+    """
+    today = date(2026, 5, 4)
+    base_report = AnalystReportRepository(session).create(
+        report_type="THEME",
+        broker_name="테스트증권",
+        published_at=today - timedelta(days=2),
+        title="테마 베이스 리포트",
+        summary="짧은 요약",
+        source_url="https://example.com/reports/theme-base",
+        source_file_path="D:/private/reports/theme-base.pdf",
+        language="ko",
+        extraction_method="MANUAL",
+    )
+    session.flush()
+
+    theme_repo = ReportThemeRepository(session)
+    mapping_repo = ThemeStockMappingRepository(session)
+    signal_repo = ReportSignalEventRepository(session)
+
+    theme_hbm = theme_repo.create(
+        source_report_id=base_report.id,
+        theme_name="HBM",
+        theme_category="SEMICONDUCTOR",
+        direction="POSITIVE",
+        time_horizon="MID",
+        summary="AI 서버 메모리 수요",
+        confidence=Decimal("0.800"),
+        extraction_method="MANUAL",
+    )
+    theme_battery = theme_repo.create(
+        source_report_id=base_report.id,
+        theme_name="2차전지",
+        theme_category="SECONDARY_BATTERY",
+        direction="POSITIVE",
+        time_horizon="LONG",
+        summary="EV 수요 회복",
+        extraction_method="MANUAL",
+    )
+    theme_halt = theme_repo.create(
+        source_report_id=base_report.id,
+        theme_name="거래정지",
+        theme_category="RISK",
+        direction="NEGATIVE",
+        time_horizon="SHORT",
+        summary="거래정지 위험",
+        extraction_method="MANUAL",
+    )
+    session.flush()
+
+    mapping_repo.create(
+        theme_id=theme_hbm.id,
+        symbol="005930",
+        company_name="삼성전자",
+        market="KOSPI",
+        impact_direction="POSITIVE",
+        impact_strength=Decimal("0.800"),
+        impact_path="DEMAND_INCREASE",
+        relation_type="SUPPLIER",
+        benefit_type="PRICE_POWER",
+        time_lag="MID",
+        reason="HBM 공급사",
+        extraction_method="MANUAL",
+    )
+    mapping_repo.create(
+        theme_id=theme_hbm.id,
+        symbol="000660",
+        company_name="SK하이닉스",
+        market="KOSPI",
+        impact_direction="POSITIVE",
+        impact_strength=Decimal("0.900"),
+        impact_path="MARKET_SHARE_GAIN",
+        extraction_method="MANUAL",
+    )
+    mapping_repo.create(
+        theme_id=theme_battery.id,
+        symbol="247540",
+        company_name="에코프로비엠",
+        market="KOSDAQ",
+        impact_direction="POSITIVE",
+        extraction_method="MANUAL",
+    )
+    signal_repo.create(
+        report_id=base_report.id,
+        symbol="005930",
+        theme_id=theme_hbm.id,
+        event_type="SUPPLY_SHORTAGE",
+        direction="POSITIVE",
+        strength=Decimal("0.700"),
+        time_horizon="MID",
+        summary="HBM 공급 부족 지속",
+        extraction_method="MANUAL",
+    )
+    signal_repo.create(
+        report_id=base_report.id,
+        symbol="009150",
+        theme_id=theme_halt.id,
+        event_type="RATING_DOWN",
+        direction="NEGATIVE",
+        strength=Decimal("0.500"),
+        time_horizon="SHORT",
+        summary="거래정지 우려",
+        extraction_method="MANUAL",
+    )
+    session.commit()
+
+    return {
+        "theme_hbm": theme_hbm,
+        "theme_battery": theme_battery,
+        "theme_halt": theme_halt,
+    }
+
+
+def test_theme_ranking_returns_all_themes_with_counts(client, session):
+    seeded = _seed_theme_ranking_dataset(session)
+    response = client.get("/api/themes/ranking")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["limit"] == 50
+    assert body["category"] is None
+    assert body["direction"] is None
+    assert len(body["items"]) == 3
+    by_id = {item["theme_id"]: item for item in body["items"]}
+    hbm = by_id[seeded["theme_hbm"].id]
+    assert hbm["theme_name"] == "HBM"
+    assert hbm["theme_category"] == "SEMICONDUCTOR"
+    assert hbm["direction"] == "POSITIVE"
+    assert hbm["mapping_count"] == 2
+    assert hbm["signal_event_count"] == 1
+    assert by_id[seeded["theme_battery"].id]["mapping_count"] == 1
+    assert by_id[seeded["theme_battery"].id]["signal_event_count"] == 0
+    assert by_id[seeded["theme_halt"].id]["mapping_count"] == 0
+    assert by_id[seeded["theme_halt"].id]["signal_event_count"] == 1
+    _assert_no_source_file_path(body)
+
+
+def test_theme_ranking_filters_by_category_and_direction(client, session):
+    _seed_theme_ranking_dataset(session)
+
+    response = client.get("/api/themes/ranking?category=SEMICONDUCTOR")
+    body = response.json()
+    assert {item["theme_name"] for item in body["items"]} == {"HBM"}
+    assert body["category"] == "SEMICONDUCTOR"
+
+    response = client.get("/api/themes/ranking?direction=NEGATIVE")
+    body = response.json()
+    assert {item["theme_name"] for item in body["items"]} == {"거래정지"}
+    assert body["direction"] == "NEGATIVE"
+
+    response = client.get(
+        "/api/themes/ranking?direction=POSITIVE&category=SECONDARY_BATTERY",
+    )
+    body = response.json()
+    assert {item["theme_name"] for item in body["items"]} == {"2차전지"}
+
+
+def test_theme_ranking_rejects_invalid_direction(client):
+    response = client.get("/api/themes/ranking?direction=BOGUS")
+    assert response.status_code == 422
+
+
+def test_theme_ranking_returns_empty_when_no_themes(client):
+    response = client.get("/api/themes/ranking")
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [],
+        "category": None,
+        "direction": None,
+        "limit": 50,
+    }
+
+
+def test_theme_ranking_respects_limit_param(client, session):
+    _seed_theme_ranking_dataset(session)
+    response = client.get("/api/themes/ranking?limit=2")
+    body = response.json()
+    assert body["limit"] == 2
+    assert len(body["items"]) == 2
+
+
+def test_theme_detail_returns_theme_mappings_and_events(client, session):
+    seeded = _seed_theme_ranking_dataset(session)
+    response = client.get(f"/api/themes/{seeded['theme_hbm'].id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["theme"]["theme_name"] == "HBM"
+    assert body["theme"]["mapping_count"] == 2
+    assert body["theme"]["signal_event_count"] == 1
+    symbols = {m["symbol"] for m in body["stock_mappings"]}
+    assert symbols == {"005930", "000660"}
+    samsung_mapping = next(
+        m for m in body["stock_mappings"] if m["symbol"] == "005930"
+    )
+    assert samsung_mapping["impact_direction"] == "POSITIVE"
+    assert samsung_mapping["impact_path"] == "DEMAND_INCREASE"
+    assert samsung_mapping["company_name"] == "삼성전자"
+    assert "theme_name" not in samsung_mapping
+    assert len(body["signal_events"]) == 1
+    assert body["signal_events"][0]["event_type"] == "SUPPLY_SHORTAGE"
+    _assert_no_source_file_path(body)
+
+
+def test_theme_detail_404_for_unknown_id(client):
+    response = client.get("/api/themes/99999")
+    assert response.status_code == 404
+
+
+def test_theme_detail_empty_lists_when_theme_has_no_mappings_or_events(client, session):
+    seeded = _seed_theme_ranking_dataset(session)
+    response = client.get(f"/api/themes/{seeded['theme_battery'].id}")
+    body = response.json()
+    assert body["theme"]["theme_name"] == "2차전지"
+    assert len(body["stock_mappings"]) == 1
+    assert body["signal_events"] == []
+    assert body["theme"]["signal_event_count"] == 0
+
+
+def test_theme_endpoints_never_expose_source_file_path(client, session):
+    _seed_theme_ranking_dataset(session)
+    rank = client.get("/api/themes/ranking").json()
+    detail = client.get("/api/themes/1").json()
+    assert "source_file_path" not in str(rank)
+    assert "source_file_path" not in str(detail)
+
+
+# ---------- /api/recommendations: news_evidence + disclosure_risk_evidence ----------
+
+def test_recommendation_surfaces_news_and_disclosure_evidence_from_snapshot(
+    client, session,
+):
+    today = date(2026, 5, 4)
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    _seed_indicator(session, symbol="005930", indicator_date=today)
+
+    snapshot = DataSnapshotRepository(session).add(
+        DataSnapshot(
+            snapshot_time=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+            symbol="005930",
+            snapshot_type="RECOMMENDATION",
+            indicator_data_json={"technical_score": "82"},
+            market_context_json={
+                "phase": "5-3",
+                "risk_summary": {"level": "LOW", "flags": [], "penalty": "0.0000"},
+                "news_evidence": {
+                    "news_count": 2,
+                    "positive_count": 2,
+                    "neutral_count": 0,
+                    "negative_count": 0,
+                    "latest_news_at": "2026-05-04T07:00:00+00:00",
+                    "top_news": [
+                        {
+                            "title": "HBM 공급 부족 지속",
+                            "url": "https://example.com/n/1",
+                            "provider": "뉴스원",
+                            "published_at": "2026-05-04T07:00:00+00:00",
+                            "sentiment": "POSITIVE",
+                        },
+                    ],
+                },
+                "disclosure_risk_evidence": {
+                    "risk_disclosure_count": 1,
+                    "recent_risk_disclosures": [
+                        {
+                            "title": "감사의견 비적정",
+                            "url": "https://example.com/d/1",
+                            "provider": "DART",
+                            "published_at": "2026-05-03T09:00:00+00:00",
+                        },
+                    ],
+                },
+            },
+        ),
+    )
+    session.flush()
+
+    run = RecommendationRunRepository(session).add(
+        RecommendationRun(
+            run_date=today,
+            started_at=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+            status="SUCCESS",
+            telegram_sent=False,
+        ),
+    )
+    session.flush()
+    RecommendationRepository(session).add(
+        Recommendation(
+            run_id=run.run_id,
+            rank=1,
+            market="KOSPI",
+            symbol="005930",
+            name="삼성전자",
+            grade="A",
+            total_score=Decimal("82"),
+            news_score=Decimal("60"),
+            risk_score=Decimal("3.0000"),
+            reason="관찰 후보",
+            snapshot_id=snapshot.snapshot_id,
+        ),
+    )
+    session.commit()
+
+    response = client.get("/api/recommendations/latest")
+    assert response.status_code == 200
+    body = response.json()
+    rec = body["recommendations"][0]
+    assert rec["news_evidence"]["news_count"] == 2
+    assert rec["news_evidence"]["top_news"][0]["title"] == "HBM 공급 부족 지속"
+    # Whitelist check: news_evidence carries only the safe fields
+    assert set(rec["news_evidence"]["top_news"][0].keys()) == {
+        "title", "url", "provider", "published_at", "sentiment",
+    }
+    assert rec["disclosure_risk_evidence"]["risk_disclosure_count"] == 1
+    assert (
+        rec["disclosure_risk_evidence"]["recent_risk_disclosures"][0]["title"]
+        == "감사의견 비적정"
+    )
+
+
+def test_recommendation_evidence_fields_default_none_for_pre_v05_runs(client, session):
+    """Older snapshots without news/disclosure evidence keys must not error."""
+    _seed_full_dataset(session)
+    response = client.get("/api/recommendations/latest")
+    assert response.status_code == 200
+    rec = response.json()["recommendations"][0]
+    assert rec["news_evidence"] is None
+    assert rec["disclosure_risk_evidence"] is None
+
+
 # ---------- existing health endpoint regression ----------
 
 def test_health_endpoint_still_works(client):

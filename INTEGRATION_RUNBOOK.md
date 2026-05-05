@@ -551,3 +551,58 @@ print(outcome.status, outcome.result_summary)
 `.env` 에서 `DISCLOSURE_COLLECTION_ENABLED` 제거 또는 `false` 변경 후 backend
 재기동. 다음 20:00 KST 잡부터 SKIPPED 자동 전환. 기존 적재된 `news_items` 행은
 그대로 유지.
+
+## 12. 테마 랭킹 / 상세 (v0.5 Phase D)
+
+v0.4 가 `report_themes` / `theme_stock_mappings` / `report_signal_events` 에
+누적해 온 데이터를 첫 surface 한 cycle. 신규 read-only 엔드포인트와 9번째 사이드바
+화면이 도입되었고, recommendation 응답에 `news_evidence` / `disclosure_risk_evidence`
+가 명시 필드로 노출된다. **신규 잡 / 외부 호출 / POST 라우터는 0건 추가**.
+
+### 12.1 신규 read-only API
+
+```
+GET /api/themes/ranking?category=...&direction=...&limit=...
+GET /api/themes/{theme_id}?mapping_limit=...&signal_limit=...
+```
+
+빠른 확인:
+
+```powershell
+curl http://127.0.0.1:8000/api/themes/ranking?limit=5 | jq
+curl http://127.0.0.1:8000/api/themes/ranking?direction=POSITIVE | jq
+curl http://127.0.0.1:8000/api/themes/41 | jq
+```
+
+`direction` 은 `POSITIVE` / `NEGATIVE` / `NEUTRAL` 만 허용 — 다른 값은 422.
+응답에는 `mapping_count` + `signal_event_count` 가 단일 GROUP BY 쿼리로 계산되어
+포함된다. `source_file_path` 는 ranking / detail 모두에서 절대 노출되지 않는다.
+
+### 12.2 프런트 9번째 메뉴
+
+사이드바 7번째 위치에 `테마 (β)` 메뉴 추가 (시가총액 TOP 과 시스템 로그 사이).
+`/themes` 는 카테고리 / direction 필터 + 검색 + TanStack Table 정렬 (mapping_count
+desc 가 default). 테마 행 클릭 → `/themes/:theme_id` 로 이동, 영향 종목 카드의
+종목 코드를 다시 클릭하면 기존 `/stocks/:symbol` 화면으로 이어진다 (StockDetail
+의 RelatedThemesCard 에서도 반대 방향 네비게이션 동작).
+
+### 12.3 Recommendation 응답의 evidence 필드
+
+v0.5 Phase C 에서 `DataSnapshot.market_context_json` 에 저장만 되어 있던
+`news_evidence` / `disclosure_risk_evidence` 가 `RecommendationItemSchema` 의
+nullable dict 필드로 surface 된다. `RealNewsScoreProducer` /
+`DisclosureRiskProducer` 가 wired 되지 않은 pre-v0.5 run / 시드 데이터에서는
+두 필드 모두 `null`. Whitelist 정책 그대로 — `top_news` 는 정확히
+`{title, url, provider, published_at, sentiment}`, `recent_risk_disclosures` 는
+sentiment 제외. 본문 / `source_file_path` / 운영자 로컬 경로 0건.
+
+### 12.4 운영 점검
+
+- 새 잡 / 새 외부 호출 / 새 POST 라우터 추가 0건 → `job_runs` / 외부 트래픽
+  변화 0건 (검증: `SELECT job_name, COUNT(*) FROM job_runs GROUP BY job_name`
+  vs Phase C 직후 결과 동일)
+- `report_themes` 행이 v0.4 Phase B 의 import 잡에서 만들어져 있어야
+  `/api/themes/ranking` 이 결과를 반환. 비어 있으면 응답은 `items: []` 이고
+  화면은 "아직 테마 데이터가 없습니다" placeholder
+- frontend 4 게이트: backend pytest **481** / vitest **68** / build / e2e **11**
+  (`npm run e2e` — Playwright 1.x chromium)

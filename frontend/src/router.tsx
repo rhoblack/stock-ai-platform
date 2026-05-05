@@ -32,6 +32,12 @@ const JobsPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('./pages/Settings').then(m => ({ default: m.SettingsPage })),
 )
+const ThemesPage = lazy(() =>
+  import('./pages/Themes').then(m => ({ default: m.ThemesPage })),
+)
+const ThemeDetailPage = lazy(() =>
+  import('./pages/ThemeDetail').then(m => ({ default: m.ThemeDetailPage })),
+)
 
 export function AppRoutes() {
   return (
@@ -47,6 +53,8 @@ export function AppRoutes() {
         <Route path="stocks" element={<StockDetailPage />} />
         <Route path="stocks/:symbol" element={<StockDetailPage />} />
         <Route path="universe/market-cap-top" element={<MarketCapTopPage />} />
+        <Route path="themes" element={<ThemesPage />} />
+        <Route path="themes/:themeId" element={<ThemeDetailPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:jobId" element={<JobsPage />} />
         <Route path="settings" element={<SettingsPage />} />

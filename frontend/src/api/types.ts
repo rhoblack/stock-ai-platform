@@ -60,7 +60,40 @@ export interface RecommendationItem {
   report_score?: string | null
   theme_signal_score?: string | null
   report_evidence?: Record<string, unknown> | null
+  // v0.5 Phase D — optional, only set when RealNewsScoreProducer /
+  // DisclosureRiskProducer ran for this run. Older snapshots → null.
+  news_evidence?: NewsEvidence | null
+  disclosure_risk_evidence?: DisclosureRiskEvidence | null
   results?: RecommendationResult[]
+}
+
+export interface NewsEvidenceTopItem {
+  title: string
+  url: string | null
+  provider: string | null
+  published_at: string
+  sentiment: string | null
+}
+
+export interface NewsEvidence {
+  news_count: number
+  positive_count: number
+  neutral_count: number
+  negative_count: number
+  latest_news_at: string | null
+  top_news: NewsEvidenceTopItem[]
+}
+
+export interface DisclosureRiskItem {
+  title: string
+  url: string | null
+  provider: string | null
+  published_at: string
+}
+
+export interface DisclosureRiskEvidence {
+  risk_disclosure_count: number
+  recent_risk_disclosures: DisclosureRiskItem[]
 }
 
 export interface HoldingCheck {
@@ -325,6 +358,49 @@ export interface StockPriceSeriesResponse {
   days: number
   count: number
   prices: DailyPriceRow[]
+}
+
+// ----- /api/themes/* (v0.5 Phase D) -----
+
+export interface ThemeRankingItem {
+  theme_id: number
+  theme_name: string
+  theme_category: string
+  direction: string
+  time_horizon: string
+  summary: string | null
+  confidence: string | null
+  source_report_id: number
+  mapping_count: number
+  signal_event_count: number
+}
+
+export interface ThemeRankingResponse {
+  items: ThemeRankingItem[]
+  category: string | null
+  direction: string | null
+  limit: number
+}
+
+export interface ThemeStockMapping {
+  mapping_id: number
+  theme_id: number
+  symbol: string
+  company_name: string | null
+  market: string | null
+  relation_type: string | null
+  impact_direction: string
+  impact_strength: string | null
+  impact_path: string | null
+  benefit_type: string | null
+  time_lag: string | null
+  reason: string | null
+}
+
+export interface ThemeDetailResponse {
+  theme: ThemeRankingItem
+  stock_mappings: ThemeStockMapping[]
+  signal_events: ReportSignalEvent[]
 }
 
 // ----- /api/recommendations -----

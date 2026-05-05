@@ -71,6 +71,12 @@ export const handlers = [
   http.get('*/api/universe/market-cap-top', () =>
     HttpResponse.json({ rank_date: null, market: 'KOSPI', items: [] }),
   ),
+  http.get('*/api/themes/ranking', () =>
+    HttpResponse.json({ items: [], category: null, direction: null, limit: 50 }),
+  ),
+  http.get('*/api/themes/:themeId', () =>
+    HttpResponse.json({ detail: 'not found' }, { status: 404 }),
+  ),
   http.get('*/api/settings', () =>
     HttpResponse.json({
       app_env: 'test',

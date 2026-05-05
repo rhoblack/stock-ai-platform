@@ -110,6 +110,12 @@ class RecommendationItemSchema(_BaseSchema):
     report_score: Optional[str] = None
     theme_signal_score: Optional[str] = None
     report_evidence: Optional[Dict[str, Any]] = None
+    # v0.5 Phase D — surface news_evidence (set by RealNewsScoreProducer) and
+    # disclosure_risk_evidence (set by DisclosureRiskProducer) that are stored
+    # inside the run's DataSnapshot.market_context_json. Both are optional;
+    # absent for v0.4 / pre-v0.5 runs that did not wire those producers.
+    news_evidence: Optional[Dict[str, Any]] = None
+    disclosure_risk_evidence: Optional[Dict[str, Any]] = None
     results: List[RecommendationResultSchema] = []
 
 
@@ -278,6 +284,58 @@ class StockReportsResponse(_BaseSchema):
     recent_reports: List[AnalystReportSchema] = []
     related_themes: List[RelatedThemeSchema] = []
     recent_signal_events: List[ReportSignalEventSchema] = []
+
+
+# ----- v0.5 Phase D — themes API -----
+
+
+class ThemeStockMappingSchema(_BaseSchema):
+    """Theme → stock mapping (theme is the parent context).
+
+    Distinct from :class:`RelatedThemeSchema`, which embeds theme + mapping
+    fields together for the *stock* side. This schema is returned by the
+    theme detail endpoint and intentionally omits ``theme_*`` fields since
+    callers already know which theme they queried.
+    """
+
+    mapping_id: int
+    theme_id: int
+    symbol: str
+    company_name: Optional[str] = None
+    market: Optional[str] = None
+    relation_type: Optional[str] = None
+    impact_direction: str
+    impact_strength: Optional[str] = None
+    impact_path: Optional[str] = None
+    benefit_type: Optional[str] = None
+    time_lag: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class ThemeRankingItemSchema(_BaseSchema):
+    theme_id: int
+    theme_name: str
+    theme_category: str
+    direction: str
+    time_horizon: str
+    summary: Optional[str] = None
+    confidence: Optional[str] = None
+    source_report_id: int
+    mapping_count: int = 0
+    signal_event_count: int = 0
+
+
+class ThemeRankingResponse(_BaseSchema):
+    items: List[ThemeRankingItemSchema]
+    category: Optional[str] = None
+    direction: Optional[str] = None
+    limit: int
+
+
+class ThemeDetailResponse(_BaseSchema):
+    theme: ThemeRankingItemSchema
+    stock_mappings: List[ThemeStockMappingSchema] = []
+    signal_events: List[ReportSignalEventSchema] = []
 
 
 class StockDetailResponse(_BaseSchema):
