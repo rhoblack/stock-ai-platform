@@ -1,16 +1,25 @@
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStockDetail } from '@/hooks/useStockDetail'
+import { useStockPriceSeries } from '@/hooks/useStockPriceSeries'
 import { KeyValueGrid } from '@/components/common/KeyValueGrid'
 import { GradePill } from '@/components/common/GradePill'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { DecisionPill } from '@/components/common/DecisionPill'
 import { ReturnRate } from '@/components/common/ReturnRate'
+import { cn } from '@/lib/utils'
+import { PriceChart } from './PriceChart'
 import type {
   HoldingCheck,
   RecommendationItem,
   RecommendationResult,
   StockDetailResponse,
 } from '@/api/types'
+
+const PRICE_CHART_DAYS_OPTIONS: ReadonlyArray<30 | 60 | 120 | 250> = [
+  30, 60, 120, 250,
+]
+type PriceChartDays = (typeof PRICE_CHART_DAYS_OPTIONS)[number]
 
 const DAYS_AFTER: Array<1 | 3 | 5 | 20> = [1, 3, 5, 20]
 
@@ -97,8 +106,74 @@ function StockDetailContent({ data }: { data: StockDetailResponse }) {
         <IndicatorCard indicator={latest_indicator} />
       </div>
 
+      <PriceChartCard symbol={stock.symbol} />
+
       <RecentRecommendationsCard items={recent_recommendations} />
       <RecentHoldingChecksCard items={recent_holding_checks} />
+    </section>
+  )
+}
+
+function PriceChartCard({ symbol }: { symbol: string }) {
+  const [days, setDays] = useState<PriceChartDays>(120)
+  const series = useStockPriceSeries(symbol, { days })
+
+  return (
+    <section
+      data-testid="stock-detail-price-chart"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-col">
+          <h3 className="text-sm font-semibold">일봉 close 추세</h3>
+          <p className="text-xs text-muted-foreground">
+            기간: {days}일 · count{' '}
+            <span className="font-mono">{series.data?.count ?? '—'}</span>
+          </p>
+        </div>
+        <div className="flex gap-1" role="tablist" aria-label="기간 선택">
+          {PRICE_CHART_DAYS_OPTIONS.map(option => {
+            const active = option === days
+            return (
+              <button
+                key={option}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                data-testid={`price-chart-days-${option}`}
+                data-active={active}
+                onClick={() => setDays(option)}
+                className={cn(
+                  'rounded-md border px-2 py-1 text-xs transition-colors',
+                  active
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-card text-muted-foreground hover:bg-accent',
+                )}
+              >
+                {option}d
+              </button>
+            )
+          })}
+        </div>
+      </header>
+
+      {series.isLoading && (
+        <div
+          data-testid="price-chart-loading"
+          className="rounded-md border border-dashed border-border bg-card p-6 text-sm text-muted-foreground"
+        >
+          가격 시계열 로딩 중…
+        </div>
+      )}
+      {series.isError && (
+        <div
+          data-testid="price-chart-error"
+          className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
+        >
+          가격 시계열을 불러오지 못했습니다.
+        </div>
+      )}
+      {series.isSuccess && <PriceChart prices={series.data.prices} />}
     </section>
   )
 }

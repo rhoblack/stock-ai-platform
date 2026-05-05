@@ -149,6 +149,29 @@ Query:
 - `recommendation_limit`: default 10, max 100
 - `holding_check_limit`: default 20, max 200
 
+### GET /api/stocks/{symbol}/prices
+
+종목 상세 화면 일봉 차트용 가격 시계열 (read-only). KIS API 호출 없이 기존
+`daily_prices` 테이블만 조회한다.
+
+응답:
+
+* `symbol`: 요청 심볼
+* `days`: 요청한 기간 길이
+* `count`: 실제 반환된 일봉 수 (≤ `days`)
+* `prices[]`: 날짜 오름차순 (가장 오래된 일자가 첫 항목, 최신 일자가 마지막 항목).
+  각 항목은 `date`, `open`, `high`, `low`, `close`, `volume`, `trading_value` 를 포함한다.
+  Decimal 필드는 `string` 으로 직렬화 (lossless). `volume` 은 `int`.
+
+Query:
+
+- `days`: default 120, min 1, max 500. 검증 실패 시 422.
+
+오류:
+
+- 404: 해당 `symbol` 의 `stocks` 레코드가 존재하지 않음
+- 200 (count=0, prices=[]): `stocks` 는 있으나 `daily_prices` 에 데이터가 없음
+
 ## 9. 시가총액 TOP 500
 
 ### GET /api/universe/market-cap-top

@@ -213,6 +213,13 @@ class StockDetailResponse(_BaseSchema):
     recent_holding_checks: List[HoldingCheckSchema] = []
 
 
+class StockPriceSeriesResponse(_BaseSchema):
+    symbol: str
+    days: int
+    count: int
+    prices: List[DailyPriceSchema] = []
+
+
 class MarketCapRankingSchema(_BaseSchema):
     rank_date: date_type
     market: str

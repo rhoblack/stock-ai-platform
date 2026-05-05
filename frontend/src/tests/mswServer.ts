@@ -57,6 +57,14 @@ export const handlers = [
       },
     }),
   ),
+  http.get('*/api/stocks/:symbol/prices', ({ params }) =>
+    HttpResponse.json({
+      symbol: String(params.symbol ?? ''),
+      days: 120,
+      count: 0,
+      prices: [],
+    }),
+  ),
   http.get('*/api/stocks/:symbol', () =>
     HttpResponse.json({ detail: 'not found' }, { status: 404 }),
   ),

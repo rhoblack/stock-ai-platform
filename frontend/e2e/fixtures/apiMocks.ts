@@ -204,6 +204,59 @@ const STOCK_DETAIL_005930 = {
   recent_holding_checks: [],
 }
 
+const STOCK_PRICE_SERIES_005930 = {
+  symbol: '005930',
+  days: 120,
+  count: 5,
+  prices: [
+    {
+      date: '2026-04-28',
+      open: '69000',
+      high: '69800',
+      low: '68500',
+      close: '69500',
+      volume: 1_100_000,
+      trading_value: '76450000000',
+    },
+    {
+      date: '2026-04-29',
+      open: '69500',
+      high: '70200',
+      low: '69300',
+      close: '70000',
+      volume: 1_250_000,
+      trading_value: '87500000000',
+    },
+    {
+      date: '2026-04-30',
+      open: '70000',
+      high: '70500',
+      low: '69700',
+      close: '70200',
+      volume: 1_320_000,
+      trading_value: '92664000000',
+    },
+    {
+      date: '2026-05-03',
+      open: '70200',
+      high: '70800',
+      low: '69900',
+      close: '70300',
+      volume: 1_400_000,
+      trading_value: '98420000000',
+    },
+    {
+      date: '2026-05-04',
+      open: '70300',
+      high: '71000',
+      low: '70000',
+      close: '70500',
+      volume: 1_500_000,
+      trading_value: '105750000000',
+    },
+  ],
+}
+
 const MARKET_CAP_KOSPI = {
   rank_date: '2026-05-04',
   market: 'KOSPI',
@@ -286,6 +339,7 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number }> = 
   { pattern: /\/api\/holdings\/checks\/latest(\?|$)/, payload: HOLDINGS_CHECKS_LATEST },
   { pattern: /\/api\/holdings\/005930\/checks(\?|$)/, payload: HOLDING_CHECKS_005930 },
   { pattern: /\/api\/holdings(\?|$)/, payload: HOLDINGS },
+  { pattern: /\/api\/stocks\/005930\/prices(\?|$)/, payload: STOCK_PRICE_SERIES_005930 },
   { pattern: /\/api\/stocks\/005930(\?|$)/, payload: STOCK_DETAIL_005930 },
   { pattern: /\/api\/universe\/market-cap-top.*market=KOSDAQ/, payload: MARKET_CAP_KOSDAQ },
   { pattern: /\/api\/universe\/market-cap-top/, payload: MARKET_CAP_KOSPI },

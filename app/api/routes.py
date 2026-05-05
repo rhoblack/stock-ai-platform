@@ -48,6 +48,7 @@ from app.api.schemas import (
     StockBriefSchema,
     StockDetailResponse,
     StockIndicatorSchema,
+    StockPriceSeriesResponse,
     TodayReportResponse,
 )
 from app.config.settings import Settings, get_settings
@@ -652,6 +653,28 @@ def get_stock_detail(
         ),
         recent_recommendations=recent_recommendations,
         recent_holding_checks=recent_holding_checks,
+    )
+
+
+@router.get(
+    "/api/stocks/{symbol}/prices",
+    response_model=StockPriceSeriesResponse,
+    tags=["stocks"],
+)
+def get_stock_price_series(
+    symbol: str,
+    days: int = Query(120, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> StockPriceSeriesResponse:
+    stock = StockRepository(session).get_by_symbol(symbol)
+    if stock is None:
+        raise HTTPException(status_code=404, detail=f"symbol {symbol} not found")
+    rows = DailyPriceRepository(session).list_by_symbol(symbol, limit=days)
+    return StockPriceSeriesResponse(
+        symbol=symbol,
+        days=days,
+        count=len(rows),
+        prices=[DailyPriceSchema.from_orm(row) for row in rows],
     )
 
 

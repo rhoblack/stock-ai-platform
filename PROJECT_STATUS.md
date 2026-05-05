@@ -16,7 +16,7 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 | A | GitHub Actions CI (backend pytest + frontend vitest+build + Playwright e2e) | ✅ 인수 | `v0.3-phase-a-ci` |
 | B | 캔들 패턴 + ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (백엔드, DB 컬럼 +3개) | ✅ 인수 (backend pytest 296 → 314, vitest 36 / e2e 6 / build 그대로) | `v0.3-backend-analysis` |
 | C | 한국거래소 휴장일 캘린더 (정적 JSON, Today/Jobs/Holdings 배너) | ✅ 인수 (vitest 36 → 55, e2e 6 → 7, build / backend pytest 314 회귀 0) | `v0.3-frontend-calendar` |
-| D | `GET /api/stocks/{symbol}/prices` 신규 + StockDetail 일봉 차트 (Recharts) | ⏳ | `v0.3-frontend-stock-chart` |
+| D | `GET /api/stocks/{symbol}/prices` 신규 + StockDetail 일봉 차트 (Recharts) | ✅ 인수 (backend pytest 314 → 319, vitest 55 → 59, e2e 7 → 8, build 그대로) | `v0.3-frontend-stock-chart` |
 | E | `RELEASE_NOTES_v0.3.md` + README/PROJECT_STATUS/TASKS 마감 + tag `v0.3-final` | ⏳ | `v0.3-final` |
 
 ### Phase B 결과 (요약)
@@ -38,6 +38,17 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 - 단위 테스트 19건 신규 (`marketCalendar.test.tsx` 15 + `MarketStatusBanner.test.tsx` 4) → vitest **36 → 55 passed**.
 - e2e 1건 신규 — Today / Jobs / Holdings 3 경로에서 `data-testid="market-status-banner"` 노출 + `data-state` 정합성 검증 → playwright **6 → 7 passed**.
 - 회귀: backend pytest 314 / build 그대로. 백엔드 코드 변경 0건 (정책 준수).
+
+### Phase D 결과 (요약)
+
+- `app/api/routes.py` 에 read-only `GET /api/stocks/{symbol}/prices?days=120` 신규. `days` 는 `Query(120, ge=1, le=500)` 검증, `daily_prices` 만 조회 (KIS 호출 0건). `app/api/schemas.py` 에 `StockPriceSeriesResponse` 추가 (`symbol`, `days`, `count`, `prices[DailyPriceSchema]`).
+- `DailyPriceRepository.list_by_symbol` 가 이미 최신 N건을 날짜 오름차순으로 반환하는 형태라 라우터는 wrapping 만. 응답 일자 정렬 = ascending (차트 그대로 사용 가능). 404: 종목 없음, 200 + count=0: 종목은 있으나 일봉 0건.
+- `tests/integration/test_api_routes.py` 에 5건 신규 (`stock_prices_returns_series_ascending_with_default_days` / `caps_to_requested_days_param` / `returns_empty_when_no_prices_seeded` / `404_for_unknown_symbol` / `validates_days_bounds` 0/501 → 422). 백엔드 전체: **314 → 319 passed**.
+- 프런트: `useStockPriceSeries(symbol, { days })` 훅 (queryKey `['stocks', symbol, 'prices', { days }]`, staleTime 60s, `enabled: !!symbol`) + `StockPriceSeriesResponse` 타입 추가.
+- `frontend/src/pages/StockDetail/PriceChart.tsx` 신규 — Recharts `LineChart` (close 추세). `data-testid="price-chart"` / 빈 상태 `price-chart-empty`. Recharts 는 `vendor-charts` 청크에 격리되어 있고 StockDetail 페이지 자체가 router 레벨 `React.lazy` 라 별도 lazy wrap 불필요.
+- `frontend/src/pages/StockDetail/index.tsx` 에 `PriceChartCard` 추가 — 30/60/120/250 days 선택자 (`role="tab"`, 기본 120d active), loading / error / empty / success 4 상태. POST 트리거 / 자동매매 UI 0건.
+- vitest 4건 신규 (chart success / empty / error / days 선택자 토글 + searchParams 검증), MSW 기본 핸들러 `/api/stocks/:symbol/prices` (count=0) 추가, e2e fixture `STOCK_PRICE_SERIES_005930` (5건) + 라우트 패턴 `/api/stocks/005930/prices` 우선순위 등록. 프런트 vitest **55 → 59**, Playwright e2e **7 → 8**.
+- 빌드 그대로 (vendor-charts 청크 383.32 kB 동일, StockDetail 페이지 청크만 8.28 → 11.36 kB 증가). 정책: 자동매매 / KIS 호출 / 텔레그램 / POST 라우터 / 추천·보유 산식 0건 변경.
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0003`, 체크리스트는 [`TASKS.md`](./TASKS.md) `v0.3 — 분석 보강 + 운영 정착` 섹션 참조.
 

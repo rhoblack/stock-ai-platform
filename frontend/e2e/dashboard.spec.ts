@@ -67,6 +67,29 @@ test.describe('v0.2 Phase F — dashboard happy paths (8 screens, mocked API)', 
     await expect(json).toContainText('"run_id": 7')
   })
 
+  test('StockDetail price chart card and days selector are visible', async ({
+    page,
+  }) => {
+    await page.goto('/stocks/005930')
+    const card = page.getByTestId('stock-detail-price-chart')
+    await expect(card).toBeVisible()
+    // 차트 본체 (count > 0) 가 fixture 에서 5건 → empty placeholder 가 아닌
+    // price-chart 가 노출되어야 한다.
+    await expect(page.getByTestId('price-chart')).toBeVisible()
+    await expect(page.getByTestId('price-chart-empty')).toHaveCount(0)
+    // 기본 120d 가 active.
+    await expect(page.getByTestId('price-chart-days-120')).toHaveAttribute(
+      'data-active',
+      'true',
+    )
+    // 30d 클릭 시 active 토글.
+    await page.getByTestId('price-chart-days-30').click()
+    await expect(page.getByTestId('price-chart-days-30')).toHaveAttribute(
+      'data-active',
+      'true',
+    )
+  })
+
   test('MarketCap TOP filter switches from KOSPI to KOSDAQ to ALL', async ({
     page,
   }) => {

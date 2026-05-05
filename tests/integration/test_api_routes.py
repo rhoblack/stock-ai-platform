@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -918,6 +918,91 @@ def test_stock_detail_respects_history_limits(client, session):
     body = response.json()
     assert body["recent_recommendations"] == []
     assert body["recent_holding_checks"] == []
+
+
+# ---------- /api/stocks/{symbol}/prices ----------
+
+def test_stock_prices_returns_series_ascending_with_default_days(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    for offset in range(5):
+        _seed_daily_price(
+            session,
+            symbol="005930",
+            price_date=date(2026, 5, 1) + timedelta(days=offset),
+            close=Decimal("70000") + Decimal(offset * 100),
+        )
+    session.commit()
+
+    response = client.get("/api/stocks/005930/prices")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "005930"
+    assert body["days"] == 120
+    assert body["count"] == 5
+    assert len(body["prices"]) == 5
+    assert [p["date"] for p in body["prices"]] == [
+        "2026-05-01",
+        "2026-05-02",
+        "2026-05-03",
+        "2026-05-04",
+        "2026-05-05",
+    ]
+    assert body["prices"][0]["close"] == "70000.0000"
+    assert body["prices"][-1]["close"] == "70400.0000"
+    assert body["prices"][0]["volume"] == 1_000_000
+
+
+def test_stock_prices_caps_to_requested_days_param(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    for offset in range(10):
+        _seed_daily_price(
+            session,
+            symbol="005930",
+            price_date=date(2026, 4, 20) + timedelta(days=offset),
+            close=Decimal("70000"),
+        )
+    session.commit()
+
+    response = client.get("/api/stocks/005930/prices?days=3")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["days"] == 3
+    assert body["count"] == 3
+    # Latest 3 in ascending order: 4/27, 4/28, 4/29
+    assert [p["date"] for p in body["prices"]] == [
+        "2026-04-27",
+        "2026-04-28",
+        "2026-04-29",
+    ]
+
+
+def test_stock_prices_returns_empty_when_no_prices_seeded(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    session.commit()
+
+    response = client.get("/api/stocks/005930/prices")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "005930"
+    assert body["count"] == 0
+    assert body["prices"] == []
+
+
+def test_stock_prices_404_for_unknown_symbol(client):
+    response = client.get("/api/stocks/UNKNOWN/prices")
+    assert response.status_code == 404
+
+
+def test_stock_prices_validates_days_bounds(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    session.commit()
+
+    # days <= 0 rejected by Query(ge=1)
+    response = client.get("/api/stocks/005930/prices?days=0")
+    assert response.status_code == 422
+    # days > 500 rejected by Query(le=500)
+    response = client.get("/api/stocks/005930/prices?days=501")
+    assert response.status_code == 422
 
 
 # ---------- /api/universe/market-cap-top ----------

@@ -244,6 +244,13 @@ export interface StockDetailResponse {
   recent_holding_checks: HoldingCheck[]
 }
 
+export interface StockPriceSeriesResponse {
+  symbol: string
+  days: number
+  count: number
+  prices: DailyPriceRow[]
+}
+
 // ----- /api/recommendations -----
 
 export interface RecommendationRunDetailResponse {

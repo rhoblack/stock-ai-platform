@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route } from 'react-router-dom'
 import { renderWithProviders } from './renderWithProviders'
@@ -168,6 +168,135 @@ describe('StockDetailPage', () => {
     renderStockAt('/stocks/UNKNOWN')
     await waitFor(() =>
       expect(screen.getByTestId('stock-detail-error')).toBeInTheDocument(),
+    )
+  })
+
+  it('renders the price chart card with prices when /api/stocks/:symbol/prices succeeds', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/stocks/005930/prices', () =>
+        HttpResponse.json({
+          symbol: '005930',
+          days: 120,
+          count: 3,
+          prices: [
+            {
+              date: '2026-04-30',
+              open: '69000',
+              high: '70000',
+              low: '68500',
+              close: '69500',
+              volume: 1200000,
+              trading_value: null,
+            },
+            {
+              date: '2026-05-01',
+              open: '69500',
+              high: '70500',
+              low: '69000',
+              close: '70000',
+              volume: 1300000,
+              trading_value: null,
+            },
+            {
+              date: '2026-05-04',
+              open: '70000',
+              high: '71000',
+              low: '69500',
+              close: '70500',
+              volume: 1500000,
+              trading_value: null,
+            },
+          ],
+        }),
+      ),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('stock-detail-price-chart')).toBeInTheDocument(),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('price-chart')).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('price-chart-empty')).not.toBeInTheDocument()
+    // 기본 days = 120 의 버튼이 active
+    expect(screen.getByTestId('price-chart-days-120')).toHaveAttribute(
+      'data-active',
+      'true',
+    )
+    expect(screen.getByTestId('price-chart-days-30')).toHaveAttribute(
+      'data-active',
+      'false',
+    )
+  })
+
+  it('shows the price chart empty placeholder when count=0', async () => {
+    // /api/stocks/:symbol/prices 기본 핸들러는 count=0 반환.
+    server.use(http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)))
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('stock-detail-price-chart')).toBeInTheDocument(),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('price-chart-empty')).toBeInTheDocument(),
+    )
+  })
+
+  it('shows the price chart error state when /api/stocks/:symbol/prices returns 500', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/stocks/005930/prices', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(
+      () => expect(screen.getByTestId('price-chart-error')).toBeInTheDocument(),
+      { timeout: 4000 },
+    )
+  })
+
+  it('switches days selection (120 → 30) and re-fetches the price series', async () => {
+    let lastDays: string | null = null
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/stocks/005930/prices', ({ request }) => {
+        const url = new URL(request.url)
+        lastDays = url.searchParams.get('days')
+        return HttpResponse.json({
+          symbol: '005930',
+          days: Number(lastDays ?? 120),
+          count: 1,
+          prices: [
+            {
+              date: '2026-05-04',
+              open: '70000',
+              high: '70500',
+              low: '69500',
+              close: '70000',
+              volume: 1000000,
+              trading_value: null,
+            },
+          ],
+        })
+      }),
+    )
+
+    renderStockAt('/stocks/005930')
+    await waitFor(() => expect(lastDays).toBe('120'))
+
+    fireEvent.click(screen.getByTestId('price-chart-days-30'))
+
+    await waitFor(() => expect(lastDays).toBe('30'))
+    expect(screen.getByTestId('price-chart-days-30')).toHaveAttribute(
+      'data-active',
+      'true',
     )
   })
 })
