@@ -5,6 +5,7 @@ import { RiskBadge } from '@/components/common/RiskBadge'
 import { DecisionPill } from '@/components/common/DecisionPill'
 import { ReturnRate } from '@/components/common/ReturnRate'
 import { DataStatusBadge } from '@/components/common/DataStatusBadge'
+import { MarketStatusBanner } from '@/components/common/MarketStatusBanner'
 import type { HoldingCheck, RecommendationItem } from '@/api/types'
 
 export function TodayReportPage() {
@@ -57,6 +58,8 @@ export function TodayReportPage() {
           </div>
         )}
       </header>
+      <MarketStatusBanner />
+
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <RecommendationsCard items={top_recommendations} runDate={latest_run?.run_date} />

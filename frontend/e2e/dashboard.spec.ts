@@ -44,6 +44,17 @@ test.describe('v0.2 Phase F — dashboard happy paths (8 screens, mocked API)', 
     await expect(page.getByTestId('today-top-recs')).toBeVisible()
   })
 
+  test('MarketStatusBanner is visible on Today / Jobs / Holdings pages', async ({
+    page,
+  }) => {
+    for (const path of ['/today', '/jobs', '/holdings']) {
+      await page.goto(path)
+      const banner = page.getByTestId('market-status-banner')
+      await expect(banner).toBeVisible()
+      await expect(banner).toHaveAttribute('data-state', /open|holiday|weekend/)
+    }
+  })
+
   test('Jobs row click reveals result_summary JSON in detail panel', async ({
     page,
   }) => {

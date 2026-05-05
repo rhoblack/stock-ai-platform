@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useHoldings } from '@/hooks/useHoldings'
 import { useLatestHoldingChecks } from '@/hooks/useLatestHoldingChecks'
+import { MarketStatusBanner } from '@/components/common/MarketStatusBanner'
 import { HoldingsList } from './HoldingsList'
 import { HoldingTrendPanel } from './HoldingTrendPanel'
 import type { HoldingCheck } from '@/api/types'
@@ -54,6 +55,7 @@ export function HoldingsPage() {
           )}
         </p>
       </header>
+      <MarketStatusBanner />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div data-testid="holdings-list-region">

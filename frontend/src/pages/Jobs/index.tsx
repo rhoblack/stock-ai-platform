@@ -1,5 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { useJobs } from '@/hooks/useJobs'
+import { MarketStatusBanner } from '@/components/common/MarketStatusBanner'
 import { JobsTable } from './JobsTable'
 import { JobDetailPanel } from './JobDetailPanel'
 
@@ -21,6 +22,7 @@ export function JobsPage() {
           )}
         </p>
       </header>
+      <MarketStatusBanner />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div data-testid="jobs-list-region">

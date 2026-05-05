@@ -15,7 +15,7 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 |---|---|---|---|
 | A | GitHub Actions CI (backend pytest + frontend vitest+build + Playwright e2e) | ✅ 인수 | `v0.3-phase-a-ci` |
 | B | 캔들 패턴 + ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (백엔드, DB 컬럼 +3개) | ✅ 인수 (backend pytest 296 → 314, vitest 36 / e2e 6 / build 그대로) | `v0.3-backend-analysis` |
-| C | 한국거래소 휴장일 캘린더 (정적 JSON, Today/Jobs/Holdings 배너) | ⏳ 진입 대기 | `v0.3-frontend-calendar` |
+| C | 한국거래소 휴장일 캘린더 (정적 JSON, Today/Jobs/Holdings 배너) | ✅ 인수 (vitest 36 → 55, e2e 6 → 7, build / backend pytest 314 회귀 0) | `v0.3-frontend-calendar` |
 | D | `GET /api/stocks/{symbol}/prices` 신규 + StockDetail 일봉 차트 (Recharts) | ⏳ | `v0.3-frontend-stock-chart` |
 | E | `RELEASE_NOTES_v0.3.md` + README/PROJECT_STATUS/TASKS 마감 + tag `v0.3-final` | ⏳ | `v0.3-final` |
 
@@ -28,6 +28,16 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 - `StockIndicatorSchema` (Pydantic) 에 3개 optional 필드 추가 → `/api/stocks/{symbol}.latest_indicator` 응답에 자동 포함. 프런트 타입은 Phase D 에서 명시 추가 예정.
 - 단위 테스트 16건 신규 (analyzer 32 → 48), 통합 테스트 2건 신규 (indicator 7 → 9), 기존 회귀 0건. 백엔드 전체: **296 → 314 passed**.
 - 부수 정정: `frontend/vite.config.ts` 의 vitest `include` / `exclude` 추가 — Playwright e2e 파일 (`e2e/**/*.spec.ts`) 이 vitest 의 기본 glob 에 잡혀 collect 단계 실패하던 노이즈 제거.
+
+### Phase C 결과 (요약)
+
+- `frontend/src/data/krxHolidays.ts` 신규 — 2025~2027 KRX 휴장일 정적 JSON. 카테고리 6종 (`fixed` / `lunar` / `substitute` / `election` / `temporary` / `year-end`). 주석에 출처 (KRX 공식 휴장일 안내) + 매년 갱신 절차 4단계 (KRX 공지 확인 → 다음 해 항목 추가 → 테스트 1~2건 추가 → PR / push → CI 회귀).
+- `frontend/src/lib/marketCalendar.ts` 신규 — KST(`Asia/Seoul`) 기준 `todayInSeoul` + UTC midnight 산술 기반 `dayOfWeek` / `isWeekend` / `getHoliday` / `isHoliday` / `isMarketClosed` / `isMarketOpen` / `nextOpenDay` (max 30 day scan, throw on exceed) / `previousOpenDay` / `classifyMarketStatus` (open / WEEKEND / HOLIDAY 분기 + `nextOpen`). 외부 API / 백엔드 호출 0건.
+- `frontend/src/components/common/MarketStatusBanner.tsx` 신규 — `data-state` 3 분기 (`open` 에메랄드 / `holiday` 앰버 / `weekend` 뉴트럴). 헤드라인 / 디테일 한국어. `date?` prop 으로 시점 freeze 가능 (테스트용).
+- Today / Jobs / Holdings 화면 헤더 직후에 `<MarketStatusBanner />` 1줄 통합. 다른 화면 (Recommendations / History / StockDetail / MarketCapTop / Settings) 은 v0.3 범위 외라 미통합.
+- 단위 테스트 19건 신규 (`marketCalendar.test.tsx` 15 + `MarketStatusBanner.test.tsx` 4) → vitest **36 → 55 passed**.
+- e2e 1건 신규 — Today / Jobs / Holdings 3 경로에서 `data-testid="market-status-banner"` 노출 + `data-state` 정합성 검증 → playwright **6 → 7 passed**.
+- 회귀: backend pytest 314 / build 그대로. 백엔드 코드 변경 0건 (정책 준수).
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0003`, 체크리스트는 [`TASKS.md`](./TASKS.md) `v0.3 — 분석 보강 + 운영 정착` 섹션 참조.
 
