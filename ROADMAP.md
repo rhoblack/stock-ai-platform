@@ -1,10 +1,11 @@
 # Roadmap
 
-> 본 문서는 **v0.5 시작 선언 시점** 기준으로 갱신되었다 (직전 마감 태그
-> `v0.4-final`). 초안 (자동매매 중심 v0.2~v1.0 구상) 과 실제 진행 이력이
-> 달라져 전면 재작성. 자동매매 / MockBroker / 백테스트 / FULL_AUTO 는 모두
-> **Future Backlog** 로 이동했고, 실제로 진행된 사이클은 분석·UX·CI·운영
-> 정착 + 증권사 리포트 인텔리전스 + 뉴스·공시 실제화 + 테마 랭킹 중심이다.
+> 본 문서는 **v0.5 마감 선언 시점** 기준으로 갱신되었다 (직전 마감 태그
+> `v0.5-frontend-themes`, 최종 마감 태그 `v0.5-final` 예정). 초안 (자동매매
+> 중심 v0.2~v1.0 구상) 과 실제 진행 이력이 달라져 전면 재작성. 자동매매 /
+> MockBroker / 백테스트 / FULL_AUTO 는 모두 **Future Backlog** 로 이동했고,
+> 실제로 진행된 사이클은 분석·UX·CI·운영 정착 + 증권사 리포트 인텔리전스 +
+> 뉴스·공시 데이터 라인 + `news_score` 첫 real 화 + 테마 랭킹 화면 중심이다.
 
 ## 진행 이력 요약
 
@@ -14,7 +15,7 @@
 | v0.2 Frontend MVP | PC 대시보드 8 화면 (Vite + React + TS), 코드 스플릿, Docker | ✅ 마감 | `v0.2-frontend-final` |
 | v0.3 Analysis & Ops | GitHub Actions CI / 캔들·ATR / KRX 휴장 캘린더 / StockDetail 일봉 차트 | ✅ 마감 | `v0.3-final` |
 | v0.4 Analyst & Theme Intelligence | 증권사 리포트 + 테마 매핑 + 변화 시그널 + 리포트 점수 통합 + StockDetail 4 카드 | ✅ 마감 | `v0.4-final` |
-| v0.5 News, Disclosure & Theme Ranking | News/공시 실제화 + DummyScoreProducer.news_score 첫 real 화 + `/themes` 9번째 화면 | 🟡 Phase A 진입 대기 | `v0.5-news-collector` (Phase A 예정) |
+| v0.5 News, Disclosure & Theme Ranking | News/공시 데이터 라인 + DummyScoreProducer.news_score 첫 real 화 + `/themes` 9번째 화면 | ✅ 마감 | `v0.5-final` |
 
 ---
 
@@ -117,19 +118,20 @@ StockDetail 화면 4 카드 (Consensus / Reports / Themes / Signals) + Recommend
 
 ---
 
-## v0.5 — News, Disclosure & Theme Ranking (🟡 Phase A 진입 대기)
+## v0.5 — News, Disclosure & Theme Ranking (✅ 마감)
 
 기준선: `v0.4-final` (HEAD `0f25be6`). 382 / 60 / build / 9 baseline 위에 5 phase
-진행 — Dummy 5 컴포넌트 중 `news_score` (가중치 25%) 가 처음으로 real 화되며,
-v0.4 의 테마 데이터가 첫 surfacing (`/themes` 화면) 된다.
+누적 — Dummy 5 컴포넌트 중 `news_score` (가중치 25%) 가 처음으로 real 화되었고,
+v0.4 의 테마 데이터가 첫 surfacing (`/themes` 화면) 되었다. 마감 게이트 481 / 68
+/ build / 11.
 
-| Phase | 작업 | 상태 | 태그 (예정) |
+| Phase | 작업 | 상태 | 태그 |
 |---|---|---|---|
-| A | News data layer — `NewsProviderInterface` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 (19:00 KST) | ⏳ 진입 대기 | `v0.5-news-collector` |
-| B | Disclosure subset — DART 메타 + 분류 (EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER) + `collect_disclosures` 잡 (20:00 KST) | ⏳ | `v0.5-disclosure-pipeline` |
-| C | `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine 통합 (Dummy → Real news_score, Risk 보강) + decision evidence | ⏳ | `v0.5-news-score` |
-| D | 백엔드 `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` (read-only) + 프런트 `/themes` 9번째 화면 + StockDetail 영향 설명 강화 | ⏳ | `v0.5-frontend-themes` |
-| E | `RELEASE_NOTES_v0.5.md` + 마감 선언 + 4 게이트 재확인 | ⏳ | `v0.5-final` |
+| A | News data layer — `NewsProviderInterface` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 (19:00 KST) | ✅ 인수 | `v0.5-news-collector` |
+| B | Disclosure subset — 5 카테고리 keyword 분류 (RISK_DISCLOSURE / EARNINGS_REPORT / OWNERSHIP_CHANGE / GOVERNANCE / OTHER) + `collect_disclosures` 잡 (20:00 KST) | ✅ 인수 | `v0.5-disclosure-pipeline` |
+| C | `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine 통합 (Dummy → Real news_score, Risk 보강) + decision evidence | ✅ 인수 | `v0.5-news-score` |
+| D | 백엔드 `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` (read-only) + 프런트 `/themes` 9번째 화면 + StockDetail 영향 설명 강화 + Recommendation evidence 노출 | ✅ 인수 | `v0.5-frontend-themes` |
+| E | `RELEASE_NOTES_v0.5.md` + 마감 선언 + 4 게이트 재확인 (481 / 68 / build / 11) | ✅ 문서 마감 | `v0.5-final` |
 
 **v0.5 핵심 정책 (cycle-wide)**:
 

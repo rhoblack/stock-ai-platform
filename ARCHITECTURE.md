@@ -1,8 +1,11 @@
 # Architecture
 
-> 본 문서는 **v0.4 Phase A 인수 시점** 기준으로 갱신된다 (`v0.4-backend-reports`
-> 태그). v0.1 Backend → v0.2 Frontend → v0.3 Analysis/Ops → v0.4 Analyst &
-> Theme Intelligence 가 모두 누적된 상태의 시스템 구조를 반영한다.
+> 본 문서는 **v0.5 마감 시점** 기준으로 갱신된다 (`v0.5-frontend-themes` 태그
+> 누적, `v0.5-final` 마감 예정). v0.1 Backend → v0.2 Frontend → v0.3
+> Analysis/Ops → v0.4 Analyst & Theme Intelligence → v0.5 News·공시·테마 랭킹이
+> 모두 누적된 상태의 시스템 구조를 반영한다. v0.5 의 News / Disclosure 데이터
+> 라인은 `app/data/collectors/` 하위에 흡수되어 별도 layer 신설 없이 기존 Data
+> Layer 가 확장되었다.
 
 ## 1. 핵심 흐름
 

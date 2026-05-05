@@ -7,32 +7,53 @@
 
 ---
 
-## 0. v0.5 시작 선언 — News, Disclosure & Theme Ranking
+## 0. v0.5 마감 선언 — News, Disclosure & Theme Ranking
 
-**v0.5 cycle 진입.** 기준선 `v0.4-final` (HEAD `0f25be6` 시점, origin/main 동기화 완료). v0.1 backend + v0.2 frontend + v0.3 분석·운영 + v0.4 Analyst & Theme Intelligence 모두 마감 위에 **News / Disclosure 데이터 라인** + **테마 랭킹 화면** 5 phase 를 진행한다. v0.1 의 read-only / 자동매매 부재 / 비밀 마스킹 / mock·DRY_RUN 정책 + v0.4 의 저작권 정책 (본문 paragraph 미저장 / 자동 fetch default OFF) 모두 그대로 유지한다.
+**v0.5 cycle 마감.** 기준선 `v0.4-final` (HEAD `0f25be6` 시점) 위에 5 phase 누적
+완료. 누적 인수 태그는 `v0.5-frontend-themes` (Phase D) 이고, Phase E 마감 후
+태그 `v0.5-final` 부여 예정. v0.1 backend + v0.2 frontend + v0.3 분석·운영 +
+v0.4 Analyst & Theme Intelligence + v0.5 News·공시·테마 랭킹 모두 누적 마감.
+v0.1 의 read-only / 자동매매 부재 / 비밀 마스킹 / mock·DRY_RUN 정책 + v0.4 의
+저작권 정책 (본문 paragraph 미저장 / 자동 fetch default OFF / `source_file_path`
+미노출) 모두 그대로 유지했다.
 
-### v0.5 핵심 목표
+- 마감 일자: **2026-05-05 (Asia/Seoul)**
+- 마감 게이트: backend pytest **481 passed** / frontend vitest **68 passed** /
+  frontend build 그린 / Playwright e2e **11 passed**
+- 누적 인수 태그: `v0.5-news-collector` → `v0.5-disclosure-pipeline` →
+  `v0.5-news-score` → **`v0.5-frontend-themes`** → `v0.5-final` (Phase E 후 부여)
+- 마감 사유: [`RELEASE_NOTES_v0.5.md`](./RELEASE_NOTES_v0.5.md)
 
-뉴스 / 공시 메타데이터를 v0.1 부터 비어 있던 `news_items` 테이블에 **처음으로 채우고**,
-`DummyScoreProducer.news_score` (가중치 25%) 를 **첫 real 화** 한다 (`RealNewsScoreProducer`).
-`RISK_DISCLOSURE` 카테고리는 `RiskEngine` 의 `risk_flags` / `risk_penalty` 로 보강된다.
-v0.4 의 **테마·매핑·시그널 데이터는 `/themes` 9번째 화면으로 처음 surface** 되며,
-StockDetail 의 "관련 테마" 카드도 `impact_path` icon + reason 으로 가시화 강화된다.
-추천 산식 본 weight (technical 35% + news 25% + supply 15% + fundamental 15% +
-ai 10% - risk_penalty) 는 변경하지 않는다 — `news_score` 가 placeholder 50 → real
-값으로 교체될 뿐.
+### v0.5 핵심 산출물 한 줄 요약
+
+- **News 데이터 라인** — `NewsProviderInterface` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 (19:00 KST, default OFF)
+- **공시 데이터 라인** — `DisclosureProviderInterface` + `DisclosureCollector` + 5 카테고리 keyword 분류 + `collect_disclosures` 잡 (20:00 KST, default OFF)
+- **`news_score` 첫 real 화** — `RealNewsScoreProducer` (composition 패턴, fallback 으로 supply/fundamental/earnings/ai 위임). 산식 `clip(50 + weighted_sentiment * 5 / max(news_count, 1), 0, 100)`
+- **RiskEngine 보강** — `DisclosureRiskProducer` 가 14일 윈도우의 `RISK_DISCLOSURE` 카테고리 공시를 카운트해 `RISK_DISCLOSURE` flag + `min(count × 3, 10)` cap penalty 추가. ScoringEngine 본 weight 변경 0건
+- **테마 랭킹 / 상세 화면** — `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` (read-only) + 프런트 `/themes` + `/themes/:theme_id` 9번째 화면 + Sidebar `테마 (β)` 메뉴
+- **추천 evidence 노출** — `RecommendationItemSchema.news_evidence` + `disclosure_risk_evidence` (whitelist 안전 필드만). `RelatedThemesCard` 테마 → `/themes/:id` 링크 + impact_path / impact_direction badge. `RecommendationsTable` evidence 컬럼 추가
 
 ### v0.5 범위 (Phase A~E)
 
-| Phase | 작업 | 상태 | 산출 태그 (예정) |
+| Phase | 작업 | 상태 | 산출 태그 |
 |---|---|---|---|
 | A | News data layer (`NewsProviderInterface` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 19:00 KST) | ✅ 인수 (PR1: pytest 382 → 401 / PR2: 401 → 406, 회귀 0건) | `v0.5-news-collector` |
 | B | Disclosure subset + 분류 5종 + `collect_disclosures` 잡 (20:00 KST) | ✅ 인수 (backend pytest 406 → 440, 회귀 0건) | `v0.5-disclosure-pipeline` |
 | C | `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine·HoldingCheckEngine·RiskEngine 통합 | ✅ 인수 (backend pytest 440 → 470 passed (+30), 회귀 0건) | `v0.5-news-score` |
 | D | 백엔드 `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` + 프런트 `/themes` 9번째 화면 + StockDetail 영향 강화 | ✅ 인수 (backend pytest 470 → 481 (+11), vitest 60 → 68 (+8), e2e 9 → 11 (+2), build 그린, 회귀 0건) | `v0.5-frontend-themes` |
-| E | `RELEASE_NOTES_v0.5.md` + README / PROJECT_STATUS / TASKS / ARCHITECTURE 마감 + tag `v0.5-final` | ⏳ | `v0.5-final` |
+| E | `RELEASE_NOTES_v0.5.md` + README / PROJECT_STATUS / TASKS / ARCHITECTURE / ROADMAP 마감 + tag `v0.5-final` | ✅ 문서 마감 (코드 변경 0건) | `v0.5-final` (Phase E 후 부여) |
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0005`, 체크리스트는 [`TASKS.md`](./TASKS.md) `v0.5 — News, Disclosure & Theme Ranking` 섹션 참조.
+
+### v0.6 후보 (마감 후 검토 대기)
+
+자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) §6 + [`RELEASE_NOTES_v0.5.md`](./RELEASE_NOTES_v0.5.md)
+"v0.6 후보". 한 줄 요약:
+
+- **데이터 / 분석 실제화** — DART 재무제표 파싱 (FundamentalSnapshot / EarningsSnapshot), 실 RSS / DART subset 구현체, 테마 랭킹 점수화, HoldingCheckSchema evidence 노출, LLM sentiment 보강
+- **인증 / 관심종목** — 단일 토큰 → POST 라우터 → Watchlist (인증 동반 필수)
+- **운영 / UX** — Sentry / Prometheus / Grafana, 모바일 레이아웃, lightweight-charts 마이그레이션, Alembic 도입
+- **Future Backlog (자동매매)** — Strategy / Backtest / MockBroker / APPROVAL / SMALL_AUTO / FULL_AUTO 모두 별도 보안·컴플라이언스 사이클 선행 필수
 
 ### Phase A PR1 결과 (요약) — Data layer skeleton
 
@@ -172,6 +193,31 @@ if any(category=RISK_DISCLOSURE in last 14d):
 - 회귀 0건. KIS / Telegram / scheduler / 자동매매 / POST 라우터 / 산식 본 weight 일체 변경 0건.
 
 **Phase E 진입 시 첫 작업**: `RELEASE_NOTES_v0.5.md` 작성 (Phase A~D 누적 산출 요약, 통계 481/68/build/11) + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE 마감 + 4 게이트 재검증 + tag `v0.5-final`.
+
+### Phase E 결과 (요약) — 마감 문서 / 회귀 게이트 재확인
+
+> 코드 / 라우터 / DB 모델 / 프런트 화면 / 외부 호출 변경 0건. 문서·릴리스 노트
+> 만 작성하고 4 게이트 그대로 통과 확인.
+
+- `RELEASE_NOTES_v0.5.md` 신규 — Phase A~D 산출물 / 4 게이트 결과 / 안전 정책
+  / 알려진 한계 / v0.6 후보 / 운영 가이드 요약 / 누적 인수 태그
+- `README.md` 상단 마감 배너 v0.4 → v0.5 갱신 + §1 누적 기능 (v0.5 항목 5종 추가)
+  + §2 제외 범위 (v0.5 정책 4건 추가) + §4 문서 표 (RELEASE_NOTES_v0.5 + ROADMAP
+  v0.6) + §6 누적 사이클 표 (v0.5 phase 5행 추가) + §6 영역별 상태 (News·공시 라인
+  / 9 화면 / 9 잡 / 추천 evidence 컬럼 반영) + §11 회귀 기준선 (382/60/9 → 481/68/11)
+- `PROJECT_STATUS.md` §0 시작 선언 → 마감 선언 변경 (이 블록), Phase A~E 결과
+  요약 누적
+- `TASKS.md` v0.5 Phase D / Phase E 체크박스 완료 + v0.5 전체 마감 표기
+- `ROADMAP.md` v0.5 행 상태 갱신 + v0.5 phase 표 (✅ 마감) + 누적 태그 라인
+- `ARCHITECTURE.md` / `API_SPEC.md` / `TESTING.md` / `INTEGRATION_RUNBOOK.md` /
+  `DB_SCHEMA.md` 정합성 점검 — 이미 Phase B / C / D 인수 시 갱신된 항목 재확인
+  (v0.5 §10 / §11 / §12 운영 절차, API §14 테마, TESTING §6.9 v0.5 카운트, DB §8
+  category 컬럼)
+- 4 게이트 재실행 결과: backend pytest **481 passed** / frontend vitest **68
+  passed** / frontend build 그린 / Playwright e2e **11 passed**. 회귀 0건.
+
+이후 절차: `git tag v0.5-final` + `git push origin main --tags`. GitHub Release
+본문에 `RELEASE_NOTES_v0.5.md` 붙여넣기 (UI 작업).
 
 ### v0.5 에서 절대 하지 않을 것 (정책)
 
