@@ -2,6 +2,13 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
+> **v0.1 백엔드 마감.** 최종 태그: `v0.1-backend-kis-paper-verified`. 회귀
+> 게이트 296 passed, mock seed 통합 시나리오 + KIS 모의투자 서버 read-only
+> 검증 모두 1회 인수 완료. 자동매매 / 실 주문은 v0.1 범위 밖이며 코드 /
+> 인터페이스 구현 일체 포함하지 않습니다 (`BrokerInterface` 는 ABC
+> placeholder 만 유지). 종합 인수 사유 / 알려진 한계 / v0.2 후보는
+> [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) 참조.
+
 ## 1. 프로젝트 목표
 
 v0.1의 목표는 실거래 자동매매가 아닙니다.
@@ -81,8 +88,16 @@ v0.1은 다음 기능을 구현하는 안정적인 분석/리포트 시스템입
 
 ## 6. v0.1 백엔드 완료 상태
 
-**v0.1 백엔드 마감 (tag `v0.1-backend-accepted`).** Phase 0~9 모두 완료, 통합
-시나리오 1회 수행 검증 완료. 전체 회귀 테스트: **296 passed**.
+**v0.1 백엔드 마감 (최종 태그 `v0.1-backend-kis-paper-verified`).** Phase 0~9
+모두 완료, mock seed 통합 시나리오 + 실 KIS 모의투자 서버 read-only 검증
+모두 1회 인수. 전체 회귀 테스트: **296 passed**. 종합 인수 사유 / v0.2 후보는
+[`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) 참조.
+
+**누적 인수 태그**
+
+- `v0.1-foundation-checkpoint` — 초기 골격 마감
+- `v0.1-backend-accepted` — mock seed 통합 시나리오 인수
+- `v0.1-backend-kis-paper-verified` — 실 KIS 모의투자 서버 read-only 검증 인수 (현재 헤드)
 
 | 영역 | 상태 |
 |---|---|

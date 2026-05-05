@@ -5,6 +5,25 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 
 ---
 
+## 0. v0.1 백엔드 마감 선언
+
+**v0.1 백엔드는 종료 (마감) 상태이다.** 새 기능 / 리팩터 / 잡 / 라우터 추가는
+사용자의 명시적 v0.2 진입 요청 전까지 진행하지 않는다.
+
+| 항목 | 값 |
+|---|---|
+| 최종 태그 | `v0.1-backend-kis-paper-verified` |
+| 인수 일자 | 2026-05-05 (Asia/Seoul) |
+| 회귀 게이트 | pytest **296 passed** (외부 호출 0건, mock / DRY_RUN 만) |
+| 통합 검증 | mock seed (§2 "v0.1 통합 실행 결과") + 실 KIS 모의투자 read-only (§2 "실 KIS 운영 검증 결과" + 후속) 모두 1회 통과 |
+| 자동매매 / 실 주문 | **v0.1 범위 밖** — `BrokerInterface` ABC placeholder 만 유지 (구체 구현 0건) |
+| 누적 인수 태그 | `v0.1-foundation-checkpoint` → `v0.1-backend-accepted` → `v0.1-backend-kis-paper-verified` |
+
+마감 선언의 종합 사유 / 산출물 / 알려진 한계 / v0.2 후보는
+[`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) 에 정리.
+
+---
+
 ## 1. 완료된 Phase
 
 | Phase | 범위 | 주요 산출물 |
