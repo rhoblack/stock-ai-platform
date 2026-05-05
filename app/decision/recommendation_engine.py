@@ -25,15 +25,29 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.analysis.report_score_calculator import (
+    ReportScoreResult,
+    ScoreAdjustmentResult,
+    ThemeSignalScoreResult,
+    calculate_report_score,
+    calculate_score_adjustment,
+    calculate_theme_signal_score,
+)
 from app.analysis.score_producers import (
     DummyScoreProducer,
     RecommendationComponentScores,
 )
+from app.data.repositories.daily_prices import DailyPriceRepository
 from app.data.repositories.decision_logs import DecisionLogRepository
 from app.data.repositories.recommendations import (
     RecommendationRepository,
     RecommendationRunRepository,
 )
+from app.data.repositories.report_consensus_snapshots import (
+    ReportConsensusSnapshotRepository,
+)
+from app.data.repositories.report_score_logs import ReportScoreLogRepository
+from app.data.repositories.report_signal_events import ReportSignalEventRepository
 from app.data.repositories.snapshots import DataSnapshotRepository
 from app.data.repositories.stock_indicators import StockIndicatorRepository
 from app.data.repositories.stock_universes import (
@@ -41,6 +55,7 @@ from app.data.repositories.stock_universes import (
     StockUniverseRepository,
 )
 from app.data.repositories.stocks import StockRepository
+from app.data.repositories.theme_stock_mappings import ThemeStockMappingRepository
 from app.db.models import (
     DataSnapshot,
     DecisionLog,
@@ -71,7 +86,11 @@ class _Candidate:
     indicator: StockIndicator
     components: RecommendationComponentScores
     score: ScoreBreakdown
+    total_score: Decimal
     risk: RiskAssessment
+    report_score: ReportScoreResult | None = None
+    theme_signal_score: ThemeSignalScoreResult | None = None
+    score_adjustment: ScoreAdjustmentResult | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +177,57 @@ def _serialize_risk_details(assessment: RiskAssessment) -> dict[str, Any]:
     }
 
 
+def _serialize_report_evidence(
+    *,
+    report_score: ReportScoreResult | None,
+    theme_signal_score: ThemeSignalScoreResult | None,
+    score_adjustment: ScoreAdjustmentResult | None,
+) -> dict[str, Any] | None:
+    if report_score is None and theme_signal_score is None:
+        return None
+    return {
+        "report_score": str(report_score.report_score)
+        if report_score and report_score.report_score is not None
+        else None,
+        "theme_signal_score": str(theme_signal_score.theme_signal_score)
+        if theme_signal_score and theme_signal_score.theme_signal_score is not None
+        else None,
+        "report_count": report_score.report_count if report_score else 0,
+        "theme_count": theme_signal_score.theme_count if theme_signal_score else 0,
+        "signal_event_count": theme_signal_score.signal_event_count
+        if theme_signal_score
+        else 0,
+        "target_upside_pct": str(report_score.target_upside_pct)
+        if report_score and report_score.target_upside_pct is not None
+        else None,
+        "rating_score_avg": str(report_score.rating_score_avg)
+        if report_score and report_score.rating_score_avg is not None
+        else None,
+        "recency_bonus": str(report_score.recency_bonus)
+        if report_score and report_score.recency_bonus is not None
+        else None,
+        "theme_signal_bonus": str(theme_signal_score.theme_signal_bonus)
+        if theme_signal_score and theme_signal_score.theme_signal_bonus is not None
+        else None,
+        "event_signal_bonus": str(theme_signal_score.event_signal_bonus)
+        if theme_signal_score and theme_signal_score.event_signal_bonus is not None
+        else None,
+        "risk_penalty": str(theme_signal_score.risk_penalty)
+        if theme_signal_score and theme_signal_score.risk_penalty is not None
+        else None,
+        "report_score_adjustment": str(score_adjustment.report_score_adjustment)
+        if score_adjustment
+        else "0.00",
+        "theme_signal_adjustment": str(score_adjustment.theme_signal_adjustment)
+        if score_adjustment
+        else "0.00",
+        "total_score_after": str(score_adjustment.total_score_after)
+        if score_adjustment
+        else None,
+        **(theme_signal_score.evidence if theme_signal_score else {}),
+    }
+
+
 class RecommendationEngine:
     DEFAULT_UNIVERSE_NAME = "MARKET_CAP_TOP_500"
     DEFAULT_TOP_N = 5
@@ -177,6 +247,11 @@ class RecommendationEngine:
         recommendation_repository: RecommendationRepository,
         decision_log_repository: DecisionLogRepository,
         score_producer: DummyScoreProducer | None = None,
+        daily_price_repository: DailyPriceRepository | None = None,
+        report_consensus_repository: ReportConsensusSnapshotRepository | None = None,
+        theme_mapping_repository: ThemeStockMappingRepository | None = None,
+        report_signal_event_repository: ReportSignalEventRepository | None = None,
+        report_score_log_repository: ReportScoreLogRepository | None = None,
     ) -> None:
         self._scoring_engine = scoring_engine
         self._risk_engine = risk_engine
@@ -189,6 +264,11 @@ class RecommendationEngine:
         self._run_repository = run_repository
         self._recommendation_repository = recommendation_repository
         self._decision_log_repository = decision_log_repository
+        self._daily_price_repository = daily_price_repository
+        self._report_consensus_repository = report_consensus_repository
+        self._theme_mapping_repository = theme_mapping_repository
+        self._report_signal_event_repository = report_signal_event_repository
+        self._report_score_log_repository = report_score_log_repository
 
     def generate(
         self,
@@ -249,19 +329,32 @@ class RecommendationEngine:
                     risk_penalty=risk.risk_penalty,
                 ),
             )
+            report_score, theme_signal_score, score_adjustment = (
+                self._calculate_report_intelligence_scores(
+                    symbol=stock.symbol,
+                    run_date=run_date,
+                    base_total_score=score.total_score,
+                )
+            )
             candidates.append(
                 _Candidate(
                     stock=stock,
                     indicator=indicator,
                     components=components,
                     score=score,
+                    total_score=score_adjustment.total_score_after
+                    if score_adjustment is not None
+                    else score.total_score,
                     risk=risk,
+                    report_score=report_score,
+                    theme_signal_score=theme_signal_score,
+                    score_adjustment=score_adjustment,
                 ),
             )
 
         # Stable deterministic ordering: secondary asc by symbol, primary desc by score.
         candidates.sort(key=lambda c: c.stock.symbol)
-        candidates.sort(key=lambda c: c.score.total_score, reverse=True)
+        candidates.sort(key=lambda c: c.total_score, reverse=True)
         top = candidates[: max(top_n, 0)]
 
         for rank, candidate in enumerate(top, start=1):
@@ -276,7 +369,7 @@ class RecommendationEngine:
 
         run.finished_at = datetime.now(UTC)
         run.status = _RUN_STATUS_SUCCESS if top else _RUN_STATUS_EMPTY
-        run.market_summary = {
+        market_summary = {
             "universe": target_universe_name,
             "universe_found": universe is not None,
             "member_count": len(members),
@@ -288,6 +381,9 @@ class RecommendationEngine:
             "score_components": ["news", "supply", "fundamental", "ai"],
             "score_producer": "DummyScoreProducer",
         }
+        if self._report_score_log_repository is not None:
+            market_summary["report_intelligence"] = "ReportScoreCalculator"
+        run.market_summary = market_summary
         self._run_repository.session.flush()
 
         return RecommendationRunResult(
@@ -310,6 +406,11 @@ class RecommendationEngine:
         started_at: datetime,
         universe_name: str,
     ) -> None:
+        report_evidence = _serialize_report_evidence(
+            report_score=candidate.report_score,
+            theme_signal_score=candidate.theme_signal_score,
+            score_adjustment=candidate.score_adjustment,
+        )
         snapshot = self._snapshot_repository.add(
             DataSnapshot(
                 snapshot_time=started_at,
@@ -325,12 +426,13 @@ class RecommendationEngine:
                     "phase": self.PHASE_TAG,
                     "component_score_metadata": candidate.components.metadata,
                     "risk_summary": _serialize_risk_summary(candidate.risk),
+                    "report_evidence": report_evidence,
                 },
             ),
         )
 
         reason = _watch_candidate_reason(candidate.indicator)
-        grade = _grade_for_score(candidate.score.total_score)
+        grade = _grade_for_score(candidate.total_score)
 
         self._recommendation_repository.add(
             Recommendation(
@@ -340,7 +442,7 @@ class RecommendationEngine:
                 symbol=candidate.stock.symbol,
                 name=candidate.stock.name,
                 grade=grade,
-                total_score=candidate.score.total_score,
+                total_score=candidate.total_score,
                 technical_score=candidate.indicator.technical_score,
                 news_score=candidate.components.news_score,
                 supply_score=candidate.components.supply_score,
@@ -357,6 +459,14 @@ class RecommendationEngine:
                 snapshot_id=snapshot.snapshot_id,
             ),
         )
+        self._persist_report_score_log(
+            run_id=run.run_id,
+            run_date=run_date,
+            symbol=candidate.stock.symbol,
+            report_score=candidate.report_score,
+            theme_signal_score=candidate.theme_signal_score,
+            evidence=report_evidence,
+        )
 
         self._decision_log_repository.add(
             DecisionLog(
@@ -365,6 +475,8 @@ class RecommendationEngine:
                 input_snapshot_id=snapshot.snapshot_id,
                 rule_result_json={
                     **_serialize_score_components(candidate.score),
+                    "base_total_score": str(candidate.score.total_score),
+                    "total_score_after": str(candidate.total_score),
                     "component_scores": {
                         "news": str(candidate.components.news_score),
                         "supply": str(candidate.components.supply_score),
@@ -372,10 +484,98 @@ class RecommendationEngine:
                         "ai": str(candidate.components.ai_score),
                     },
                     "score_producer": candidate.components.metadata,
+                    "report_evidence": report_evidence,
                 },
                 ai_result_json=None,
                 risk_result_json=_serialize_risk_details(candidate.risk),
                 final_decision=f"WATCH_CANDIDATE_RANK_{rank}",
                 reason=reason,
             ),
+        )
+
+    def _calculate_report_intelligence_scores(
+        self,
+        *,
+        symbol: str,
+        run_date: date,
+        base_total_score: Decimal,
+    ) -> tuple[ReportScoreResult | None, ThemeSignalScoreResult | None, ScoreAdjustmentResult | None]:
+        if (
+            self._daily_price_repository is None
+            or self._report_consensus_repository is None
+            or self._theme_mapping_repository is None
+            or self._report_signal_event_repository is None
+        ):
+            return None, None, None
+
+        latest_price = self._daily_price_repository.get_latest_on_or_before(
+            symbol=symbol,
+            target_date=run_date,
+        )
+        latest_consensus = self._report_consensus_repository.get_latest_by_symbol(symbol)
+        report_score = calculate_report_score(
+            as_of=run_date,
+            report_count=latest_consensus.report_count if latest_consensus else 0,
+            avg_target_price=latest_consensus.avg_target_price if latest_consensus else None,
+            latest_close=latest_price.close if latest_price else None,
+            strong_buy_count=latest_consensus.strong_buy_count if latest_consensus else 0,
+            buy_count=latest_consensus.buy_count if latest_consensus else 0,
+            hold_count=latest_consensus.hold_count if latest_consensus else 0,
+            sell_count=latest_consensus.sell_count if latest_consensus else 0,
+            strong_sell_count=latest_consensus.strong_sell_count if latest_consensus else 0,
+            latest_published_at=latest_consensus.latest_published_at
+            if latest_consensus
+            else None,
+        )
+        theme_signal_score = calculate_theme_signal_score(
+            theme_mappings=self._theme_mapping_repository.list_by_symbol(symbol),
+            signal_events=self._report_signal_event_repository.list_by_symbol(symbol),
+        )
+        adjustment = calculate_score_adjustment(
+            base_total_score=base_total_score,
+            report_score=report_score.report_score,
+            theme_signal_score=theme_signal_score.theme_signal_score,
+        )
+        return report_score, theme_signal_score, adjustment
+
+    def _persist_report_score_log(
+        self,
+        *,
+        run_id: int,
+        run_date: date,
+        symbol: str,
+        report_score: ReportScoreResult | None,
+        theme_signal_score: ThemeSignalScoreResult | None,
+        evidence: dict[str, Any] | None,
+    ) -> None:
+        if self._report_score_log_repository is None:
+            return
+        self._report_score_log_repository.create(
+            symbol=symbol,
+            score_date=run_date,
+            report_count=report_score.report_count if report_score else 0,
+            evidence_json=evidence,
+            report_score=report_score.report_score if report_score else None,
+            theme_signal_score=theme_signal_score.theme_signal_score
+            if theme_signal_score
+            else None,
+            theme_count=theme_signal_score.theme_count if theme_signal_score else None,
+            signal_event_count=theme_signal_score.signal_event_count
+            if theme_signal_score
+            else None,
+            target_upside_pct=report_score.target_upside_pct
+            if report_score
+            else None,
+            rating_score_avg=report_score.rating_score_avg if report_score else None,
+            recency_bonus=report_score.recency_bonus if report_score else None,
+            theme_signal_bonus=theme_signal_score.theme_signal_bonus
+            if theme_signal_score
+            else None,
+            event_signal_bonus=theme_signal_score.event_signal_bonus
+            if theme_signal_score
+            else None,
+            risk_penalty=theme_signal_score.risk_penalty
+            if theme_signal_score
+            else None,
+            recommendation_run_id=run_id,
         )

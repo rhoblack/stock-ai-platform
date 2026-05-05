@@ -484,7 +484,7 @@ theme_bonus  = sum( impact_strength * 가중치(direction) ) / theme_count    # 
 event_bonus  = sum( strength * 가중치(direction) ) / event_count           # 동일 가중치
 recency_bonus = 5 (≤14d 발행 리포트의 시그널) / 3 (14~30d) / 0 (>30d)
 risk_penalty  = clip( count(RISK_WARNING) * 2.5, 0, 10 )
-theme_signal_score = clip( 50 + (theme_bonus * 10) + (event_bonus * 10) + recency_bonus - risk_penalty, 0, 100 )
+theme_signal_score = clip( 50 + theme_signal_bonus + event_signal_bonus - risk_penalty, 0, 100 )
 ```
 
 **(3) 추천 점수 보조 (±5점 cap, 두 점수 합산):**

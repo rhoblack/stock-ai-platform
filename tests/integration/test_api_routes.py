@@ -21,6 +21,7 @@ from app.data.repositories import (
     RecommendationRepository,
     RecommendationResultRepository,
     RecommendationRunRepository,
+    ReportScoreLogRepository,
     StockIndicatorRepository,
     StockRepository,
     StockUniverseMemberRepository,
@@ -301,6 +302,31 @@ def _seed_full_dataset(session) -> dict:
     )
     session.flush()
 
+    ReportScoreLogRepository(session).create(
+        symbol="005930",
+        score_date=today,
+        report_count=2,
+        report_score=Decimal("75.00"),
+        theme_signal_score=Decimal("60.00"),
+        target_upside_pct=Decimal("20.0000"),
+        rating_score_avg=Decimal("1.0000"),
+        recency_bonus=Decimal("5.00"),
+        theme_count=1,
+        signal_event_count=1,
+        theme_signal_bonus=Decimal("10.00"),
+        event_signal_bonus=Decimal("0.00"),
+        risk_penalty=Decimal("0.00"),
+        evidence_json={
+            "report_score": "75.00",
+            "theme_signal_score": "60.00",
+            "report_score_adjustment": "2.50",
+            "theme_signal_adjustment": "1.00",
+            "top_themes": [{"theme_name": "HBM"}],
+            "top_events": [],
+        },
+        recommendation_run_id=run.run_id,
+    )
+
     # Seed 1/3/5/20-day results for the recommendation
     result_repo = RecommendationResultRepository(session)
     result_repo.upsert(
@@ -428,6 +454,10 @@ def test_recommendations_latest_returns_run_with_recommendations(client, session
     assert rec["risk_flags"] == []
     assert rec["risk_summary"]["level"] == "LOW"
     assert rec["risk_summary"]["penalty"] == "0.0000"
+    assert rec["report_score"] == "75.00"
+    assert rec["theme_signal_score"] == "60.00"
+    assert rec["report_evidence"]["report_score_adjustment"] == "2.50"
+    assert rec["report_evidence"]["top_themes"] == [{"theme_name": "HBM"}]
 
 
 def test_recommendations_latest_404_when_no_runs(client):

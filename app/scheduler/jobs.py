@@ -44,6 +44,11 @@ from app.data.repositories.recommendations import (
     RecommendationResultRepository,
     RecommendationRunRepository,
 )
+from app.data.repositories.report_consensus_snapshots import (
+    ReportConsensusSnapshotRepository,
+)
+from app.data.repositories.report_score_logs import ReportScoreLogRepository
+from app.data.repositories.report_signal_events import ReportSignalEventRepository
 from app.data.repositories.snapshots import DataSnapshotRepository
 from app.data.repositories.stock_indicators import StockIndicatorRepository
 from app.data.repositories.stock_universes import (
@@ -51,6 +56,7 @@ from app.data.repositories.stock_universes import (
     StockUniverseRepository,
 )
 from app.data.repositories.stocks import StockRepository
+from app.data.repositories.theme_stock_mappings import ThemeStockMappingRepository
 from app.db.models import JobRun
 from app.decision.holding_check_engine import (
     CHECK_TYPE_POST_MARKET,
@@ -86,6 +92,7 @@ JOB_NAME_SEND_RECOMMENDATION_REPORT = "send_recommendation_report"
 JOB_NAME_PRE_MARKET_HOLDING_CHECK = "run_pre_market_holding_check"
 JOB_NAME_POST_MARKET_HOLDING_CHECK = "run_post_market_holding_check"
 JOB_NAME_UPDATE_RECOMMENDATION_RESULTS = "update_recommendation_results"
+JOB_NAME_UPDATE_REPORT_CONSENSUS = "update_report_consensus_snapshots"
 
 
 @dataclass(frozen=True)
@@ -210,6 +217,11 @@ def _build_recommendation_engine(session: Session) -> RecommendationEngine:
         run_repository=RecommendationRunRepository(session),
         recommendation_repository=RecommendationRepository(session),
         decision_log_repository=DecisionLogRepository(session),
+        daily_price_repository=DailyPriceRepository(session),
+        report_consensus_repository=ReportConsensusSnapshotRepository(session),
+        theme_mapping_repository=ThemeStockMappingRepository(session),
+        report_signal_event_repository=ReportSignalEventRepository(session),
+        report_score_log_repository=ReportScoreLogRepository(session),
     )
 
 
@@ -851,6 +863,121 @@ def update_recommendation_results(session: Session) -> JobResult:
     )
 
 
+# ---------- 06:30 update_report_consensus_snapshots (v0.4 Phase B) ----------
+
+
+DEFAULT_CONSENSUS_WINDOW_DAYS = 90
+
+
+def update_report_consensus_snapshots(session: Session) -> JobResult:
+    """Aggregate active COMPANY analyst reports into per-symbol consensus rows.
+
+    For every distinct symbol that has at least one COMPANY-type report
+    published within the last ``window_days`` (default 90), upsert one row in
+    ``report_consensus_snapshots`` with avg/min/max target_price + the 5 rating
+    counts + ``latest_published_at``. Idempotent: re-runs on the same
+    ``snapshot_date`` overwrite the previous snapshot for that
+    ``(symbol, snapshot_date, window_days)`` triple.
+
+    JobResult.status mapping:
+        * No active reports in the window  → SUCCESS, data_status=NO_DATA
+        * Otherwise                        → SUCCESS, data_status=SUCCESS
+
+    No KIS / Telegram / external calls. Reads `analyst_reports`, writes
+    `report_consensus_snapshots`.
+    """
+    from decimal import Decimal as _Dec  # local alias to avoid surprise imports
+
+    from app.data.repositories.analyst_reports import AnalystReportRepository
+    from app.data.repositories.report_consensus_snapshots import (
+        ReportConsensusSnapshotRepository,
+    )
+    from app.db.models import AnalystReport
+    from sqlalchemy import select
+
+    snapshot_date = _today_in_default_timezone()
+    window_days = DEFAULT_CONSENSUS_WINDOW_DAYS
+    cutoff = snapshot_date - timedelta(days=window_days)
+
+    # Pull all active COMPANY reports within the window in one query.
+    statement = (
+        select(AnalystReport)
+        .where(
+            AnalystReport.report_type == "COMPANY",
+            AnalystReport.published_at >= cutoff,
+            AnalystReport.published_at <= snapshot_date,
+            AnalystReport.symbol.is_not(None),
+        )
+        .order_by(AnalystReport.published_at.asc())
+    )
+    rows = list(session.execute(statement).scalars().all())
+
+    if not rows:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.4-B",
+                "snapshot_date": snapshot_date.isoformat(),
+                "window_days": window_days,
+                "data_status": "NO_DATA",
+                "active_reports": 0,
+                "symbols_processed": 0,
+                "snapshots_upserted": 0,
+            },
+        )
+
+    by_symbol: dict[str, list[AnalystReport]] = {}
+    for r in rows:
+        by_symbol.setdefault(r.symbol, []).append(r)
+
+    repo = ReportConsensusSnapshotRepository(session)
+    snapshots_upserted = 0
+    rating_to_field = {
+        "STRONG_BUY": "strong_buy_count",
+        "BUY": "buy_count",
+        "HOLD": "hold_count",
+        "SELL": "sell_count",
+        "STRONG_SELL": "strong_sell_count",
+    }
+    for symbol, reports in by_symbol.items():
+        targets = [r.target_price for r in reports if r.target_price is not None]
+        rating_counts = {f: 0 for f in rating_to_field.values()}
+        for r in reports:
+            field = rating_to_field.get(r.normalized_rating or "")
+            if field is not None:
+                rating_counts[field] += 1
+        latest_pub = max(r.published_at for r in reports)
+
+        avg_target = (
+            (sum(targets, _Dec("0")) / _Dec(len(targets))) if targets else None
+        )
+        repo.upsert_by_symbol_date_window(
+            symbol=symbol,
+            snapshot_date=snapshot_date,
+            window_days=window_days,
+            report_count=len(reports),
+            avg_target_price=avg_target,
+            min_target_price=min(targets) if targets else None,
+            max_target_price=max(targets) if targets else None,
+            latest_published_at=latest_pub,
+            **rating_counts,
+        )
+        snapshots_upserted += 1
+
+    return JobResult(
+        status=JOB_STATUS_SUCCESS,
+        summary={
+            "phase": "v0.4-B",
+            "snapshot_date": snapshot_date.isoformat(),
+            "window_days": window_days,
+            "data_status": "SUCCESS",
+            "active_reports": len(rows),
+            "symbols_processed": len(by_symbol),
+            "snapshots_upserted": snapshots_upserted,
+        },
+    )
+
+
 # ---------- registry for the scheduler module ----------
 
 JOB_FUNCTIONS: dict[str, JobFn] = {
@@ -860,4 +987,5 @@ JOB_FUNCTIONS: dict[str, JobFn] = {
     JOB_NAME_PRE_MARKET_HOLDING_CHECK: run_pre_market_holding_check,
     JOB_NAME_POST_MARKET_HOLDING_CHECK: run_post_market_holding_check,
     JOB_NAME_UPDATE_RECOMMENDATION_RESULTS: update_recommendation_results,
+    JOB_NAME_UPDATE_REPORT_CONSENSUS: update_report_consensus_snapshots,
 }

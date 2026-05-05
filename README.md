@@ -4,53 +4,80 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.3 분석 보강 + 운영 정착 마감.** 최종 태그 `v0.3-final`. 4 phase
-> (CI / 캔들·ATR 분석 / KRX 휴장 캘린더 / StockDetail 일봉 차트) 모두 인수.
-> 회귀 게이트 — **백엔드 pytest 319 / frontend vitest 59 / Playwright e2e 8 /
-> build 통과**. 자동매매 / 실 주문 / POST 트리거 UI 는 v0.3 범위 밖이며 본
-> 릴리스에 코드 일체 포함하지 않습니다 (`BrokerInterface` 는 ABC
-> placeholder 만 유지). 종합 인수 사유 / 알려진 한계 / v0.4 후보는
-> [`RELEASE_NOTES_v0.3.md`](./RELEASE_NOTES_v0.3.md) 참조.
+> **v0.4 Analyst & Theme Intelligence — Phase A + B 인수 / Phase C 대기.**
+> 현재 태그 `v0.4-import-pipeline`. DB 기반 (Phase A: 6 ORM + 6 Repository +
+> 통합 테스트 16건) + 운영자 CSV import CLI + 일별 컨센서스 스냅샷 잡
+> (Phase B: 통합 테스트 27건 신규) 가 마감되었다. 다음은 Phase C
+> (`report_score` + `theme_signal_score` 계산기 + RecommendationEngine 통합,
+> 태그 예정 `v0.4-report-score`).
+>
+> 회귀 게이트 — **백엔드 pytest 362 / frontend vitest 59 / Playwright e2e 8 /
+> build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO / POST
+> 트리거 UI 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface`
+> 는 ABC placeholder 만 유지). 자세한 정책은 [`AGENTS.md`](./AGENTS.md) /
+> [`ROADMAP.md`](./ROADMAP.md) 참조.
+>
+> **저작권 정책 (v0.4)**: 리포트 원문 본문 / paragraph 저장 0건, PDF BLOB
+> 저장 0건, 자동 크롤링 0건, `source_file_path` 외부 노출 0건. 운영자가 직접
+> 작성한 짧은 요약 (≤ 500자) 만 저장. CSV importer 는 헤더에 `body /
+> content / paragraph_text / 본문 / 원문 / 전문` 등 13종 column 이 포함되면
+> 파일을 즉시 거부.
 >
 > **누적 인수 태그**: `v0.1-backend-final` → `v0.1-backend-kis-paper-verified`
 > → `v0.2-frontend-final` → `v0.3-phase-a-ci` → `v0.3-backend-analysis` →
-> `v0.3-frontend-calendar` → `v0.3-frontend-stock-chart` → **`v0.3-final`**.
+> `v0.3-frontend-calendar` → `v0.3-frontend-stock-chart` → `v0.3-final` →
+> `v0.4-backend-reports` → **`v0.4-import-pipeline`** (현재 헤드).
 >
-> 이전 사이클 마감 사유는 [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
+> 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
-> (PC 대시보드 8 화면, vitest 36 / e2e 6) 참조.
+> (PC 대시보드 8 화면, vitest 36 / e2e 6) / [`RELEASE_NOTES_v0.3.md`](./RELEASE_NOTES_v0.3.md)
+> (v0.3 분석·운영, 319 / 59 / 8). v0.4 진행 상태는 [`PROJECT_STATUS.md`](./PROJECT_STATUS.md)
+> §0 참조.
 
 ## 1. 프로젝트 목표
 
-v0.1의 목표는 실거래 자동매매가 아닙니다.
+본 프로젝트는 **실거래 자동매매가 아닌 read-only 분석 / 추천 / 보유점검 +
+증권사 리포트·테마 인텔리전스 + 대시보드** 플랫폼입니다.
 
-v0.1은 다음 기능을 구현하는 안정적인 분석/리포트 시스템입니다.
+현재까지 마감된 사이클 (v0.1 ~ v0.4 Phase A) 의 누적 기능:
 
-- 한국투자증권 API 기반 데이터 수집
+- 한국투자증권 API 기반 read-only 데이터 수집
 - 시가총액 TOP 500 종목 유니버스 관리
-- 관심종목/보유종목 관리
-- 일봉/현재가 저장
-- 기술적 지표 계산
-- 보유 종목 장전/장후 점검
-- 신규 추천 TOP 5 리포트
-- 추천 이력 저장
-- 텔레그램 알림
-- FastAPI 기반 대시보드 API
-- data_snapshots / decision_logs / job_runs 저장
-- 테스트 가능한 구조
+- 관심종목 / 보유종목 관리
+- 일봉 / 현재가 저장
+- 기술적 지표 (MA / RSI / MACD / breakout / ma_alignment) + **캔들 5종 / Wilder ATR(14) / 4단계 변동성** (v0.3)
+- 보유 종목 장전 / 장후 점검
+- 신규 추천 TOP 5 + 1/3/5/20일 후 성과 검증
+- 텔레그램 알림 (DRY_RUN 기본)
+- FastAPI **read-only** 대시보드 API (15+ GET, **POST 0건**)
+- **PC 대시보드 SPA** (8 화면, Vite + React + TypeScript) — v0.2
+- **KRX 휴장일 정적 캘린더 + MarketStatusBanner** — v0.3
+- **StockDetail 일봉 라인 차트 (Recharts) + 30/60/120/250 days 선택자** — v0.3
+- **GitHub Actions CI** (3 잡: backend pytest / frontend vitest+build / Playwright e2e) — v0.3
+- **증권사 애널리스트 리포트 인텔리전스 DB 기반** (6 ORM + 6 Repository + 통합 테스트 16건) — v0.4 Phase A
+- data_snapshots / decision_logs / job_runs / notification_logs persistence
+- 테스트 가능한 구조 (backend pytest 335, vitest 59, e2e 8)
 
-## 2. v0.1 제외 범위
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.4 일관 정책)
 
-다음 기능은 v0.1에서 구현하지 않습니다.
+다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
+별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.
 
-- 실거래 자동매매
-- 실제 주문 API 실행
-- FULL_AUTO 모드
-- 가상 증권사 서버
-- 전략 자동 튜닝
-- 전용 AI 모델 학습
+- 실거래 자동매매 (FULL_AUTO / APPROVAL / SMALL_AUTO 모드)
+- 실제 주문 API 실행 (`BrokerInterface` 는 ABC placeholder 만 유지)
+- POST / PUT / DELETE 라우터 (read-only API 만)
+- 가상 증권사 서버 / MockBroker / ReplayBroker / SimulationBroker
+- 전략 자동 튜닝 / Strategy 모듈
+- 전용 AI 모델 학습 / Custom AI training
 - 대량 가상 데이터 생성
 - 완전한 백테스트 시스템
+- **(v0.4)** 증권사 리포트 자동 크롤링 / 스크레이핑 (수동 CSV 만)
+- **(v0.4)** 리포트 원문 본문 / PDF BLOB 저장
+- **(v0.4)** `source_file_path` API / 프런트 / e2e 노출
+
+위 항목은 모두 [`ROADMAP.md`](./ROADMAP.md) 의 Future Backlog 로 분류되어 있고,
+각 항목은 진입 전제 조건 (예: 인증 / 컴플라이언스 / 자본 한도) 이 명시되어
+있습니다.
 
 ## 3. 권장 기술 스택
 
@@ -70,18 +97,24 @@ v0.1은 다음 기능을 구현하는 안정적인 분석/리포트 시스템입
 
 | 파일 | 설명 |
 |---|---|
-| `AGENTS.md` | Codex가 매번 따라야 하는 핵심 지침 |
-| `stock_ai_project_codex_brief.md` | 프로젝트 전체 브리프 |
-| `stock_ai_detailed_spec.md` | 상세 기능 명세 |
-| `codex_agent_creation_spec.md` | 코딩 에이전트 생성 명세 |
-| `ARCHITECTURE.md` | 시스템 구조 |
-| `ROADMAP.md` | 단계별 개발 로드맵 |
-| `TASKS.md` | v0.1 개발 태스크 |
-| `PLANS.md` | Codex 실행 계획 관리 |
-| `API_SPEC.md` | FastAPI 대시보드 API 명세 |
-| `DB_SCHEMA.md` | DB 테이블 설계 |
-| `TESTING.md` | 테스트 전략 |
-| `SECURITY.md` | 보안 원칙 |
+| [`AGENTS.md`](./AGENTS.md) | Codex 가 매번 따라야 하는 핵심 지침 — 프로젝트 전체 (v0.1~v0.4) 규칙, 13 코딩 에이전트 역할 |
+| [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) | 현재 사이클 상태 / 시작·마감 선언 / Phase 결과 요약. 새 세션이 가장 먼저 읽어야 할 파일 |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | 시스템 구조 — 10 layer (Data / Repository / Analysis / Report Intelligence / Scoring / Notification / API / Frontend / Scheduler / Ops·CI) |
+| [`ROADMAP.md`](./ROADMAP.md) | v0.1 ~ v0.4 진행 이력 + v0.5 후보 + Future Backlog (자동매매) |
+| [`TASKS.md`](./TASKS.md) | 사이클별 phase 체크리스트 |
+| [`PLANS.md`](./PLANS.md) | Codex 실행 계획 (PLAN-0001 ~ PLAN-0004) |
+| [`API_SPEC.md`](./API_SPEC.md) | FastAPI read-only GET API 명세 |
+| [`DB_SCHEMA.md`](./DB_SCHEMA.md) | 23 테이블 (v0.1 17 + v0.4 6) 명세 + 저작권 정책 |
+| [`TESTING.md`](./TESTING.md) | 테스트 전략 + 게이트 baseline (335 / 59 / 8) |
+| [`SECURITY.md`](./SECURITY.md) | 보안 원칙 (KIS / Telegram / source_file_path 마스킹) |
+| [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) | mock seed 통합 시나리오 + KIS 모의투자 검증 절차 |
+| [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) | 운영 KIS 키 사전 검증 체크리스트 |
+| [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) | v0.1 백엔드 마감 선언 |
+| [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md) | v0.2 프런트 MVP 마감 선언 |
+| [`RELEASE_NOTES_v0.3.md`](./RELEASE_NOTES_v0.3.md) | v0.3 분석·운영 마감 선언 |
+| `stock_ai_project_codex_brief.md` | 초기 프로젝트 브리프 (역사적 — 실제 진행은 ROADMAP 참조) |
+| `stock_ai_detailed_spec.md` | 초기 상세 기능 명세 (역사적) |
+| `codex_agent_creation_spec.md` | 초기 코딩 에이전트 생성 명세 (역사적) |
 | `.env.example` | 환경변수 예시 |
 
 ## 5. 권장 개발 순서
@@ -97,51 +130,45 @@ v0.1은 다음 기능을 구현하는 안정적인 분석/리포트 시스템입
 9. FastAPI 대시보드 API
 10. 테스트와 문서화
 
-## 6. v0.1 백엔드 완료 상태
+## 6. 누적 사이클 상태 (v0.1 ~ v0.4 Phase A)
 
-**v0.1 백엔드 마감 (최종 태그 `v0.1-backend-kis-paper-verified`).** Phase 0~9
-모두 완료, mock seed 통합 시나리오 + 실 KIS 모의투자 서버 read-only 검증
-모두 1회 인수. 전체 회귀 테스트: **296 passed**. 종합 인수 사유 / v0.2 후보는
-[`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) 참조.
+| 사이클 | 상태 | 회귀 게이트 | 최종 태그 |
+|---|---|---|---|
+| v0.1 Backend | ✅ 마감 | pytest 296 | `v0.1-backend-kis-paper-verified` |
+| v0.2 Frontend MVP | ✅ 마감 | pytest 296 / vitest 36 / e2e 6 | `v0.2-frontend-final` |
+| v0.3 Analysis & Ops | ✅ 마감 | pytest 319 / vitest 59 / e2e 8 | `v0.3-final` |
+| v0.4 Phase A — Analyst & Theme Intelligence DB | ✅ 인수 | pytest 335 / vitest 59 / e2e 8 | `v0.4-backend-reports` |
+| v0.4 Phase B — CSV import CLI + consensus snapshot job | ✅ 인수 | pytest 362 / vitest 59 / e2e 8 | `v0.4-import-pipeline` |
+| v0.4 Phase C — `report_score` + `theme_signal_score` 계산기 | ⏳ 진입 대기 | (미진행) | `v0.4-report-score` (예정) |
+| v0.4 Phase D — 프런트 (StockDetail 리포트·테마·시그널 카드 + Recommendations score 컬럼) | ⏳ | (미진행) | `v0.4-frontend-reports` (예정) |
+| v0.4 Phase E — 마감 선언 | ⏳ | (미진행) | `v0.4-final` (예정) |
 
-**누적 인수 태그**
-
-- `v0.1-foundation-checkpoint` — 초기 골격 마감
-- `v0.1-backend-accepted` — mock seed 통합 시나리오 인수
-- `v0.1-backend-kis-paper-verified` — 실 KIS 모의투자 서버 read-only 검증 인수 (현재 헤드)
+### 영역별 상태
 
 | 영역 | 상태 |
 |---|---|
-| DB 모델 / Repository | 17개 테이블 ORM, 16개 Repository |
+| DB 모델 / Repository | 17 + 6 = **23 테이블 ORM**, 16 + 6 = **22 Repository** |
 | KIS 데이터 수집 | `KisClient` + 정규화 / 품질 검사 / `DailyPriceCollector` / `MarketCapRankingCollector` (mock-injectable) |
-| 분석 / 점수 | `TechnicalAnalyzer` (MA/RSI/MACD/breakout/ma_alignment), `ScoringEngine`, `RiskEngine`, `DummyScoreProducer` (News/Supply/Fundamental/Earnings/AI placeholder) |
+| 분석 / 점수 | `TechnicalAnalyzer` (MA/RSI/MACD/breakout/ma_alignment + 캔들 5종 / ATR / 변동성), `ScoringEngine`, `RiskEngine`, `DummyScoreProducer` |
 | 추천 / 보유 점검 | `RecommendationEngine`, `HoldingCheckEngine` (PRE/POST), `RecommendationResultService` (1/3/5/20일 성과) |
-| 알림 / 리포트 | `ReportGenerator` + `TelegramNotifier` (DRY_RUN 기본) + `NotificationService` + 3개 dispatcher (REPORT / ALERT) |
-| Backend API | 13개 read-only GET, `/api/holdings/{symbol}/checks` summary metric 포함, `/api/jobs` 진단 |
-| Scheduler | APScheduler + `run_job` 래퍼 + 6개 잡 (NO_DATA / PARTIAL 분기, dispatcher 연동, `notification_logs.related_job_id` 자동 연결) |
-| 통합 검증 | `scripts/seed_mock_data.py` (멱등) + `INTEGRATION_RUNBOOK.md` (6잡 + 13API + 로그 검증), 1회 수행 결과는 `PROJECT_STATUS.md` §2 |
+| 알림 / 리포트 | `ReportGenerator` + `TelegramNotifier` (DRY_RUN 기본) + `NotificationService` + 3 dispatcher |
+| Backend API | 14개 read-only GET (v0.3 Phase D 의 `/api/stocks/{symbol}/prices` 포함). v0.4 Phase D 에 `/api/stocks/{symbol}/reports` 신규 예정 |
+| Scheduler | APScheduler + `run_job` 래퍼 + **7개 잡** (v0.4 Phase B 의 `update_report_consensus_snapshots` 06:30 KST 추가됨) |
+| Import Pipeline (v0.4 Phase B) | `scripts/import_analyst_reports.py` argparse CLI (default dry-run, `--commit` 시 DB 적재) + `app/data/importers/analyst_reports.py` (35 컬럼 CSV → 4 entity 분해 + 검증 + 멱등 upsert). Forbidden body column 13종 거부, `summary` 500자 truncate, `source_file_path` 마스킹. pandas / openpyxl 의존성 0건 |
+| Frontend | Vite + React + TS, 8 화면, 코드 스플릿, KRX 휴장 배너, StockDetail 일봉 차트, msw + Playwright |
+| **Report Intelligence (v0.4 Phase A)** | 6 ORM (analyst_reports / report_themes / theme_stock_mappings / report_signal_events / report_consensus_snapshots / report_score_logs) + 6 Repository + 16 통합 테스트 |
+| Ops / CI | GitHub Actions 3 잡 (backend pytest / vitest+build / Playwright e2e), main + PR 자동 검증, mock 환경 변수 |
+| 통합 검증 | `scripts/seed_mock_data.py` (멱등) + `INTEGRATION_RUNBOOK.md` |
 
 세부 산출물 / 테스트 카운트 / 변경 이력은 [`PROJECT_STATUS.md`](./PROJECT_STATUS.md)
-와 [`TASKS.md`](./TASKS.md) 참고.
-
-**v0.1 제외 범위 재확인 (코드 미존재 또는 placeholder만 유지):**
-
-- 실거래 자동매매, FULL_AUTO 모드, 가상 증권사 서버, 실제 KIS 주문 API 실행
-  (`BrokerInterface`는 placeholder만 유지)
-- 전략 자동 튜닝, 전용 AI 모델 학습, 백테스트 엔진
-- React / Next.js PC 대시보드 프론트엔드
-
-**v0.2 Backlog로 이동된 항목:**
-
-- 캔들 패턴 (망치형/장악형 등) + ATR 변동성 컴포넌트 → `technical_score` 산식 보강
-- 실 News / Supply / Fundamental / Earnings 파이프라인 (현 v0.1은 `DummyScoreProducer`)
-- Strategy / Backtest / MockBroker / APPROVAL·SMALL_AUTO 모드
+와 [`TASKS.md`](./TASKS.md) 참고. 현재 cycle 의 다음 작업 (Phase B) 정의는
+[`PLANS.md`](./PLANS.md) `PLAN-0004` 참조.
 
 ## 7. 실행 순서 (권장)
 
-v0.1 인수자 / 새 세션 / QA 가 한 번에 따라가야 할 표준 순서. 각 단계는
-모두 dry-run / mock-only — 실 KIS 호출, 실 텔레그램 발송, 자동매매 코드는
-이 순서 안에서 절대 동작하지 않는다.
+새 세션 / 인수자 / QA 가 한 번에 따라가야 할 표준 순서. 각 단계는 모두 dry-run
+/ mock-only — 실 KIS 호출, 실 텔레그램 발송, 자동매매 코드는 이 순서 안에서
+절대 동작하지 않는다.
 
 | 단계 | 명령 | 출력 / 검증 |
 |---|---|---|
@@ -149,7 +176,7 @@ v0.1 인수자 / 새 세션 / QA 가 한 번에 따라가야 할 표준 순서. 
 | 7.2 Docker (권장) 또는 로컬 uvicorn | §8 또는 §9 | `/health` 200 |
 | 7.3 Mock seed | `.\.venv\bin\python.exe -m scripts.seed_mock_data --reset` | stocks 5 / daily_prices 150 등 (§10) |
 | 7.4 통합 시나리오 (6잡 + 13API) | [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) §3 ~ §5 그대로 따라감 | 모든 잡 SUCCESS, 13/13 API 200, notification_logs DRY_RUN |
-| 7.5 회귀 게이트 | `.\.venv\bin\python.exe -m pytest -q` | 296 passed |
+| 7.5 회귀 게이트 | `.\.venv\bin\python.exe -m pytest -q` | 362 passed (v0.4 Phase B 시점) |
 | 7.6 (운영 전) 실 KIS 키 사전 검증 | [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) | 체크리스트 항목별 통과 — 코드 변경 없음 |
 
 ## 8. Docker 로컬 실행
@@ -202,9 +229,10 @@ MSYS2 Python에서 `greenlet` 빌드 오류로 SQLAlchemy 설치가 실패하면
 
 ## 10. Mock Seed 데이터 / 통합 실행 시나리오
 
-실 KIS 키 / 실 텔레그램 없이 v0.1 백엔드 전체 흐름을 로컬에서 검증하려면
-`scripts/seed_mock_data.py` 로 결정론적 mock 데이터를 적재한 뒤,
-`INTEGRATION_RUNBOOK.md` 에 정리된 6개 잡 + 13개 GET API 시나리오를 따라간다.
+실 KIS 키 / 실 텔레그램 없이 백엔드 전체 흐름 (v0.1 베이스 + v0.3 분석 보강)
+을 로컬에서 검증하려면 `scripts/seed_mock_data.py` 로 결정론적 mock 데이터를
+적재한 뒤, [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) 에 정리된 6개 잡
++ 14+ GET API 시나리오를 따라간다.
 
 ```powershell
 # 1) Mock 시드 적재 (로컬 SQLite, 멱등 — `--reset`은 destructive)
@@ -228,8 +256,17 @@ holding_checks. 자세한 건수와 종목 / 점검 데이터 구성은
 .\.venv\bin\python.exe -m pytest
 ```
 
-외부 API, 텔레그램, 주문 기능은 테스트에서 실제로 호출하지 않습니다.
-현재 회귀 기준선: **296 passed**.
+외부 API, 텔레그램, 주문 기능은 테스트에서 실제로 호출하지 않습니다 (mock /
+`httpx.MockTransport` / `FakeKisDataProvider`).
+
+현재 회귀 기준선 (v0.4 Phase B 시점):
+
+- backend pytest **362 passed** (v0.1 296 → v0.3 319 → v0.4 Phase A 335 → v0.4 Phase B 362)
+- frontend vitest **59 passed** (12 파일)
+- Playwright e2e **8 passed** (chromium + page.route mock)
+- frontend build (`tsc --noEmit && vite build`) 그린
+
+자세한 테스트 정책 / 카테고리는 [`TESTING.md`](./TESTING.md) 참조.
 
 ## 12. CI (GitHub Actions)
 
@@ -265,13 +302,17 @@ npm run e2e
 ## 14. Codex 첫 실행 프롬프트 예시
 
 ```text
-AGENTS.md, stock_ai_project_codex_brief.md, stock_ai_detailed_spec.md,
-codex_agent_creation_spec.md, ARCHITECTURE.md, TASKS.md를 먼저 읽고,
-v0.1 범위를 벗어나지 않는 개발 계획을 작성해줘.
+AGENTS.md, PROJECT_STATUS.md (§0), ARCHITECTURE.md, TASKS.md, ROADMAP.md 를
+먼저 읽고, 현재 사이클 (v0.4 Phase A+B 인수 / Phase C 진입 대기) 범위를
+벗어나지 않는 개발 계획을 작성해줘.
 아직 코드는 수정하지 말고 TASKS.md 업데이트 계획만 제안해줘.
 ```
 
 ## 15. 주의
 
-이 프로젝트는 투자 판단 보조 도구입니다.  
-v0.1에서는 실제 주문이나 자동매매를 구현하지 않습니다.
+이 프로젝트는 **투자 판단 보조 도구** 입니다. v0.1 ~ v0.4 어디에도 실제 주문 /
+자동매매 / FULL_AUTO / APPROVAL / SMALL_AUTO 코드를 구현하지 않습니다.
+
+자동매매 진입은 별도 보안 / 컴플라이언스 / 자본 한도 / 비상정지 / 일일 손실
+제한 사이클이 선행되어야 검토할 수 있습니다 ([`ROADMAP.md`](./ROADMAP.md) 의
+Future Backlog 참조).

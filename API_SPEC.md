@@ -23,6 +23,9 @@ Phase 7 후속에서 추천 성과(`recommendation_results`)가 응답에 노출
   문자열 Decimal로 포함된다.
 * 각 recommendation 항목에는 기존 `risk_summary`와 함께 대시보드 표시용
   `risk_level`, `risk_flags` 평탄 필드도 포함된다.
+* v0.4 Phase C 부터 각 recommendation 항목에는 Analyst & Theme Intelligence
+  보조 점수 `report_score`, `theme_signal_score`, `report_evidence`가 nullable
+  필드로 포함된다. 값이 없으면 `null`이며, `source_file_path`는 노출하지 않는다.
 * `GET /api/reports/today` 응답의 `top_recommendations`도 동일 `results` 필드 노출.
 * `GET /api/recommendations/history` 응답의 각 항목에 `success_rate` (days_after=5
   finalized 행 기준 0~100 백분율) 및 `avg_close_return_1d/3d/5d/20d` 집계 필드 포함.

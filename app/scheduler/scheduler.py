@@ -25,16 +25,22 @@ from app.scheduler.jobs import (
     JOB_NAME_PRE_MARKET_HOLDING_CHECK,
     JOB_NAME_SEND_RECOMMENDATION_REPORT,
     JOB_NAME_UPDATE_RECOMMENDATION_RESULTS,
+    JOB_NAME_UPDATE_REPORT_CONSENSUS,
     JobOutcome,
     run_job,
 )
 
 
 # (hour, minute) per job — matches the v0.1 daily schedule in AGENTS.md.
+# 06:30 KST consensus snapshot was added in v0.4 Phase B (after 06:00 telegram
+# report and before 08:30 pre-market holding check) so the morning report can
+# eventually consume yesterday's analyst-report consensus when v0.4 Phase C
+# wires `report_score` into the recommendation engine.
 DEFAULT_SCHEDULE: dict[str, tuple[int, int]] = {
     JOB_NAME_COLLECT_MARKET_CLOSE: (18, 0),
     JOB_NAME_CALCULATE_INDICATORS: (18, 30),
     JOB_NAME_SEND_RECOMMENDATION_REPORT: (6, 0),
+    JOB_NAME_UPDATE_REPORT_CONSENSUS: (6, 30),
     JOB_NAME_PRE_MARKET_HOLDING_CHECK: (8, 30),
     JOB_NAME_POST_MARKET_HOLDING_CHECK: (16, 30),
     JOB_NAME_UPDATE_RECOMMENDATION_RESULTS: (17, 0),

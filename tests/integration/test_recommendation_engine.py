@@ -4,14 +4,21 @@ from decimal import Decimal
 import pytest
 
 from app.data.repositories import (
+    AnalystReportRepository,
+    DailyPriceRepository,
     DataSnapshotRepository,
     DecisionLogRepository,
+    ReportConsensusSnapshotRepository,
+    ReportScoreLogRepository,
+    ReportSignalEventRepository,
+    ReportThemeRepository,
     RecommendationRepository,
     RecommendationRunRepository,
     StockIndicatorRepository,
     StockRepository,
     StockUniverseMemberRepository,
     StockUniverseRepository,
+    ThemeStockMappingRepository,
 )
 from app.db import Base
 from app.db.models import Stock, StockIndicator, StockUniverse, StockUniverseMember
@@ -59,6 +66,26 @@ def _make_engine(session) -> RecommendationEngine:
     )
 
 
+def _make_report_engine(session) -> RecommendationEngine:
+    return RecommendationEngine(
+        scoring_engine=ScoringEngine(),
+        risk_engine=RiskEngine(),
+        universe_repository=StockUniverseRepository(session),
+        member_repository=StockUniverseMemberRepository(session),
+        stock_repository=StockRepository(session),
+        indicator_repository=StockIndicatorRepository(session),
+        snapshot_repository=DataSnapshotRepository(session),
+        run_repository=RecommendationRunRepository(session),
+        recommendation_repository=RecommendationRepository(session),
+        decision_log_repository=DecisionLogRepository(session),
+        daily_price_repository=DailyPriceRepository(session),
+        report_consensus_repository=ReportConsensusSnapshotRepository(session),
+        theme_mapping_repository=ThemeStockMappingRepository(session),
+        report_signal_event_repository=ReportSignalEventRepository(session),
+        report_score_log_repository=ReportScoreLogRepository(session),
+    )
+
+
 def _seed_universe(session, *, name: str = "MARKET_CAP_TOP_500") -> StockUniverse:
     universe = StockUniverseRepository(session).add(StockUniverse(name=name))
     session.flush()
@@ -95,6 +122,112 @@ def _seed_stock_with_indicator(
             volume_ratio_20d=volume_ratio_20d,
         )
     session.flush()
+
+
+def _seed_latest_price(session, *, symbol: str, close: Decimal) -> None:
+    DailyPriceRepository(session).upsert(
+        symbol=symbol,
+        price_date=date(2026, 5, 4),
+        open_price=close,
+        high_price=close,
+        low_price=close,
+        close_price=close,
+        volume=1_000_000,
+    )
+
+
+def _seed_consensus(
+    session,
+    *,
+    symbol: str,
+    avg_target_price: Decimal,
+    strong_buy_count: int = 0,
+    buy_count: int = 0,
+    hold_count: int = 0,
+    sell_count: int = 0,
+    strong_sell_count: int = 0,
+) -> None:
+    report_count = (
+        strong_buy_count + buy_count + hold_count + sell_count + strong_sell_count
+    )
+    ReportConsensusSnapshotRepository(session).upsert_by_symbol_date_window(
+        symbol=symbol,
+        snapshot_date=date(2026, 5, 4),
+        window_days=90,
+        report_count=report_count,
+        avg_target_price=avg_target_price,
+        min_target_price=avg_target_price,
+        max_target_price=avg_target_price,
+        strong_buy_count=strong_buy_count,
+        buy_count=buy_count,
+        hold_count=hold_count,
+        sell_count=sell_count,
+        strong_sell_count=strong_sell_count,
+        latest_published_at=date(2026, 5, 1),
+    )
+
+
+def _seed_theme_mapping(
+    session,
+    *,
+    symbol: str,
+    impact_direction: str,
+    impact_strength: Decimal = Decimal("1.0"),
+) -> None:
+    report = AnalystReportRepository(session).create(
+        broker_name="sample",
+        published_at=date(2026, 5, 1),
+        title=f"{symbol} theme",
+        report_type="THEME",
+        extraction_method="CSV_IMPORT",
+        summary="theme summary",
+    )
+    theme = ReportThemeRepository(session).create(
+        theme_name=f"{symbol} HBM",
+        theme_category="SEMICONDUCTOR",
+        direction="POSITIVE",
+        time_horizon="MID",
+        source_report_id=report.id,
+        extraction_method="CSV_IMPORT",
+    )
+    ThemeStockMappingRepository(session).create(
+        theme_id=theme.id,
+        symbol=symbol,
+        impact_direction=impact_direction,
+        impact_strength=impact_strength,
+        impact_path="DEMAND_RECOVERY",
+        extraction_method="CSV_IMPORT",
+        reason="theme mapping",
+    )
+
+
+def _seed_signal_event(
+    session,
+    *,
+    symbol: str,
+    event_type: str,
+    direction: str,
+    strength: Decimal = Decimal("1.0"),
+) -> None:
+    report = AnalystReportRepository(session).create(
+        broker_name="signal",
+        published_at=date(2026, 5, 1),
+        title=f"{symbol} signal {event_type}",
+        report_type="COMPANY",
+        extraction_method="CSV_IMPORT",
+        symbol=symbol,
+        summary="signal summary",
+    )
+    ReportSignalEventRepository(session).create(
+        report_id=report.id,
+        symbol=symbol,
+        event_type=event_type,
+        direction=direction,
+        strength=strength,
+        time_horizon="SHORT",
+        extraction_method="CSV_IMPORT",
+        summary="signal event",
+    )
 
 
 # ---------- behavior ----------
@@ -333,6 +466,140 @@ def test_engine_records_run_metadata(session):
         "score_components": ["news", "supply", "fundamental", "ai"],
         "score_producer": "DummyScoreProducer",
     }
+
+
+def test_engine_applies_report_score_positive_adjustment(session):
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="Samsung",
+        technical_score=Decimal("80"),
+    )
+    _seed_latest_price(session, symbol="005930", close=Decimal("100"))
+    _seed_consensus(
+        session,
+        symbol="005930",
+        avg_target_price=Decimal("160"),
+        strong_buy_count=1,
+    )
+    engine = _make_report_engine(session)
+
+    result = engine.generate(run_date=date(2026, 5, 4), top_n=5)
+    session.commit()
+
+    rec = RecommendationRepository(session).list_by_run_id(result.run_id)[0]
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    evidence = log.rule_result_json["report_evidence"]
+    assert Decimal(log.rule_result_json["total_score_after"]) > Decimal(
+        log.rule_result_json["base_total_score"],
+    )
+    assert rec.total_score == Decimal(log.rule_result_json["total_score_after"])
+    assert evidence["report_score"] == "100.00"
+    assert evidence["report_score_adjustment"] == "5.00"
+
+
+def test_engine_applies_theme_signal_positive_adjustment(session):
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="Samsung",
+        technical_score=Decimal("80"),
+    )
+    _seed_latest_price(session, symbol="005930", close=Decimal("100"))
+    _seed_theme_mapping(session, symbol="005930", impact_direction="POSITIVE")
+    _seed_signal_event(
+        session,
+        symbol="005930",
+        event_type="TARGET_PRICE_UP",
+        direction="POSITIVE",
+    )
+    engine = _make_report_engine(session)
+
+    result = engine.generate(run_date=date(2026, 5, 4), top_n=5)
+    session.commit()
+
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    evidence = log.rule_result_json["report_evidence"]
+    assert evidence["theme_signal_score"] == "70.00"
+    assert evidence["theme_signal_adjustment"] == "2.00"
+    assert evidence["theme_count"] == 1
+    assert evidence["signal_event_count"] == 1
+    assert evidence["top_themes"][0]["theme_name"] == "005930 HBM"
+    assert evidence["top_events"][0]["event_type"] == "TARGET_PRICE_UP"
+
+
+def test_engine_negative_risk_signal_reduces_total_score(session):
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="Samsung",
+        technical_score=Decimal("80"),
+    )
+    _seed_latest_price(session, symbol="005930", close=Decimal("100"))
+    _seed_signal_event(
+        session,
+        symbol="005930",
+        event_type="RISK_WARNING",
+        direction="NEGATIVE",
+    )
+    engine = _make_report_engine(session)
+
+    result = engine.generate(run_date=date(2026, 5, 4), top_n=5)
+    session.commit()
+
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    evidence = log.rule_result_json["report_evidence"]
+    assert evidence["theme_signal_score"] == "37.50"
+    assert evidence["theme_signal_adjustment"] == "-1.25"
+    assert Decimal(log.rule_result_json["total_score_after"]) < Decimal(
+        log.rule_result_json["base_total_score"],
+    )
+
+
+def test_engine_persists_report_score_log(session):
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="Samsung",
+        technical_score=Decimal("80"),
+    )
+    _seed_latest_price(session, symbol="005930", close=Decimal("100"))
+    _seed_consensus(
+        session,
+        symbol="005930",
+        avg_target_price=Decimal("120"),
+        buy_count=1,
+    )
+    _seed_theme_mapping(session, symbol="005930", impact_direction="POSITIVE")
+    engine = _make_report_engine(session)
+
+    result = engine.generate(run_date=date(2026, 5, 4), top_n=5)
+    session.commit()
+
+    rows = ReportScoreLogRepository(session).list_by_recommendation_run(result.run_id)
+    assert len(rows) == 1
+    assert rows[0].symbol == "005930"
+    assert rows[0].report_score == Decimal("75.00")
+    assert rows[0].theme_signal_score == Decimal("60.00")
+    assert rows[0].evidence_json["report_score"] == "75.00"
+
+
+def test_engine_report_integration_keeps_candidate_generation_flow(session):
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="Samsung",
+        technical_score=Decimal("80"),
+    )
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="000660", name="Hynix",
+        technical_score=Decimal("70"),
+    )
+    engine = _make_report_engine(session)
+
+    result = engine.generate(run_date=date(2026, 5, 4), top_n=5)
+    session.commit()
+
+    assert result.status == "SUCCESS"
+    assert result.candidate_count == 2
+    assert result.saved_count == 2
+    assert len(RecommendationRepository(session).list_by_run_id(result.run_id)) == 2
+    assert len(ReportScoreLogRepository(session).list_by_recommendation_run(result.run_id)) == 2
 
 
 def test_engine_two_runs_in_same_day_create_separate_run_ids(session):

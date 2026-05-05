@@ -107,6 +107,9 @@ class RecommendationItemSchema(_BaseSchema):
     risk_level: Optional[str] = None
     risk_flags: List[str] = []
     risk_summary: Optional[RiskSummarySchema] = None
+    report_score: Optional[str] = None
+    theme_signal_score: Optional[str] = None
+    report_evidence: Optional[Dict[str, Any]] = None
     results: List[RecommendationResultSchema] = []
 
 

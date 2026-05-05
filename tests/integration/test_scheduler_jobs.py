@@ -39,6 +39,7 @@ from app.scheduler.jobs import (
     JOB_NAME_PRE_MARKET_HOLDING_CHECK,
     JOB_NAME_SEND_RECOMMENDATION_REPORT,
     JOB_NAME_UPDATE_RECOMMENDATION_RESULTS,
+    JOB_NAME_UPDATE_REPORT_CONSENSUS,
     JOB_STATUS_FAILED,
     JOB_STATUS_PARTIAL,
     JOB_STATUS_SUCCESS,
@@ -1294,7 +1295,8 @@ def test_update_recommendation_results_via_run_job_records_partial_summary(
 
 # ---------- registry sanity ----------
 
-def test_job_functions_registry_covers_all_six_jobs():
+def test_job_functions_registry_covers_all_seven_jobs():
+    """v0.4 Phase B 에서 update_report_consensus_snapshots 가 추가되어 7개."""
     assert set(JOB_FUNCTIONS) == {
         JOB_NAME_COLLECT_MARKET_CLOSE,
         JOB_NAME_CALCULATE_INDICATORS,
@@ -1302,6 +1304,7 @@ def test_job_functions_registry_covers_all_six_jobs():
         JOB_NAME_PRE_MARKET_HOLDING_CHECK,
         JOB_NAME_POST_MARKET_HOLDING_CHECK,
         JOB_NAME_UPDATE_RECOMMENDATION_RESULTS,
+        JOB_NAME_UPDATE_REPORT_CONSENSUS,
     }
 
 

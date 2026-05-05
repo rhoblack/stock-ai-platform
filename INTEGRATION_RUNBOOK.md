@@ -300,7 +300,8 @@ Docker Compose 환경이면 `docker compose down -v` 로 볼륨까지 삭제.
 .\.venv\bin\python.exe -m pytest -q
 ```
 
-296 passed 가 유지되면 v0.1 통합 시나리오가 변경되지 않은 것.
+v0.4 Phase B 인수 시점 기준: **362 passed**. v0.3 마감 시점 (319) → v0.4 Phase A
+(335) → v0.4 Phase B (362) 누적 증분이 모두 0 회귀로 유지.
 
 ---
 
@@ -313,3 +314,89 @@ Docker Compose 환경이면 `docker compose down -v` 로 볼륨까지 삭제.
 - 실 KIS 키 운영 검증 (`.env` 채워 dry-run 외 환경 1회 검증)
 - React / Next.js 대시보드 프론트엔드
 - Strategy / Backtest / MockBroker / 자동매매
+
+---
+
+## 9. 증권사 리포트 import (v0.4 Phase B+)
+
+운영자가 직접 작성한 메타데이터 CSV 를 시스템에 적재하는 절차. 자동 크롤링 /
+원문 본문 저장 / PDF BLOB 저장은 모두 금지 (`PROJECT_STATUS.md` §0 v0.4 정책).
+
+### 9.1 입력 CSV 준비
+
+스키마는 [`tests/fixtures/analyst_reports_sample.csv`](./tests/fixtures/analyst_reports_sample.csv)
+참조. 35 컬럼 중 필수는 `report_type`, `broker_name`, `published_at`, `title`
+4개. 그 외는 모두 optional. 한 row 가 최대 4 entity (report + theme + N
+mappings + signal_event) 를 만들 수 있다.
+
+**저작권 정책 (importer 가 거부하는 컬럼)**: `body`, `content`, `full_text`,
+`raw_text`, `paragraph_text`, `paragraphs`, `article_body`, `full_body`,
+`original_text`, `html_body`, `report_body`, `본문`, `원문`, `전문`. 본문 / 단락
+텍스트 columns 가 헤더에 있으면 import 자체를 거부한다.
+
+### 9.2 dry-run (검증만, DB 변경 없음)
+
+```powershell
+.\.venv\bin\python.exe -m scripts.import_analyst_reports `
+    --file .\tests\fixtures\analyst_reports_sample.csv
+```
+
+출력 예:
+
+```
+Analyst-report import — DRY-RUN (no DB writes)
+  file: analyst_reports_sample.csv
+  total_rows         : 3
+  inserted_reports   : 3
+  skipped_duplicates : 0
+  inserted_themes    : 3
+  inserted_mappings  : 5
+  inserted_signal_events: 3
+  truncated_summaries: 0
+  validation_errors  : 0
+```
+
+`validation_errors > 0` 이면 row 별 에러 메시지가 같이 출력 (최대 20건).
+**`source_file_path` 는 어떤 출력에도 노출되지 않는다** — 에러 메시지조차 컬럼명
++ 정상 enum/date/숫자 후보 값만 echo 한다.
+
+### 9.3 commit (실제 DB 적재)
+
+```powershell
+.\.venv\bin\python.exe -m scripts.import_analyst_reports `
+    --file .\tests\fixtures\analyst_reports_sample.csv `
+    --commit
+```
+
+re-run 은 멱등 — 동일 `(broker_name, published_at, title)` 은 `skipped_duplicates`
+로 카운트되고 새 row 가 추가되지 않는다.
+
+### 9.4 인코딩 / DB URL 옵션
+
+- `--encoding cp949` 또는 `--encoding euc-kr` — 레거시 Excel 한국어 export 대응
+- `--db-url sqlite:///./trial.db` — 트라이얼용 별도 DB 경로
+
+### 9.5 일별 컨센서스 스냅샷 잡
+
+`update_report_consensus_snapshots` (06:30 KST) 가 자동 실행되며, COMPANY 타입
+리포트 중 발행 후 90일 이내 항목을 종목별 집계해 `report_consensus_snapshots`
+에 upsert. 수동 트리거 (테스트용):
+
+```powershell
+.\.venv\bin\python.exe -c "
+from app.scheduler.jobs import run_job, update_report_consensus_snapshots, JOB_NAME_UPDATE_REPORT_CONSENSUS
+from app.db.session import create_db_engine, create_session_factory
+engine = create_db_engine()
+factory = create_session_factory(engine)
+outcome = run_job(session_factory=factory, job_name=JOB_NAME_UPDATE_REPORT_CONSENSUS, fn=update_report_consensus_snapshots)
+print(outcome.status, outcome.result_summary)
+"
+```
+
+활성 리포트 0건이면 `data_status=NO_DATA + status=SUCCESS`.
+
+### 9.6 운영 점검
+
+- `job_runs` 테이블에서 `job_name='update_report_consensus_snapshots'` 행을 확인
+- `report_consensus_snapshots` 의 `(symbol, snapshot_date, window_days=90)` 행이 종목별로 1건씩 갱신되는지 확인
+- 컨센서스가 산정되지 않은 종목은 컨센서스 row 자체가 부재 (오류 아님 — Phase C 의 score 계산이 null fallback)

@@ -60,6 +60,23 @@ class ReportScoreLogRepository(BaseRepository[ReportScoreLog]):
         )
         return self.session.execute(statement).scalar_one_or_none()
 
+    def get_by_recommendation_run_symbol(
+        self,
+        *,
+        run_id: int,
+        symbol: str,
+    ) -> ReportScoreLog | None:
+        statement = (
+            select(ReportScoreLog)
+            .where(
+                ReportScoreLog.recommendation_run_id == run_id,
+                ReportScoreLog.symbol == symbol,
+            )
+            .order_by(ReportScoreLog.id.desc())
+            .limit(1)
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
     def list_recent_by_symbol(
         self,
         symbol: str,

@@ -65,6 +65,7 @@ from app.data.repositories import (
     RecommendationRepository,
     RecommendationResultRepository,
     RecommendationRunRepository,
+    ReportScoreLogRepository,
     StockIndicatorRepository,
     StockRepository,
 )
@@ -121,6 +122,7 @@ def _recommendation_to_schema(
     snapshot: Optional[DataSnapshot],
     results: list[RecommendationResult],
     run: Optional[RecommendationRun] = None,
+    report_log=None,
 ) -> RecommendationItemSchema:
     risk_summary = _risk_summary_from_snapshot(snapshot)
     return RecommendationItemSchema(
@@ -146,6 +148,11 @@ def _recommendation_to_schema(
         risk_level=risk_summary.level if risk_summary is not None else None,
         risk_flags=risk_summary.flags if risk_summary is not None else [],
         risk_summary=risk_summary,
+        report_score=report_log.report_score if report_log is not None else None,
+        theme_signal_score=report_log.theme_signal_score
+        if report_log is not None
+        else None,
+        report_evidence=report_log.evidence_json if report_log is not None else None,
         results=[_recommendation_result_to_schema(r) for r in results],
     )
 
@@ -187,12 +194,17 @@ def _resolve_recommendation_items(
     run: Optional[RecommendationRun] = None,
 ) -> list[RecommendationItemSchema]:
     items: list[RecommendationItemSchema] = []
+    report_score_repo = ReportScoreLogRepository(snapshot_repo.session)
     for rec in recommendations:
         snapshot = (
             snapshot_repo.get(rec.snapshot_id) if rec.snapshot_id is not None else None
         )
         results = result_repo.list_by_recommendation_id(rec.id)
-        items.append(_recommendation_to_schema(rec, snapshot, results, run))
+        report_log = report_score_repo.get_by_recommendation_run_symbol(
+            run_id=rec.run_id,
+            symbol=rec.symbol,
+        )
+        items.append(_recommendation_to_schema(rec, snapshot, results, run, report_log))
     return items
 
 
@@ -213,12 +225,17 @@ def _resolve_recent_recommendations_for_symbol(
     )
     rows = list(session.execute(statement).all())
     items: list[RecommendationItemSchema] = []
+    report_score_repo = ReportScoreLogRepository(session)
     for rec, run in rows:
         snapshot = (
             snapshot_repo.get(rec.snapshot_id) if rec.snapshot_id is not None else None
         )
         results = result_repo.list_by_recommendation_id(rec.id)
-        items.append(_recommendation_to_schema(rec, snapshot, results, run))
+        report_log = report_score_repo.get_by_recommendation_run_symbol(
+            run_id=rec.run_id,
+            symbol=rec.symbol,
+        )
+        items.append(_recommendation_to_schema(rec, snapshot, results, run, report_log))
     return items
 
 
