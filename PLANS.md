@@ -367,9 +367,360 @@ v0.3-final                       ← Phase E 인수 / 마감 선언
 
 ### v0.4+ 후보 (Backlog 등재용)
 
-- 실 News / Supply / Fundamental / Earnings 파이프라인 (DummyScoreProducer 대체)
-- 즐겨찾기 / 관심 종목 (POST 라우터 도입 — backend 정책 변경)
+- 실 News / Supply / Fundamental / Earnings 파이프라인 (DummyScoreProducer 대체) — v0.5+
+- 즐겨찾기 / 관심 종목 (POST 라우터 도입 — backend 정책 변경) — v0.5+
 - 글로벌 검색 (cmd+k)
 - 인증 / 권한 (사내망 외 노출 시)
 - Sentry / Prometheus 운영 모니터링
 - 자동매매 (별도 보안 / 컴플라이언스 cycle 선행 필수): MockBroker → APPROVAL → SMALL_AUTO
+
+---
+
+## PLAN-0004: v0.4 증권사 리포트 분석 (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.3-final` (HEAD `f6b0ba5` 시점, origin/main 동기화 완료)
+- v0.1 backend / v0.2 frontend / v0.3 분석·운영 모두 인수 완료. 회귀 게이트: backend pytest 319, frontend vitest 59, e2e 8, build 통과
+- v0.4 는 v0.3-final 기준선 위에 **증권사 애널리스트 리포트 데이터 라인** 을 신규 추가한다. 자동매매 / 실 주문 / FULL_AUTO / POST 트리거 / 인증 정책은 v0.3 그대로 유지한다 (여전히 사내망 / 단일 사용자 / read-only 가정)
+
+### 목표
+
+(1) 증권사 애널리스트 리포트 메타데이터를 CSV / Excel 로 import 하고, (2) 종목별 컨센서스 (평균 목표가 / rating 분포 / 최신 발행일) 스냅샷을 일별 갱신하며, (3) 보조 점수 `report_score` 를 계산해 추천 화면 / 종목 상세에 참고 근거로 노출한다. 추천 최종 산식은 급격히 바꾸지 않고 ±5점 cap 으로 보조 가산만 한다.
+
+### 핵심 제약 (저작권 / 컴플라이언스)
+
+- ❌ 리포트 원문 전문 (PDF body, 본문 paragraph) DB 저장 금지 — 메타데이터 + 운영자가 직접 작성한 짧은 요약 (`<= 500자`) 만
+- ❌ PDF 파일 자체를 git 레포 / DB BLOB 으로 저장 금지 — `source_url` (외부 발행처 URL) 또는 `source_file_path` (운영자 로컬 경로) 만 보관
+- ❌ 자동 크롤링 / 스크레이핑 금지 — v0.4 는 CSV/Excel 수동 import 만. 자동 fetch 는 v0.5+ (저작권 검토 선행)
+- ❌ 외부 공유 / 공개 — `source_file_path` 는 admin-only 응답 또는 마스킹 (예: `D:\reports\****`). API 외부 노출 시 path 노출 금지
+- ❌ 추천 산식 급변경 — `report_score` 는 보조 (±5점 cap), `total_score` 의 본 weight (technical 50% / news 10% / supply 10% / fundamental 10% / ai 20%) 는 손대지 않음
+
+### 범위 (5 Phase)
+
+- Phase A — DB 모델 3종 + Repository (analyst_reports / report_consensus_snapshots / report_score_logs) + 단위 테스트
+- Phase B — CSV / Excel import 명령 (`scripts/import_analyst_reports.py`) + 일별 컨센서스 스냅샷 잡 + 통합 테스트
+- Phase C — `report_score` 계산기 + ScoreProducer 통합 (보조 ±5점 cap) + decision_logs evidence 기록
+- Phase D — 프런트 (StockDetail 리포트 섹션 + 추천 화면 report_score 컬럼) + msw / e2e fixture
+- Phase E — `RELEASE_NOTES_v0.4.md` 신규 + README / PROJECT_STATUS 마감 선언 + tag `v0.4-final`
+
+### 제외 범위 (v0.4 에서 절대 하지 않을 것)
+
+- ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ POST 트리거 UI / 라우터 — import 는 운영자 CLI (`python -m scripts.import_analyst_reports`) 만, GET 응답에만 변화
+- ❌ 리포트 자동 크롤링 / 스크레이핑
+- ❌ 리포트 원문 전문 / PDF BLOB DB 저장
+- ❌ 리포트 외부 공유 / 공개 API
+- ❌ 뉴스 / 공시 실시간 수집 (별도 v0.5+ cycle)
+- ❌ 즐겨찾기 / 관심 종목 / 인증 / Strategy / Backtest / MockBroker (v0.5+ 후보 그대로)
+- ❌ HoldingCheck 산식 변경 (`report_score` 는 추천 산식에만 보조 가산, 보유 점검은 그대로)
+
+### 데이터 모델 (Phase A 상세)
+
+**`analyst_reports` (개별 리포트 레코드)**
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `id` | Integer PK | autoincrement |
+| `symbol` | String(32) | 종목코드, indexed, FK 미사용 (Stock 테이블과 느슨한 연결) |
+| `broker_name` | String(64) | 발행 증권사 (예: "삼성증권") |
+| `analyst_name` | String(64) nullable | 작성자 이름 |
+| `published_at` | Date | 발행일 (KST) |
+| `title` | String(200) | 짧은 제목 — 원문 인용 ≤ 200자 (저작권 fair-use 한도) |
+| `summary` | String(500) nullable | 운영자가 직접 작성한 한국어 요약 — 원문 paragraph 인용 금지 |
+| `rating` | String(16) nullable | enum: `STRONG_BUY` / `BUY` / `HOLD` / `SELL` / `STRONG_SELL` / null |
+| `target_price` | Numeric(20,4) nullable | 목표가 (원) |
+| `source_url` | String(500) nullable | 외부 발행처 URL |
+| `source_file_path` | String(500) nullable | 운영자 로컬 PDF 경로 — API 응답에는 마스킹 |
+| `import_source` | String(16) | enum: `CSV` / `EXCEL` / `MANUAL` |
+| `created_at`, `updated_at` | TimestampMixin | |
+
+**Unique constraint**: `(symbol, broker_name, published_at, title)` — 동일 리포트 중복 import 방지.
+
+**`report_consensus_snapshots` (종목별 일별 컨센서스 집계)**
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `id` | Integer PK | |
+| `symbol` | String(32) | indexed |
+| `snapshot_date` | Date | 집계 기준일 (KST) |
+| `report_count` | Integer | 집계 시점에 활성 리포트 수 (예: 발행 후 90일 이내) |
+| `avg_target_price` | Numeric(20,4) nullable | |
+| `min_target_price`, `max_target_price` | Numeric(20,4) nullable | |
+| `strong_buy_count`, `buy_count`, `hold_count`, `sell_count`, `strong_sell_count` | Integer default 0 | |
+| `latest_published_at` | Date nullable | 가장 최신 리포트 발행일 |
+| `created_at` | TimestampMixin | |
+
+**Unique constraint**: `(symbol, snapshot_date)`.
+
+**`report_score_logs` (점수 계산 이력)**
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `id` | Integer PK | |
+| `symbol` | String(32) | |
+| `calculated_at` | DateTime | UTC |
+| `run_id` | Integer FK(`recommendation_runs.run_id`) nullable | 추천 잡과 연계된 경우 |
+| `consensus_snapshot_id` | Integer FK(`report_consensus_snapshots.id`) nullable | |
+| `report_score` | Numeric(6,2) nullable | 0~100, `report_count = 0` 일 때 null |
+| `target_upside_pct` | Numeric(8,4) nullable | (avg_target_price - latest_close) / latest_close * 100 |
+| `rating_score_avg` | Numeric(6,4) nullable | -2 ~ +2 |
+| `recency_bonus` | Numeric(4,2) nullable | 0 ~ 5 |
+| `evidence_json` | JSON | top 3 리포트 메타 (broker / rating / target_price) + raw counts |
+| `created_at` | TimestampMixin | |
+
+### `report_score` 산식 (Phase C 상세)
+
+`report_count = 0` → `report_score = null` (점수 산식에 영향 0).
+
+```
+target_upside_pct = clip( (avg_target_price - latest_close) / latest_close * 100, -40, +60 )
+rating_score_avg  = ( STRONG_BUY*2 + BUY*1 + HOLD*0 + SELL*(-1) + STRONG_SELL*(-2) ) / report_count
+recency_bonus = 5  if any report in last 14 days
+              = 3  if last 14~30 days
+              = 0  otherwise
+report_score = clip( 50 + (target_upside_pct * 0.5) + (rating_score_avg * 10) + recency_bonus, 0, 100 )
+```
+
+추천 점수 보조:
+
+```
+recommendation.total_score_after = clip( recommendation.total_score + report_bonus, 0, 100 )
+report_bonus = 0                       if report_score is null
+            = clip( (report_score - 50) * 0.1, -5, +5 )   otherwise
+```
+
+`±5점 cap` — 기존 weight 산식은 손대지 않고 후처리 가산만. `decision_logs.rule_result_json["report_evidence"]` 에 `{report_score, report_count, top_3, avg_target_price, snapshot_id}` 기록.
+
+### 프런트 노출 (Phase D 상세)
+
+- **StockDetail 화면**: 새 카드 `증권사 리포트 (N건)` — 상단에 컨센서스 요약 (평균 목표가 / BUY 비율 / 최신 발행일 / `report_score`), 하단에 최근 5건 (broker / 발행일 / rating / 목표가 / summary 첫 줄). `source_url` 클릭 → 새 탭. **`source_file_path` 는 응답에 미포함**.
+- **Recommendations 화면**: TOP 5 테이블에 `report_score` 컬럼 추가. null 이면 `—` 표시. tooltip 으로 `(target ↑X% · BUY N / HOLD N · 최신 YYYY-MM-DD)` 노출.
+- **Today / RecommendationHistory / Holdings / MarketCapTop**: 이번 cycle 에선 변경 없음 (보조 정보의 1차 노출만). v0.5 에서 확장 검토.
+
+### v0.4 누적 태그 (예정)
+
+```
+v0.3-final                       ← v0.4 시작점 (HEAD f6b0ba5)
+v0.4-backend-reports             ← Phase A 인수 (DB 모델 + repo)
+v0.4-import-pipeline             ← Phase B 인수 (CSV/Excel + consensus 잡)
+v0.4-report-score                ← Phase C 인수 (score 계산 + decision_logs)
+v0.4-frontend-reports            ← Phase D 인수 (UI 통합)
+v0.4-final                       ← Phase E 인수 / 마감 선언
+```
+
+---
+
+### Phase A — DB 모델 3종 + Repository
+
+**목표:** 증권사 리포트 + 컨센서스 + 점수 로그 ORM / Repository 도입. 코드 라우터 / 잡 / 엔진 / 점수 산식은 손대지 않는다.
+
+**수정할 파일:**
+
+- `app/db/models.py` — `AnalystReport`, `ReportConsensusSnapshot`, `ReportScoreLog` 클래스 3개 신규
+- `app/data/repositories/__init__.py` — 3 Repository export
+- `app/data/repositories/analyst_reports.py` (신규) — `add` / `get_by_symbol` / `delete_by_id` (admin) + unique 제약 충돌 시 idempotent upsert
+- `app/data/repositories/report_consensus_snapshots.py` (신규) — `upsert(symbol, snapshot_date, ...)` + `get_latest_by_symbol`
+- `app/data/repositories/report_score_logs.py` (신규) — `add` + `get_latest_by_symbol`
+- `tests/unit/test_analyst_report_repository.py` (신규) — 3 Repository 단위 테스트 ~10건 (CRUD, unique 충돌, NULL 처리)
+- `DB_SCHEMA.md` — 3 테이블 추가 명세
+
+**수정하지 않을 파일:**
+
+- `app/api/`, `app/decision/`, `app/scheduler/`, `app/notification/`, `frontend/` — 본 phase 에서 변경 없음
+
+**단계:**
+
+1. ORM 클래스 3개 + TimestampMixin 적용
+2. Repository 3개 + 단위 테스트
+3. `Base.metadata.create_all` 로 검증 DB 마이그레이션 (운영 환경은 ALTER ADD TABLE 만이라 destructive 아님 — 운영자 안내는 RELEASE_NOTES_v0.4 에 명시)
+4. `DB_SCHEMA.md` 갱신
+
+**테스트:**
+
+- 단위 테스트 ~10 신규 (analyst_reports CRUD / unique 충돌 / consensus upsert / score_logs add)
+- 회귀 게이트: backend `pytest -q` 319 + 신규 → 모두 통과
+
+**완료 기준:**
+
+- backend pytest 통과 (319 + 신규)
+- 3 테이블 ORM + Repository 동작 + 단위 테스트 통과
+- AGENTS.md 원칙 위반 없음 (외부 호출 0건)
+
+**위험 요소:**
+
+- 신규 테이블 3개 → 운영 환경 마이그레이션 필요. ALTER ADD TABLE 만이라 destructive 아니지만 안내 필수.
+- `analyst_reports.title` / `summary` 의 글자 수 한계가 너무 작으면 일부 리포트 import 실패. 실 데이터 1회 sample import 후 재조정 가능.
+
+### Phase B — CSV / Excel import + 일별 컨센서스 스냅샷 잡
+
+**목표:** 운영자가 CLI 로 리포트 메타데이터를 import 하고, 잡이 일별 컨센서스를 자동 스냅샷한다.
+
+**수정할 파일:**
+
+- `scripts/import_analyst_reports.py` (신규) — argparse CLI: `--file path.csv|path.xlsx --broker "삼성증권" --dry-run`. CSV / Excel 양쪽 지원 (`pandas.read_csv` / `read_excel`). 멱등 (unique 충돌 시 skip). DRY_RUN 기본 false 가 아니라 **default true** — `--commit` 명시 시에만 DB 적재.
+- `app/scheduler/jobs.py` — `update_report_consensus_snapshots` 잡 신규 (각 종목별 활성 리포트 → 컨센서스 스냅샷 upsert). 기본 매일 06:30 KST.
+- `app/scheduler/scheduler.py` — 잡 등록.
+- `tests/integration/test_analyst_report_import.py` (신규) — sample CSV (`tests/fixtures/analyst_reports_sample.csv`) 로 import → DB 검증 ~6건
+- `tests/integration/test_consensus_snapshot_job.py` (신규) — 잡 1회 실행 → 컨센서스 산정 검증 ~4건
+- `INTEGRATION_RUNBOOK.md` — `python -m scripts.import_analyst_reports --file ... --commit` 운영 절차 추가
+
+**수정하지 않을 파일:**
+
+- `app/decision/`, `frontend/` — 본 phase 에서 변경 없음
+- 추천 / 보유 잡 — 시그니처 / 산식 손대지 않음
+
+**단계:**
+
+1. CSV/Excel 입력 스키마 정의 (`symbol, broker_name, analyst_name, published_at, title, summary, rating, target_price, source_url, source_file_path`) + sample fixture
+2. import CLI (`--dry-run` / `--commit` / `--file` / `--broker` / `--encoding`) — 기본 dry-run, validation 실패 시 row-level 에러 리포트
+3. `update_report_consensus_snapshots` 잡 구현 (활성 윈도우 = 발행 후 90일 이내, 그 이상은 컨센서스 제외)
+4. 통합 테스트 (sample CSV → import → consensus 잡 → 스냅샷 검증)
+
+**테스트:**
+
+- sample CSV 5~10건 import → analyst_reports 5~10 row, unique 충돌 시 skip count 정확
+- 잡 실행 후 종목별 컨센서스: avg_target_price / rating 분포 / latest_published_at
+- backend `pytest -q` 회귀 0건
+
+**완료 기준:**
+
+- CLI dry-run + commit 양쪽 동작
+- 잡이 종목별 컨센서스 스냅샷을 멱등 upsert
+- backend pytest +10건 (import 6 + consensus 4) 통과
+- INTEGRATION_RUNBOOK 운영 절차 1줄 추가
+
+**위험 요소:**
+
+- 입력 CSV 인코딩 (한글 broker / analyst 이름) — UTF-8 BOM / EUC-KR 모두 받도록 `--encoding` 옵션
+- 활성 윈도우 (발행 후 90일) 가 너무 짧으면 표본 부족. 90일 default + 운영자가 `--active-days` 로 override 가능
+
+### Phase C — `report_score` 계산기 + ScoreProducer 통합 + decision evidence
+
+**목표:** 컨센서스 스냅샷 → `report_score` 계산 → 추천 점수에 ±5점 cap 으로 보조 가산. 추천 산식 본 weight 는 손대지 않는다.
+
+**수정할 파일:**
+
+- `app/analysis/report_score_calculator.py` (신규) — `calculate_report_score(consensus, latest_close) -> ReportScoreResult` 순수 함수
+- `app/decision/recommendation_engine.py` — `RecommendationEngine.run` 에서 종목별 `latest_consensus + latest_close` 로 `report_score` 계산 → `report_score_logs` 에 기록 → `recommendation.total_score` 후처리 가산 (±5점 cap)
+- `app/decision/recommendation_engine.py` — `decision_logs.rule_result_json["report_evidence"]` 추가
+- `app/api/schemas.py` — `RecommendationItemSchema` 에 `report_score: Optional[str]` + `report_evidence: Optional[Dict]` 추가
+- `tests/unit/test_report_score_calculator.py` (신규) — 산식 단위 테스트 ~12건 (null / upside / rating / recency / clip 경계)
+- `tests/integration/test_recommendation_engine.py` — `report_score` 가산 시나리오 보강 ~3건
+- `tests/integration/test_api_routes.py` — `/api/recommendations/latest` 응답에 `report_score` 노출 검증 ~2건
+
+**수정하지 않을 파일:**
+
+- `app/decision/holding_check_engine.py` — HoldingCheck 산식은 v0.4 에서 변경 없음
+- `app/decision/scoring_engine.py` — base weight 산식 본체는 안 바꾼다
+- `frontend/` — 본 phase 에서 변경 없음 (Phase D 에서 노출)
+
+**단계:**
+
+1. 순수 산식 함수 + 단위 테스트 (mock consensus + close 로 ±5 cap 검증)
+2. RecommendationEngine 가 종목별 consensus 조회 → score 계산 → log → bonus 가산
+3. `decision_logs` evidence 기록
+4. API 스키마 `report_score` 노출 + 통합 테스트
+5. mock seed 에 sample report 1~2건 추가하여 실제 흐름 검증 (추천 5종목 중 1~2종목에 `report_score` 표시)
+
+**테스트:**
+
+- 산식 단위: report_count=0 → null / upside +30% + STRONG_BUY 평균 → 90 / 음수 + HOLD → 45 / 14일 이내 발행 → +5 / 14~30일 → +3 / 30일 이상 → 0
+- 통합: 추천 잡 → recommendation.total_score 가 ±5 범위 안에서 변동, `report_score_logs` 행 추가, `decision_logs.rule_result_json` 에 evidence
+- API: `/api/recommendations/latest` 응답에 `report_score`, `report_evidence`
+- 회귀: 기존 추천 / 보유 점검 / 잡 / 통계 테스트 0건 깨짐
+
+**완료 기준:**
+
+- backend pytest +17건 (산식 12 + 추천 통합 3 + API 2) 통과
+- mock seed 에서 sample report 1~2건 적용 시 `total_score` ±5 변동 확인
+- `decision_logs` 에 evidence JSON 적재 확인
+
+**위험 요소:**
+
+- 추천 score weight 가 갑자기 흔들려 등급 분포가 비정상화 → `±5점 cap + report_count=0 → null` 안전장치로 보호
+- consensus 산정 누락 (잡 미실행 / 종목별 데이터 0) → `report_score = null` 로 처리 (점수 산식 영향 0)
+
+### Phase D — 프런트 (StockDetail 리포트 섹션 + 추천 컬럼)
+
+**목표:** StockDetail 화면에 컨센서스 카드 + 최근 리포트 5건, 추천 화면 테이블에 `report_score` 컬럼 추가.
+
+**수정할 파일:**
+
+- `app/api/routes.py` — `GET /api/stocks/{symbol}/reports?limit=10` 신규 read-only 라우터 (`AnalystReport` + 종목별 최신 컨센서스). 또는 `GET /api/stocks/{symbol}` 응답에 `latest_consensus + recent_reports[]` 필드 통합 (택일, PR 시 결정)
+- `app/api/schemas.py` — `AnalystReportSchema`, `ReportConsensusSchema` 신규 + `StockDetailResponse` 또는 신규 응답 스키마에 추가
+- `tests/integration/test_api_routes.py` — 신규 라우터 happy / empty / 404 ~3건
+- `frontend/src/api/types.ts` — `AnalystReport`, `ReportConsensus` 타입 추가
+- `frontend/src/hooks/useStockReports.ts` (신규) — `useQuery`, staleTime 5분
+- `frontend/src/pages/StockDetail/AnalystReportsCard.tsx` (신규) — 컨센서스 요약 + 최근 5건 테이블, source_url 클릭 가능, `source_file_path` 미노출
+- `frontend/src/pages/StockDetail/index.tsx` — 차트 카드 다음에 리포트 카드 추가
+- `frontend/src/pages/Recommendations/RecommendationsTable.tsx` (또는 해당 컬럼 정의) — `report_score` 컬럼 + tooltip
+- `frontend/src/tests/StockDetail.test.tsx` — 리포트 카드 happy / empty / 보조 source_file_path 부재 검증 ~3건
+- `frontend/src/tests/Recommendations.test.tsx` — `report_score` 컬럼 노출 + null fallback 검증 ~1건
+- `frontend/src/tests/mswServer.ts` + `frontend/e2e/fixtures/apiMocks.ts` — handler / fixture 추가
+- `frontend/e2e/dashboard.spec.ts` — 리포트 카드 노출 + source_file_path 부재 e2e ~1건
+
+**수정하지 않을 파일:**
+
+- `app/decision/`, `app/scheduler/` — 본 phase 에서 변경 없음
+- Today / RecommendationHistory / Holdings / MarketCapTop — 보조 정보 1차 노출만, 후속 cycle 에서 검토
+
+**단계:**
+
+1. 백엔드 신규 라우터 + 통합 테스트
+2. 프런트 hook + 타입 + AnalystReportsCard
+3. StockDetail 통합 + 테스트
+4. Recommendations `report_score` 컬럼 + 테스트
+5. e2e: 리포트 카드 + source_file_path 부재 (마스킹 정책 검증)
+
+**테스트:**
+
+- backend pytest +3
+- frontend vitest +4
+- e2e +1
+- mock seed 에서 1~2 종목에 sample report → StockDetail 시각 확인
+
+**완료 기준:**
+
+- StockDetail 에서 리포트 카드 (컨센서스 + 최근 5건) 노출
+- 추천 화면 테이블에 `report_score` 컬럼 + null fallback `—`
+- `source_file_path` 가 API 응답 / 프런트 / e2e 모두에서 0건 노출 (마스킹 정책)
+- 회귀 게이트 모두 그린
+
+**위험 요소:**
+
+- StockDetail 카드 추가 → 페이지 청크 +N kB. lazy 로드는 페이지 단위로 이미 적용되어 있어 영향 제한적
+- `source_file_path` 노출 누락 검증 → e2e 에서 명시적 부재 단언으로 보호
+
+### Phase E — v0.4 릴리스 문서
+
+**목표:** v0.4 인수 종료 선언, 산출물 / 검증 / 제외 / 한계 / v0.5 후보 / 운영 가이드 / 보안 (저작권 정책 명시) 정리.
+
+**수정할 파일:**
+
+- `RELEASE_NOTES_v0.4.md` (신규) — 7 섹션 (산출물 / 검증 / 제외 범위 / 알려진 한계 / v0.5 후보 / 운영 가이드 / **저작권·보안**)
+- `README.md` — 상단 인용 블록 v0.4 마감 갱신 + 누적 태그 라인 + 저작권 한 줄
+- `PROJECT_STATUS.md` — §0 v0.4 마감 선언, 기존 §0 v0.4 시작 → §0 v0.4 마감으로 in-place 갱신, §0-1 v0.3 마감, §0-2 v0.2, §0-3 v0.1
+- `TASKS.md` — Phase A~E 모두 [x]
+
+**단계:**
+
+1. 모든 phase 통과 / 회귀 게이트 통과 후
+2. `RELEASE_NOTES_v0.4.md` 작성 (저작권 정책 명시 — 원문 본문 미저장 / 자동 크롤링 미구현 / source_file_path 마스킹)
+3. README / PROJECT_STATUS / TASKS 동기화
+4. tag `v0.4-final` 부여 + GitHub push
+
+**테스트:**
+
+- 코드 변경 없음. 단 release 직전 backend pytest + frontend vitest + e2e + build 4 게이트 마지막 1회 실행
+
+**완료 기준:**
+
+- `RELEASE_NOTES_v0.4.md` 작성 완료
+- 4 게이트 모두 그린
+- tag `v0.4-final` push 완료
+- README 마감 배너 갱신
+
+**위험 요소:**
+
+- 저작권 한계 명시 누락 → `RELEASE_NOTES_v0.4.md` §보안 섹션을 정책 4 항목 (원문 미저장 / PDF 미저장 / 자동 크롤링 금지 / 외부 공유 금지) 으로 명시

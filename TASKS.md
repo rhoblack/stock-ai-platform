@@ -270,8 +270,102 @@ StockDetail 일봉 차트) 은 v0.3 phase 로 승격되었다.
 - [x] `PROJECT_STATUS.md` §0 v0.3 마감 선언, 기존 §0-1 / §0-2 그대로 보존
 - [x] `TASKS.md` v0.3 phase 모두 [x] + v0.4 Backlog 갱신 (본 섹션)
 - [x] backend pytest **319** + frontend vitest **59** + e2e **8** + build 4 게이트 그린
-- [ ] tag `v0.3-final` + push (사용자 명시 지시 후 수행)
+- [x] tag `v0.3-final` + push (commit `4dcef1e`)
 - 완료 기준: 모든 게이트 그린, tag publish, GitHub Release 본문에 RELEASE_NOTES 붙여넣기 (UI 작업).
+
+## v0.4 — 증권사 리포트 분석
+
+기준선: `v0.3-final` (HEAD `f6b0ba5`). 자세한 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0004` 참조.
+
+**v0.4 핵심 목표**
+
+증권사 애널리스트 리포트 메타데이터를 CSV / Excel 로 import 하고, 종목별 컨센서스
+(평균 목표가 / rating 분포 / 최신 발행일) 스냅샷을 일별 갱신하며, 보조 점수
+`report_score` 를 계산해 추천 화면 / 종목 상세에 참고 근거로 노출한다.
+
+**v0.4 에서 절대 하지 않을 것**
+
+- ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ POST 트리거 UI / 라우터 — import 는 운영자 CLI 만, 응답에만 변화
+- ❌ 리포트 자동 크롤링 / 스크레이핑
+- ❌ 리포트 원문 전문 (PDF body / paragraph) DB 저장
+- ❌ PDF 파일 자체 git 레포 / DB BLOB 저장 — `source_url` 또는 `source_file_path` 만
+- ❌ `source_file_path` 외부 노출 (API 응답 / 프런트 / e2e 모두에서 마스킹 또는 미포함)
+- ❌ 외부 공유 / 공개 API
+- ❌ 뉴스 / 공시 실시간 수집 (별도 v0.5+ cycle)
+- ❌ 즐겨찾기 / 관심 종목 / 인증 / Strategy / Backtest / MockBroker (v0.5+ 후보 그대로)
+- ❌ HoldingCheck 산식 변경 (보유 점검은 그대로)
+- ❌ 추천 산식 본 weight 변경 — `report_score` 는 ±5점 cap 보조 가산만
+
+### Phase A — DB 모델 3종 + Repository
+
+- [ ] `app/db/models.py` — `AnalystReport` 클래스 (id / symbol / broker_name / analyst_name / published_at / title (≤200) / summary (≤500) / rating / target_price / source_url / source_file_path / import_source / TimestampMixin)
+- [ ] `app/db/models.py` — `ReportConsensusSnapshot` 클래스 (id / symbol / snapshot_date / report_count / avg/min/max_target_price / 5 rating count / latest_published_at)
+- [ ] `app/db/models.py` — `ReportScoreLog` 클래스 (id / symbol / calculated_at / run_id FK nullable / consensus_snapshot_id FK nullable / report_score / target_upside_pct / rating_score_avg / recency_bonus / evidence_json)
+- [ ] Unique constraints: `analyst_reports (symbol, broker_name, published_at, title)` / `report_consensus_snapshots (symbol, snapshot_date)`
+- [ ] `app/data/repositories/analyst_reports.py` (신규) — add / get_by_symbol / list_active (90일 윈도우) / delete_by_id (admin) + idempotent upsert
+- [ ] `app/data/repositories/report_consensus_snapshots.py` (신규) — upsert / get_latest_by_symbol
+- [ ] `app/data/repositories/report_score_logs.py` (신규) — add / get_latest_by_symbol
+- [ ] `app/data/repositories/__init__.py` — 3 Repository export
+- [ ] `tests/unit/test_analyst_report_repository.py` (신규, ~10 케이스)
+- [ ] `DB_SCHEMA.md` — 3 테이블 추가 명세
+- 완료 기준: backend pytest 319 → ~329 passed, 회귀 0건. 태그 `v0.4-backend-reports`.
+
+### Phase B — CSV / Excel import + 일별 컨센서스 잡
+
+- [ ] `scripts/import_analyst_reports.py` (신규, argparse) — `--file path.csv|path.xlsx --broker "..." --encoding utf-8 --active-days 90 --dry-run/--commit`. 기본 dry-run.
+- [ ] CSV 입력 스키마: `symbol, broker_name, analyst_name, published_at, title, summary, rating, target_price, source_url, source_file_path`
+- [ ] 멱등 로직: unique 충돌 시 skip + skip count 출력
+- [ ] `tests/fixtures/analyst_reports_sample.csv` (신규, 5~10 row)
+- [ ] `app/scheduler/jobs.py` — `update_report_consensus_snapshots` 잡 신규 (활성 윈도우 90일, 종목별 upsert)
+- [ ] `app/scheduler/scheduler.py` — 잡 등록 (기본 매일 06:30 KST)
+- [ ] `tests/integration/test_analyst_report_import.py` (신규, ~6 케이스: dry-run / commit / 인코딩 / unique 충돌 / 잘못된 row 행 검증 / NULL 처리)
+- [ ] `tests/integration/test_consensus_snapshot_job.py` (신규, ~4 케이스: 컨센서스 산정 정확도 / 활성 윈도우 / 멱등 upsert / NO_DATA 처리)
+- [ ] `INTEGRATION_RUNBOOK.md` — `python -m scripts.import_analyst_reports --file ... --commit` 절차 1단락
+- 완료 기준: backend pytest ~329 → ~339 passed, 회귀 0건. 태그 `v0.4-import-pipeline`.
+
+### Phase C — `report_score` 계산기 + ScoreProducer 통합
+
+- [ ] `app/analysis/report_score_calculator.py` (신규) — `calculate_report_score(consensus, latest_close) -> ReportScoreResult` 순수 함수
+- [ ] 산식: `clip(50 + (target_upside_pct * 0.5) + (rating_score_avg * 10) + recency_bonus, 0, 100)` — `report_count = 0 → null`
+- [ ] `app/decision/recommendation_engine.py` — 종목별 `latest_consensus + latest_close` 로 score 계산 → `report_score_logs` 추가 → `recommendation.total_score` 후처리 가산 (±5점 cap)
+- [ ] `app/decision/recommendation_engine.py` — `decision_logs.rule_result_json["report_evidence"]` 추가 (top 3 / avg_target_price / report_count / snapshot_id)
+- [ ] `app/api/schemas.py` — `RecommendationItemSchema` 에 `report_score: Optional[str]` + `report_evidence: Optional[Dict]` 추가
+- [ ] `tests/unit/test_report_score_calculator.py` (신규, ~12 케이스: null / 양/음수 upside / 5 rating 평균 / recency 14d / 14~30d / 30d+ / clip 경계)
+- [ ] `tests/integration/test_recommendation_engine.py` — `report_score` 가산 시나리오 ~3건 보강 (±5 cap, evidence persist)
+- [ ] `tests/integration/test_api_routes.py` — `/api/recommendations/latest` 응답 `report_score` / `report_evidence` 노출 ~2건
+- [ ] `app/decision/holding_check_engine.py` 변경 0건 (HoldingCheck 산식 그대로 유지)
+- [ ] `app/decision/scoring_engine.py` 본 weight 변경 0건
+- 완료 기준: backend pytest ~339 → ~356 passed, 회귀 0건. 태그 `v0.4-report-score`.
+
+### Phase D — 프런트 (StockDetail 리포트 + 추천 컬럼)
+
+- [ ] `app/api/routes.py` — `GET /api/stocks/{symbol}/reports?limit=10` 신규 read-only 라우터 (또는 `/api/stocks/{symbol}` 응답에 `latest_consensus + recent_reports[]` 통합 — PR 시 결정)
+- [ ] `app/api/schemas.py` — `AnalystReportSchema`, `ReportConsensusSchema` 신규
+- [ ] `app/api/schemas.py` — `AnalystReportSchema` 에서 `source_file_path` **제외** (응답 마스킹)
+- [ ] `tests/integration/test_api_routes.py` — happy / empty / 404 / `source_file_path` 부재 단언 ~3건
+- [ ] `frontend/src/api/types.ts` — `AnalystReport` (no source_file_path), `ReportConsensus`, `StockReportsResponse` 추가
+- [ ] `frontend/src/hooks/useStockReports.ts` (신규)
+- [ ] `frontend/src/pages/StockDetail/AnalystReportsCard.tsx` (신규, 컨센서스 요약 + 최근 5건 + source_url 클릭)
+- [ ] `frontend/src/pages/StockDetail/index.tsx` — 차트 카드 다음에 리포트 카드 추가
+- [ ] `frontend/src/pages/Recommendations/RecommendationsTable.tsx` — `report_score` 컬럼 + tooltip + null fallback `—`
+- [ ] `frontend/src/tests/StockDetail.test.tsx` — 리포트 카드 happy / empty / `source_file_path` 부재 ~3건
+- [ ] `frontend/src/tests/Recommendations.test.tsx` — `report_score` 컬럼 happy / null fallback ~1건
+- [ ] `frontend/src/tests/mswServer.ts` — `/api/stocks/:symbol/reports` 기본 핸들러
+- [ ] `frontend/e2e/fixtures/apiMocks.ts` — 005930 sample reports fixture
+- [ ] `frontend/e2e/dashboard.spec.ts` — 리포트 카드 노출 + `source_file_path` 미노출 e2e ~1건
+- 완료 기준: backend pytest ~356 → ~359, frontend vitest 59 → ~63, e2e 8 → 9. 태그 `v0.4-frontend-reports`.
+
+### Phase E — v0.4 릴리스 문서 / 마감
+
+- [ ] `RELEASE_NOTES_v0.4.md` 신규 (산출물 / 검증 / 제외 / 한계 / v0.5 후보 / 운영 가이드 / **저작권·보안**)
+- [ ] `RELEASE_NOTES_v0.4.md` §보안 — 4 정책 명시 (원문 본문 미저장 / PDF 미저장 / 자동 크롤링 금지 / source_file_path 외부 노출 금지)
+- [ ] `README.md` 상단 마감 배너 v0.4 갱신 + 누적 태그 라인 + 저작권 한 줄
+- [ ] `PROJECT_STATUS.md` §0 v0.4 시작 → v0.4 마감으로 in-place 갱신, §0-1 v0.3 / §0-2 v0.2 / §0-3 v0.1 그대로 보존
+- [ ] `TASKS.md` v0.4 phase 모두 [x]
+- [ ] backend pytest + frontend vitest + e2e + build 4 게이트 그린 (재확인)
+- [ ] tag `v0.4-final` + push
+- 완료 기준: 모든 게이트 그린, tag publish, GitHub Release 본문에 RELEASE_NOTES_v0.4 붙여넣기 (UI 작업).
 
 ## 완료 기준
 
