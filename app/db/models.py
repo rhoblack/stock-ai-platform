@@ -418,3 +418,252 @@ class NotificationLog(Base):
     __table_args__ = (
         Index("ix_notification_logs_channel_status", "channel", "status"),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.4 — Analyst & Theme Intelligence
+#
+# Six tables that store: raw analyst reports (company / sector / theme /
+# commodity / macro / strategy), themes extracted from reports, links from
+# themes to affected stocks (with impact direction / strength / path),
+# discrete signal events ("target raised", "supply shortage", etc.), per-symbol
+# consensus snapshots, and the score-calculation log.
+#
+# Copyright / compliance: only metadata + short summaries are stored. PDF
+# bodies / paragraph text MUST NOT be persisted. `source_file_path` is for
+# operator-local PDF locations and MUST NOT be exposed via API. Auto-crawling
+# is out of scope for v0.4 — `extraction_method` simply tags how a row got in
+# (MANUAL / CSV_IMPORT / RULE_BASED / LLM_ASSISTED).
+# ---------------------------------------------------------------------------
+
+
+class AnalystReport(TimestampMixin, Base):
+    __tablename__ = "analyst_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    market: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    report_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    broker_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    broker_country: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    analyst_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_at: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    rating: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    normalized_rating: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    target_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    previous_target_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    current_price_at_report: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    positive_points: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_points: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # operator-local PDF path; NEVER exposed via API
+    source_file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    language: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    source_reliability_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    extraction_method: Mapped[str] = mapped_column(String(16), nullable=False)
+    extraction_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    duplicate_group_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
+    themes: Mapped[list["ReportTheme"]] = relationship(
+        back_populates="source_report",
+        cascade="all, delete-orphan",
+    )
+    signal_events: Mapped[list["ReportSignalEvent"]] = relationship(
+        back_populates="report",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "broker_name",
+            "published_at",
+            "title",
+            name="uq_analyst_reports_broker_pub_title",
+        ),
+    )
+
+
+class ReportTheme(TimestampMixin, Base):
+    __tablename__ = "report_themes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    theme_category: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    time_horizon: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_report_id: Mapped[int] = mapped_column(
+        ForeignKey("analyst_reports.id"),
+        nullable=False,
+        index=True,
+    )
+    extraction_method: Mapped[str] = mapped_column(String(16), nullable=False)
+    extraction_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+
+    source_report: Mapped[AnalystReport] = relationship(back_populates="themes")
+    stock_mappings: Mapped[list["ThemeStockMapping"]] = relationship(
+        back_populates="theme",
+        cascade="all, delete-orphan",
+    )
+    signal_events: Mapped[list["ReportSignalEvent"]] = relationship(back_populates="theme")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_report_id",
+            "theme_name",
+            name="uq_report_themes_report_theme",
+        ),
+    )
+
+
+class ThemeStockMapping(TimestampMixin, Base):
+    __tablename__ = "theme_stock_mappings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_id: Mapped[int] = mapped_column(
+        ForeignKey("report_themes.id"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    market: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    relation_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    impact_direction: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    impact_strength: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    impact_path: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    benefit_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    time_lag: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_sentence_summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    extraction_method: Mapped[str] = mapped_column(String(16), nullable=False)
+    extraction_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+
+    theme: Mapped[ReportTheme] = relationship(back_populates="stock_mappings")
+
+    __table_args__ = (
+        UniqueConstraint("theme_id", "symbol", name="uq_theme_stock_mappings_theme_symbol"),
+    )
+
+
+class ReportSignalEvent(TimestampMixin, Base):
+    __tablename__ = "report_signal_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_id: Mapped[int] = mapped_column(
+        ForeignKey("analyst_reports.id"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    theme_id: Mapped[int | None] = mapped_column(
+        ForeignKey("report_themes.id"),
+        nullable=True,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    strength: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    time_horizon: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    extraction_method: Mapped[str] = mapped_column(String(16), nullable=False)
+    extraction_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+
+    report: Mapped[AnalystReport] = relationship(back_populates="signal_events")
+    theme: Mapped[ReportTheme | None] = relationship(back_populates="signal_events")
+
+    __table_args__ = (
+        # NULL-aware uniqueness: SQLite + Postgres both treat NULLs as distinct
+        # in unique constraints, which is acceptable here — duplicates without a
+        # symbol/theme are rare and the unique tuple still prevents the most
+        # common collision (same report + same event_type + same target).
+        UniqueConstraint(
+            "report_id",
+            "event_type",
+            "symbol",
+            "theme_id",
+            name="uq_report_signal_events_report_event_symbol_theme",
+        ),
+    )
+
+
+class ReportConsensusSnapshot(Base):
+    __tablename__ = "report_consensus_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    window_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
+    report_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_target_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    min_target_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    max_target_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    strong_buy_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    buy_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    hold_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sell_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    strong_sell_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    latest_published_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "snapshot_date",
+            "window_days",
+            name="uq_report_consensus_symbol_date_window",
+        ),
+    )
+
+
+class ReportScoreLog(Base):
+    __tablename__ = "report_score_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    score_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    report_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    theme_signal_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    report_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    theme_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    signal_event_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_upside_pct: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    rating_score_avg: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    recency_bonus: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    theme_signal_bonus: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    event_signal_bonus: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    risk_penalty: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    recommendation_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recommendation_runs.run_id"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "score_date",
+            "recommendation_run_id",
+            name="uq_report_score_logs_symbol_date_run",
+        ),
+    )

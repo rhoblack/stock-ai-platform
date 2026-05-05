@@ -7,88 +7,104 @@
 
 ---
 
-## 0. v0.4 시작 선언 — 증권사 리포트 분석
+## 0. v0.4 진행 중 — Analyst & Theme Intelligence
 
-**v0.4 cycle 진입.** 기준선 `v0.3-final` (HEAD `f6b0ba5`). v0.1 backend + v0.2
-frontend + v0.3 분석·운영 양쪽 마감 위에 **증권사 애널리스트 리포트 데이터
-라인** 5 phase 를 진행한다. v0.1 의 read-only / 자동매매 부재 / 비밀 마스킹 /
-mock·DRY_RUN 정책은 그대로 유지한다.
+**v0.4 Phase A 인수 완료.** 기준선 `v0.3-final` (HEAD `f6b0ba5` 시작점). v0.1
+backend + v0.2 frontend + v0.3 분석·운영 마감 위에 **Analyst & Theme
+Intelligence** 5 phase 를 진행한다. v0.1 의 read-only / 자동매매 부재 / 비밀 마스킹
+/ mock·DRY_RUN 정책은 그대로 유지한다.
 
 ### v0.4 핵심 목표
 
-증권사 애널리스트 리포트 메타데이터를 **CSV / Excel 로 import** 하고, 종목별
-컨센서스 (평균 목표가 / rating 분포 / 최신 발행일) 스냅샷을 **일별 갱신**하며,
-보조 점수 `report_score` 를 계산해 **추천 화면 / 종목 상세에 참고 근거**로
-노출한다. 추천 최종 산식 본 weight 는 변경하지 않고, `report_score` 는 ±5점
-cap 의 보조 가산만 적용한다.
+증권사 애널리스트 리포트 (기업 / 산업 / 테마 / 원자재 / 매크로 / 전략) 메타데이터를
+**CSV / Excel 로 import** 하고, 리포트에서 추출한 **투자 테마** 와 **테마 → 종목
+매핑** 을 저장하며, 목표가 상향 / 공급 부족 / 수요 회복 같은 **변화 시그널 이벤트**
+를 구조화한다. 보조 점수 `report_score` (기업 리포트 기반) + `theme_signal_score`
+(테마·시그널 기반 선행 신호) 를 계산해 추천 / 종목 상세에 참고 근거로 노출한다.
+추천 최종 산식 본 weight 는 변경하지 않고, ±5점 cap 보조 가산만 적용한다.
 
 ### v0.4 범위 (Phase A~E)
 
-| Phase | 작업 | 상태 | 산출 태그 (예정) |
+| Phase | 작업 | 상태 | 산출 태그 |
 |---|---|---|---|
-| A | DB 모델 3종 + Repository (`analyst_reports` / `report_consensus_snapshots` / `report_score_logs`) | ⏳ 진입 대기 | `v0.4-backend-reports` |
-| B | CSV / Excel import CLI (`scripts/import_analyst_reports.py`) + 일별 컨센서스 스냅샷 잡 | ⏳ | `v0.4-import-pipeline` |
-| C | `report_score` 계산기 + RecommendationEngine 통합 (±5점 cap) + decision evidence | ⏳ | `v0.4-report-score` |
-| D | 프런트 (StockDetail 리포트 카드 + Recommendations `report_score` 컬럼) | ⏳ | `v0.4-frontend-reports` |
+| A | **DB 모델 6종 + Repository** (`analyst_reports` / `report_themes` / `theme_stock_mappings` / `report_signal_events` / `report_consensus_snapshots` / `report_score_logs`) + 통합 테스트 16건 | ✅ 인수 (backend pytest 319 → 335, 회귀 0건) | `v0.4-backend-reports` |
+| B | CSV / Excel import CLI (리포트 + 테마 + 매핑 + 시그널) + 일별 컨센서스 스냅샷 잡 | ⏳ 진입 대기 | `v0.4-import-pipeline` |
+| C | `report_score` + `theme_signal_score` 계산기 + RecommendationEngine 통합 (±5점 cap 합산) + decision evidence | ⏳ | `v0.4-report-score` |
+| D | 프런트 (StockDetail 리포트·테마·시그널 3 카드 + Recommendations score 컬럼 2개) | ⏳ | `v0.4-frontend-reports` |
 | E | `RELEASE_NOTES_v0.4.md` + README / PROJECT_STATUS / TASKS 마감 + tag `v0.4-final` | ⏳ | `v0.4-final` |
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0004`, 체크리스트는
-[`TASKS.md`](./TASKS.md) `v0.4 — 증권사 리포트 분석` 섹션 참조.
+[`TASKS.md`](./TASKS.md) `v0.4 — Analyst & Theme Intelligence` 섹션 참조.
 
-### v0.4 데이터 모델 요약
+### Phase A 결과 (요약)
 
-- **`analyst_reports`** — 개별 리포트 메타. 핵심 컬럼: `symbol` / `broker_name` / `analyst_name` / `published_at` / `title (≤200)` / `summary (≤500)` / `rating` (`STRONG_BUY/BUY/HOLD/SELL/STRONG_SELL/null`) / `target_price` / `source_url` / `source_file_path` / `import_source` (`CSV/EXCEL/MANUAL`). Unique `(symbol, broker_name, published_at, title)`.
-- **`report_consensus_snapshots`** — 종목별 일별 컨센서스 집계. `report_count` / `avg|min|max_target_price` / 5 rating count / `latest_published_at`. Unique `(symbol, snapshot_date)`. 활성 윈도우 = 발행 후 90일 이내.
-- **`report_score_logs`** — `report_score` 계산 이력 + evidence JSON. `recommendation_runs` 와 nullable FK 로 연계. `report_count = 0` 일 때 `report_score = null` (점수 산식 영향 0).
+- `app/db/models.py` 에 6 테이블 신규 — `AnalystReport` (28 컬럼, COMPANY/SECTOR/INDUSTRY/THEME/COMMODITY/MACRO/STRATEGY 7 타입을 단일 테이블에서 `report_type` 으로 구분, `symbol` nullable 허용) / `ReportTheme` (theme_category 13종 + direction + time_horizon, FK source_report) / `ThemeStockMapping` (impact_direction + impact_path 11종 + relation_type + benefit_type, 글로벌 ticker 지원) / `ReportSignalEvent` (event_type 18종, evidence_json) / `ReportConsensusSnapshot` (window_days 별 분리) / `ReportScoreLog` (report_score + theme_signal_score 둘 다 보관).
+- `app/data/repositories/` 에 6 Repository 신규 + `__init__.py` export 갱신. 각 repo 가 `create` + `upsert_by_*` 멱등 + 다양한 list 쿼리 (theme/symbol/direction/path/event_type/recent) 제공.
+- `tests/integration/test_analyst_report_repositories.py` **16 케이스** — CRUD / unique 충돌 / 글로벌 US 리포트 (NVDA / NASDAQ / USD / Goldman Sachs broker) / null symbol (THEME / MACRO / COMMODITY) / 종목 search / 테마 카테고리·방향 / 매핑 positive·negative · impact_path / signal event 분기 / consensus window 30/90 분리 / score log recommendation_run 연계.
+- 백엔드 pytest **319 → 335 passed (+16)**. frontend / e2e / build 회귀 0건 (변경 없음).
+- `DB_SCHEMA.md` §18~23 추가, 저작권 정책 단락 명시. 운영 환경 마이그레이션 = 신규 `CREATE TABLE` 6 줄, destructive 0건.
 
-### v0.4 `report_score` 산식 (요약)
+### v0.4 데이터 모델 요약 (6 테이블)
+
+- **`analyst_reports`** — 모든 리포트 메타 (28 컬럼, `report_type` 7종 단일 테이블, 글로벌 ticker / currency / language 지원). Unique `(broker_name, published_at, title)`. **`source_file_path` 는 API 응답 / 프런트에서 미노출** (Phase D 의 schema 단에서 마스킹).
+- **`report_themes`** — 리포트에서 추출한 투자 테마. theme_category 13종 (SEMICONDUCTOR / AI / COMMODITY / ENERGY / DEFENSE / SHIPBUILDING / BIO / AUTO / BATTERY / POWER_GRID / DATA_CENTER / MACRO / CUSTOM). FK source_report.
+- **`theme_stock_mappings`** — 테마 → 종목 영향 매핑. impact_direction (POSITIVE/NEGATIVE/MIXED/NEUTRAL) + impact_path 11종 + relation_type + benefit_type + time_lag. 글로벌 종목 동일 테이블.
+- **`report_signal_events`** — 변화 시그널 이벤트. event_type 18종 (TARGET_PRICE_UP / SUPPLY_SHORTAGE / DEMAND_RECOVERY / RISK_WARNING …) + direction + strength + evidence_json. FK report + nullable theme.
+- **`report_consensus_snapshots`** — 종목별 일별 컨센서스. `window_days` 별 분리 저장 (default 90일). Unique `(symbol, snapshot_date, window_days)`.
+- **`report_score_logs`** — 두 점수 (report_score + theme_signal_score) 계산 이력. theme_count / signal_event_count / theme_signal_bonus / event_signal_bonus / risk_penalty + evidence_json. `recommendation_runs.run_id` 와 nullable FK 연계.
+
+### v0.4 `report_score` + `theme_signal_score` 산식 (요약)
 
 ```
-target_upside_pct = clip( (avg_target_price - latest_close) / latest_close * 100, -40, +60 )
-rating_score_avg  = ( STRONG_BUY*2 + BUY*1 + HOLD*0 + SELL*(-1) + STRONG_SELL*(-2) ) / report_count
-recency_bonus     = 5 (≤14d) / 3 (14~30d) / 0 (>30d)
-report_score      = clip( 50 + (target_upside_pct * 0.5) + (rating_score_avg * 10) + recency_bonus, 0, 100 )
+# (1) 기업 리포트 기반
+report_score = clip( 50 + (target_upside_pct * 0.5) + (rating_score_avg * 10) + recency_bonus, 0, 100 )
 
-# 추천 보조 (±5 cap)
-total_score_after = clip( total_score + clip( (report_score - 50) * 0.1, -5, +5 ), 0, 100 )
+# (2) 테마·시그널 기반 선행 신호
+theme_signal_score = clip( 50 + (theme_bonus * 10) + (event_bonus * 10) + recency_bonus - risk_penalty, 0, 100 )
+
+# (3) 추천 보조 (±5 cap, 두 점수 합산)
+total_score_after = clip( total_score + clip( (report_score - 50) * 0.1, -5, +5 )
+                                       + clip( (theme_signal_score - 50) * 0.1, -5, +5 ), 0, 100 )
 ```
 
-`report_count = 0` 또는 `latest_close = null` → bonus 0 (안전 fallback).
+`report_count = 0` → `report_score = null` (영향 0). 시그널 / 테마 0 → `theme_signal_score = null`.
 
 ### v0.4 에서 절대 하지 않을 것 (정책)
 
 - ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
-- ❌ POST 트리거 UI / 라우터 — import 는 운영자 CLI (`python -m scripts.import_analyst_reports`) 만, GET 응답에만 변화
-- ❌ 리포트 자동 크롤링 / 스크레이핑 — v0.4 는 CSV/Excel 수동 import 만 (자동 fetch 는 v0.5+ 저작권 검토 후)
-- ❌ 리포트 원문 전문 (PDF body / paragraph) DB 저장 — 메타데이터 + 운영자 직접 작성 요약 (≤500자) 만
+- ❌ POST 트리거 UI / 라우터 — import 는 운영자 CLI 만, GET 응답에만 변화
+- ❌ 리포트 자동 크롤링 / 스크레이핑 — v0.4 는 수동 CSV/Excel + MANUAL/RULE_BASED/LLM_ASSISTED 태깅만 (자동 fetch 는 v0.5+)
+- ❌ 리포트 원문 전문 (PDF body / paragraph) DB 저장 — 운영자 직접 작성 짧은 요약 (≤500자) 만
 - ❌ PDF 파일 자체 git 레포 / DB BLOB 저장 — `source_url` 또는 `source_file_path` 만
 - ❌ `source_file_path` 외부 노출 — API 응답 / 프런트 / e2e 모두에서 마스킹 또는 미포함
 - ❌ 외부 공유 / 공개 API
+- ❌ LLM 자동 요약 — Phase A 는 미구현, `extraction_method` / `extraction_confidence` 필드만 미리 둠 (v0.5+ 후보)
 - ❌ 뉴스 / 공시 / 재무 / 실적 실시간 수집 — v0.5+ 별도 cycle
 - ❌ 즐겨찾기 / 관심 종목 / 인증 / Strategy / Backtest / MockBroker — v0.5+ 후보 그대로
 - ❌ HoldingCheck 산식 변경 (보유 점검 그대로)
-- ❌ 추천 산식 본 weight 변경 — `report_score` 는 ±5점 cap 보조 가산만
+- ❌ 추천 산식 본 weight 변경 — 두 score 모두 ±5점 cap 보조 가산만
 
 ### v0.4 백엔드 동결 정책 변경 안내
 
 `v0.3-final` 동결을 v0.4 에서 일부 깬다. 변경 범위는 다음으로 한정 — POST 라우터
 / 잡 트리거 / 자동매매 코드는 추가하지 않는다.
 
-| Phase | 변경 파일 | 종류 |
-|---|---|---|
-| A | `app/db/models.py` | ALTER ADD TABLE 3개 (`analyst_reports`, `report_consensus_snapshots`, `report_score_logs`) — 모두 신규 테이블 |
-| A | `app/data/repositories/{analyst_reports,report_consensus_snapshots,report_score_logs}.py` | 신규 Repository 3개 |
-| A | `app/data/repositories/__init__.py` | export 추가 |
-| B | `scripts/import_analyst_reports.py` | 신규 CLI (운영자 dry-run/commit) |
-| B | `app/scheduler/jobs.py`, `app/scheduler/scheduler.py` | `update_report_consensus_snapshots` 잡 1건 추가 |
-| C | `app/analysis/report_score_calculator.py` | 신규 순수 함수 |
-| C | `app/decision/recommendation_engine.py` | `report_score` 후처리 가산 + decision evidence 기록 |
-| C/D | `app/api/schemas.py` | `RecommendationItemSchema` / `AnalystReportSchema` / `ReportConsensusSchema` 추가 |
-| D | `app/api/routes.py` | 신규 read-only `GET /api/stocks/{symbol}/reports` (또는 기존 `/api/stocks/{symbol}` 응답 확장 — PR 시 결정) |
+| Phase | 변경 파일 | 종류 | 상태 |
+|---|---|---|---|
+| A | `app/db/models.py` | ALTER ADD TABLE **6개** | ✅ |
+| A | `app/data/repositories/{analyst_reports,report_themes,theme_stock_mappings,report_signal_events,report_consensus_snapshots,report_score_logs}.py` | 신규 Repository 6개 | ✅ |
+| A | `app/data/repositories/__init__.py` | export 추가 | ✅ |
+| A | `tests/integration/test_analyst_report_repositories.py` | 16 케이스 신규 | ✅ |
+| B | `scripts/import_analyst_reports.py` | 신규 CLI (dry-run/commit, 리포트 + 테마 + 매핑 + 시그널) | ⏳ |
+| B | `app/scheduler/jobs.py`, `app/scheduler/scheduler.py` | `update_report_consensus_snapshots` 잡 1건 추가 | ⏳ |
+| C | `app/analysis/report_score_calculator.py` | 신규 순수 함수 (report_score + theme_signal_score) | ⏳ |
+| C | `app/decision/recommendation_engine.py` | 두 score 후처리 가산 + decision evidence 기록 | ⏳ |
+| C/D | `app/api/schemas.py` | 신규 schema 4종 (`AnalystReportSchema` / `ReportThemeSchema` / `ThemeStockMappingSchema` / `ReportSignalEventSchema`) + `RecommendationItemSchema` 확장 | ⏳ |
+| D | `app/api/routes.py` | 신규 read-only `GET /api/stocks/{symbol}/reports` 등 | ⏳ |
 
 **HoldingCheckEngine / ScoringEngine 본 weight 산식 / 6 잡 시그니처는 손대지
-않는다.** 신규 테이블 추가는 `CREATE TABLE` 이라 destructive 아니지만 운영
-환경 마이그레이션 안내 필수.
+않는다.** 신규 테이블 추가는 `CREATE TABLE` 이라 destructive 0건이지만 운영
+환경 마이그레이션 안내 필수 ([`DB_SCHEMA.md`](./DB_SCHEMA.md) 끝부분 박스 참조).
 
 ---
 

@@ -273,15 +273,18 @@ StockDetail 일봉 차트) 은 v0.3 phase 로 승격되었다.
 - [x] tag `v0.3-final` + push (commit `4dcef1e`)
 - 완료 기준: 모든 게이트 그린, tag publish, GitHub Release 본문에 RELEASE_NOTES 붙여넣기 (UI 작업).
 
-## v0.4 — 증권사 리포트 분석
+## v0.4 — Analyst & Theme Intelligence
 
 기준선: `v0.3-final` (HEAD `f6b0ba5`). 자세한 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0004` 참조.
 
 **v0.4 핵심 목표**
 
-증권사 애널리스트 리포트 메타데이터를 CSV / Excel 로 import 하고, 종목별 컨센서스
-(평균 목표가 / rating 분포 / 최신 발행일) 스냅샷을 일별 갱신하며, 보조 점수
-`report_score` 를 계산해 추천 화면 / 종목 상세에 참고 근거로 노출한다.
+기업 / 산업 / 테마 / 원자재 / 매크로 / 전략 리포트 메타데이터를 CSV / Excel 로
+import 하고, 리포트에서 추출한 **투자 테마** 와 **테마 → 종목 매핑** 을 저장하며,
+**변화 시그널 이벤트** (TARGET_PRICE_UP / SUPPLY_SHORTAGE / RISK_WARNING …) 를
+구조화한다. 종목별 컨센서스 + 보조 점수 `report_score` (기업 리포트) +
+`theme_signal_score` (테마·시그널 기반 선행 신호) 를 계산해 추천 / 종목 상세에
+참고 근거로 노출한다. 추천 산식 본 weight 는 손대지 않고 ±5점 cap 보조 가산만.
 
 **v0.4 에서 절대 하지 않을 것**
 
@@ -297,19 +300,30 @@ StockDetail 일봉 차트) 은 v0.3 phase 로 승격되었다.
 - ❌ HoldingCheck 산식 변경 (보유 점검은 그대로)
 - ❌ 추천 산식 본 weight 변경 — `report_score` 는 ±5점 cap 보조 가산만
 
-### Phase A — DB 모델 3종 + Repository
+### Phase A — DB 모델 6종 + Repository ✅ 인수
 
-- [ ] `app/db/models.py` — `AnalystReport` 클래스 (id / symbol / broker_name / analyst_name / published_at / title (≤200) / summary (≤500) / rating / target_price / source_url / source_file_path / import_source / TimestampMixin)
-- [ ] `app/db/models.py` — `ReportConsensusSnapshot` 클래스 (id / symbol / snapshot_date / report_count / avg/min/max_target_price / 5 rating count / latest_published_at)
-- [ ] `app/db/models.py` — `ReportScoreLog` 클래스 (id / symbol / calculated_at / run_id FK nullable / consensus_snapshot_id FK nullable / report_score / target_upside_pct / rating_score_avg / recency_bonus / evidence_json)
-- [ ] Unique constraints: `analyst_reports (symbol, broker_name, published_at, title)` / `report_consensus_snapshots (symbol, snapshot_date)`
-- [ ] `app/data/repositories/analyst_reports.py` (신규) — add / get_by_symbol / list_active (90일 윈도우) / delete_by_id (admin) + idempotent upsert
-- [ ] `app/data/repositories/report_consensus_snapshots.py` (신규) — upsert / get_latest_by_symbol
-- [ ] `app/data/repositories/report_score_logs.py` (신규) — add / get_latest_by_symbol
-- [ ] `app/data/repositories/__init__.py` — 3 Repository export
-- [ ] `tests/unit/test_analyst_report_repository.py` (신규, ~10 케이스)
-- [ ] `DB_SCHEMA.md` — 3 테이블 추가 명세
-- 완료 기준: backend pytest 319 → ~329 passed, 회귀 0건. 태그 `v0.4-backend-reports`.
+> 원안 (3 모델) 에서 6 모델로 확장 — Theme + ThemeStockMapping + SignalEvent 추가.
+> 기업 / 산업 / 테마 / 원자재 / 매크로 / 전략 리포트 모두 단일 `analyst_reports`
+> 테이블에 `report_type` 으로 구분 저장.
+
+- [x] `app/db/models.py` — `AnalystReport` (28 컬럼: symbol nullable / report_type / broker_name / analyst_name / published_at / title / rating / normalized_rating / target_price / previous_target_price / current_price_at_report / currency / summary ≤500 / positive_points / risk_points / source_url / source_file_path / language / source_reliability_score / extraction_method / extraction_confidence / duplicate_group_key / TimestampMixin)
+- [x] `app/db/models.py` — `ReportTheme` (theme_name / theme_category 13종 / direction / time_horizon / source_report_id FK / extraction_method)
+- [x] `app/db/models.py` — `ThemeStockMapping` (theme_id FK / symbol / market / exchange / country / relation_type / impact_direction / impact_strength / impact_path 11종 / benefit_type / time_lag)
+- [x] `app/db/models.py` — `ReportSignalEvent` (report_id FK / symbol nullable / theme_id nullable FK / event_type 18종 / direction / strength / time_horizon / evidence_json)
+- [x] `app/db/models.py` — `ReportConsensusSnapshot` (window_days 추가, unique 가 `(symbol, snapshot_date, window_days)` 로 확장)
+- [x] `app/db/models.py` — `ReportScoreLog` (report_score + theme_signal_score 둘 다 nullable, theme_count / signal_event_count / theme_signal_bonus / event_signal_bonus / risk_penalty 추가)
+- [x] Unique constraints: 6 테이블 모두 spec 일치
+- [x] `relationship` + cascade `all, delete-orphan` (`AnalystReport.themes` / `signal_events`, `ReportTheme.stock_mappings` / `signal_events`)
+- [x] `app/data/repositories/analyst_reports.py` (신규) — `create` / `get_by_id` / `get_by_unique` / `upsert_unique` / `list_by_symbol` / `list_by_report_type` / `list_recent` / `list_recent_by_broker` / `search_text`
+- [x] `app/data/repositories/report_themes.py` (신규) — `create` / `upsert_by_report_and_theme` / `list_recent` / `list_by_category` / `list_by_direction` / `list_by_source_report`
+- [x] `app/data/repositories/theme_stock_mappings.py` (신규) — `create` / `upsert_by_theme_and_symbol` / `list_by_theme` / `list_by_symbol` / `list_positive_by_symbol` / `list_negative_by_symbol` / `list_by_impact_path`
+- [x] `app/data/repositories/report_signal_events.py` (신규) — `create` / `upsert_by_report_event_symbol_theme` / `list_by_symbol` / `list_by_theme` / `list_by_event_type` / `list_recent` / `list_positive_by_symbol` / `list_negative_by_symbol`
+- [x] `app/data/repositories/report_consensus_snapshots.py` (신규) — `upsert_by_symbol_date_window` / `get_latest_by_symbol` / `list_recent`
+- [x] `app/data/repositories/report_score_logs.py` (신규) — `create` / `get_latest_by_symbol` / `list_recent_by_symbol` / `list_by_recommendation_run`
+- [x] `app/data/repositories/__init__.py` — 6 Repository export 추가 (alphabetical 유지)
+- [x] `tests/integration/test_analyst_report_repositories.py` 신규 — **16 케이스** (CRUD / unique / 글로벌 US 리포트 / null symbol THEME·MACRO·COMMODITY / search / 매핑 positive·negative / impact_path / signal event 분기 / consensus window / score log 정렬)
+- [x] `DB_SCHEMA.md` — §18~23 추가, 저작권 정책 단락 명시
+- 완료 기준: backend pytest **319 → 335 passed (+16)**, 회귀 0건. 태그 `v0.4-backend-reports`.
 
 ### Phase B — CSV / Excel import + 일별 컨센서스 잡
 

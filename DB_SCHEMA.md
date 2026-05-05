@@ -311,3 +311,171 @@ HOLDINGS
 | status | 성공/실패 |
 | error_message | 오류 |
 | related_job_id | 관련 job |
+
+---
+
+## v0.4 — Analyst & Theme Intelligence (Phase A)
+
+증권사 애널리스트 리포트 (기업 / 산업 / 테마 / 원자재 / 매크로 / 전략) 메타데이터,
+리포트에서 추출한 투자 테마, 테마와 종목의 연결 관계, 발견된 시그널 이벤트, 일별
+컨센서스 스냅샷, 점수 계산 로그를 저장한다.
+
+**저작권 / 컴플라이언스**: 모든 테이블에 원문 본문 (PDF body / paragraph) 은
+저장하지 않는다. `analyst_reports.summary` 는 운영자가 직접 작성한 짧은 요약
+(≤ 500자) 이며 `positive_points` / `risk_points` 는 핵심 포인트 bullet 만 허용
+(원문 인용 금지). `source_file_path` 는 운영자 로컬 PDF 경로 — **API 응답 / 프런트
+/ e2e 어디서도 노출하지 않는다** (마스킹은 Phase D 의 schema 단에서 수행).
+
+### 18. analyst_reports
+
+| 컬럼 | 설명 |
+|---|---|
+| id | 내부 ID |
+| symbol | 종목코드 (nullable — THEME / MACRO / COMMODITY 리포트는 null 허용) |
+| company_name | 기업명 |
+| market | KOSPI / KOSDAQ / US / JP / ... |
+| exchange | 거래소 (NYSE / NASDAQ / KRX 등) |
+| country | KR / US / JP / ... |
+| report_type | COMPANY / SECTOR / INDUSTRY / THEME / COMMODITY / MACRO / STRATEGY |
+| broker_name | 발행 증권사 |
+| broker_country | 증권사 본사 국가 |
+| analyst_name | 애널리스트 이름 |
+| published_at | 발행일 (KST) |
+| title | 짧은 제목 (≤ 255자, 원문 fair-use 인용 한도) |
+| rating | 원문 그대로 (예: "Outperform") |
+| normalized_rating | STRONG_BUY / BUY / HOLD / SELL / STRONG_SELL |
+| target_price | 목표가 |
+| previous_target_price | 이전 목표가 (변경 추적) |
+| current_price_at_report | 발행 시점 현재가 |
+| currency | KRW / USD / ... |
+| summary | 운영자 요약 (≤ 500자, 원문 본문 미저장) |
+| positive_points | 긍정 포인트 bullet (text) |
+| risk_points | 리스크 bullet (text) |
+| source_url | 외부 발행처 URL |
+| source_file_path | 운영자 로컬 PDF 경로 — **API 응답 미노출** |
+| language | ko / en / ja |
+| source_reliability_score | 출처 신뢰도 (0~100) |
+| extraction_method | MANUAL / CSV_IMPORT / RULE_BASED / LLM_ASSISTED |
+| extraction_confidence | 추출 신뢰도 (0~1) |
+| duplicate_group_key | 동일 리포트 군 식별자 |
+| created_at, updated_at | TimestampMixin |
+
+**Unique**: `(broker_name, published_at, title)`. **Index**: `symbol`, `report_type`, `published_at`, `duplicate_group_key`.
+
+### 19. report_themes
+
+리포트에서 추출한 투자 테마 — 산업 / 테마 / 원자재 / 매크로 리포트의 핵심
+주제. 동일 리포트에서 여러 테마가 추출될 수 있다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | 내부 ID |
+| theme_name | 자유 텍스트 (예: "HBM", "구리 공급 부족", "AI 데이터센터") |
+| theme_category | SEMICONDUCTOR / AI / COMMODITY / ENERGY / DEFENSE / SHIPBUILDING / BIO / AUTO / BATTERY / POWER_GRID / DATA_CENTER / MACRO / CUSTOM |
+| direction | POSITIVE / NEGATIVE / MIXED / NEUTRAL |
+| confidence | 0~1 |
+| time_horizon | IMMEDIATE / SHORT_TERM / MID_TERM / LONG_TERM / UNKNOWN |
+| summary | 테마 요약 (≤ 500자) |
+| source_report_id | FK → analyst_reports.id |
+| extraction_method | MANUAL / CSV_IMPORT / RULE_BASED / LLM_ASSISTED |
+| extraction_confidence | 0~1 |
+| created_at, updated_at | |
+
+**Unique**: `(source_report_id, theme_name)`. **Index**: `theme_name`, `theme_category`, `direction`, `source_report_id`.
+
+### 20. theme_stock_mappings
+
+테마와 종목의 연결 — 어떤 테마가 어떤 종목에 어떤 방향 / 경로로 영향을 주는지
+기록. 글로벌 종목 (US 등) 도 동일 테이블에 저장한다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | 내부 ID |
+| theme_id | FK → report_themes.id |
+| symbol | 종목코드 (글로벌 ticker 도 저장) |
+| company_name | |
+| market, exchange, country | |
+| relation_type | PRODUCER / CONSUMER / SUPPLIER / EQUIPMENT / MATERIAL / BENEFICIARY / COST_PRESSURE / COMPETITOR / CUSTOMER / CUSTOM |
+| impact_direction | POSITIVE / NEGATIVE / MIXED / NEUTRAL |
+| impact_strength | 0~1 |
+| impact_path | DEMAND_INCREASE / PRICE_INCREASE / COST_PRESSURE / CAPEX_EXPANSION / SUPPLY_SHORTAGE / POLICY_SUPPORT / EXPORT_GROWTH / MARGIN_IMPROVEMENT / INVENTORY_CYCLE / RATE_FX_IMPACT / CUSTOM |
+| benefit_type | DIRECT / INDIRECT / SUPPLY_CHAIN / COST_PASS_THROUGH / SENTIMENT / CUSTOM |
+| time_lag | IMMEDIATE / SHORT_TERM / MID_TERM / LONG_TERM / UNKNOWN |
+| reason | 자유 텍스트 (≤ 500자) |
+| source_sentence_summary | 근거 문장 요약 (≤ 500자, 원문 paragraph 직접 인용 금지) |
+| extraction_method, extraction_confidence | |
+| created_at, updated_at | |
+
+**Unique**: `(theme_id, symbol)`. **Index**: `symbol`, `impact_direction`, `impact_path`.
+
+### 21. report_signal_events
+
+리포트에서 발견된 중요 변화 시그널 — 목표가 상향, 투자의견 상향, 실적 추정 변화,
+공급 부족, 수요 회복, ASP 상승, 원자재 가격 상승, 리스크 경고 등.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | 내부 ID |
+| report_id | FK → analyst_reports.id |
+| symbol | 영향 종목 (nullable — 매크로 / 테마 시그널은 null 가능) |
+| theme_id | FK → report_themes.id (nullable) |
+| event_type | RATING_UPGRADE / RATING_DOWNGRADE / TARGET_PRICE_UP / TARGET_PRICE_DOWN / EARNINGS_REVISION_UP / EARNINGS_REVISION_DOWN / SUPPLY_SHORTAGE / DEMAND_RECOVERY / ASP_RISE / INVENTORY_DRAW_DOWN / CAPEX_EXPANSION / POLICY_SUPPORT / COMMODITY_PRICE_RISE / FX_RATE_IMPACT / MARGIN_IMPROVEMENT / MARGIN_PRESSURE / RISK_WARNING / CUSTOM |
+| direction | POSITIVE / NEGATIVE / MIXED / NEUTRAL |
+| strength | 0~1 |
+| time_horizon | IMMEDIATE / SHORT_TERM / MID_TERM / LONG_TERM / UNKNOWN |
+| summary | 시그널 요약 (≤ 500자) |
+| evidence_json | { "prev_rating": "...", "new_rating": "...", "delta_pct": ... } 등 |
+| extraction_method, extraction_confidence | |
+| created_at, updated_at | |
+
+**Unique**: `(report_id, event_type, symbol, theme_id)` — NULL 은 distinct (SQLite/PG 기본). **Index**: `symbol`, `event_type`, `direction`, `theme_id`.
+
+### 22. report_consensus_snapshots
+
+기업 리포트 기반 종목별 일별 컨센서스 집계. 활성 윈도우는 발행 후 N일 (기본 90)
+이내 리포트만 포함.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | 내부 ID |
+| symbol | 종목코드 |
+| snapshot_date | 집계 기준일 (KST) |
+| window_days | 활성 윈도우 (기본 90일) |
+| report_count | 활성 리포트 수 |
+| avg_target_price, min_target_price, max_target_price | |
+| strong_buy_count, buy_count, hold_count, sell_count, strong_sell_count | rating 분포 |
+| latest_published_at | 가장 최신 리포트 발행일 |
+| created_at | |
+
+**Unique**: `(symbol, snapshot_date, window_days)`. **Index**: `symbol`, `snapshot_date`.
+
+### 23. report_score_logs
+
+`report_score` 와 `theme_signal_score` 계산 이력. `recommendation_runs.run_id` 와
+nullable FK 로 연계되어 추천 잡의 cycle 별 evidence 를 추적한다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | 내부 ID |
+| symbol | |
+| score_date | 계산 기준일 |
+| report_score | 0~100 (기업 리포트 기반, report_count=0 시 null) |
+| theme_signal_score | 0~100 (테마 + 시그널 기반, 산정 0 시 null) |
+| report_count | 활성 기업 리포트 수 |
+| theme_count | 활성 테마 매핑 수 |
+| signal_event_count | 활성 시그널 이벤트 수 |
+| target_upside_pct | (avg_target - latest_close) / latest_close * 100 |
+| rating_score_avg | -2 ~ +2 (STRONG_BUY=2, ..., STRONG_SELL=-2 평균) |
+| recency_bonus | 0~5 |
+| theme_signal_bonus | 0~5 |
+| event_signal_bonus | 0~5 |
+| risk_penalty | 0~10 (RISK_WARNING 기반) |
+| evidence_json | top brokers / top themes / top events / snapshot_id 등 |
+| recommendation_run_id | FK → recommendation_runs.run_id (nullable) |
+| created_at | |
+
+**Unique**: `(symbol, score_date, recommendation_run_id)`. **Index**: `symbol`, `score_date`, `recommendation_run_id`.
+
+> **운영 환경 마이그레이션**: v0.4 Phase A 는 신규 `CREATE TABLE` 6개 — 기존
+> 데이터는 손대지 않는다 (destructive 0건). Alembic 미사용 환경은
+> `Base.metadata.create_all` 또는 동등한 SQL 6 줄을 한 번 실행하면 된다.
