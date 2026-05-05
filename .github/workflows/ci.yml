@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# 모든 잡에 공통으로 강제하는 안전 / mock 환경. v0.1 정책 (read-only / 자동매매
+# 부재 / 실 KIS·실 텔레그램 호출 부재) 을 CI 에서도 그대로 강제한다.
+env:
+  APP_ENV: ci
+  TIMEZONE: Asia/Seoul
+  LOG_TO_FILE: 'false'
+  SCHEDULER_ENABLED: 'false'
+  TELEGRAM_ENABLED: 'false'
+  KIS_USE_PAPER: 'true'
+  KIS_APP_KEY: ci_fake_app_key
+  KIS_APP_SECRET: ci_fake_app_secret
+  KIS_ACCOUNT_NO: ci-fake-account-01
+  TELEGRAM_BOT_TOKEN: ci_fake_telegram_token
+  TELEGRAM_CHAT_ID: '1234567890'
+  FEATURE_REAL_ORDER_EXECUTION: 'false'
+  FEATURE_FULL_AUTO: 'false'
+  FEATURE_PAPER_TRADING: 'false'
+  FEATURE_BACKTEST: 'false'
+  FEATURE_CUSTOM_AI_TRAINING: 'false'
+
+jobs:
+  backend:
+    name: backend / pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install backend deps (editable + dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: pytest
+        run: pytest -q
+
+  frontend:
+    name: frontend / vitest + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci --no-audit --no-fund
+
+      - name: vitest (unit + integration with msw)
+        run: npm run test
+
+      - name: Build (tsc --noEmit + vite build, manualChunks 적용)
+        run: npm run build
+
+  e2e:
+    name: frontend / playwright e2e
+    runs-on: ubuntu-latest
+    needs: frontend
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci --no-audit --no-fund
+
+      # Playwright 브라우저는 별도 캐시. version 기반 키로 의존성 변경 시 자동 무효화.
+      - name: Resolve Playwright version
+        id: pw-version
+        run: |
+          version=$(node -p "require('@playwright/test/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.version }}
+
+      - name: Install Playwright chromium (with system deps)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install only system deps (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      # e2e 는 vite preview 를 띄워야 하므로 dist/ 가 있어야 한다.
+      # frontend 잡에서 빌드된 결과는 잡 간 공유되지 않으므로 여기서 다시 빌드.
+      - name: Build (for vite preview)
+        run: npm run build
+
+      - name: Run Playwright e2e (page.route 로 백엔드 mock — 실 백엔드 / KIS / Telegram 호출 0건)
+        run: npm run e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

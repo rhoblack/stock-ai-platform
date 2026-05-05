@@ -1,5 +1,7 @@
 # Stock AI Platform
 
+[![CI](https://github.com/rhoblack/stock-ai-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rhoblack/stock-ai-platform/actions/workflows/ci.yml)
+
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
 > **v0.1 백엔드 마감.** 최종 태그: `v0.1-backend-kis-paper-verified`. 회귀
@@ -229,13 +231,38 @@ holding_checks. 자세한 건수와 종목 / 점검 데이터 구성은
 외부 API, 텔레그램, 주문 기능은 테스트에서 실제로 호출하지 않습니다.
 현재 회귀 기준선: **296 passed**.
 
-## 12. 운영 전 KIS 실 키 검증
+## 12. CI (GitHub Actions)
+
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) 이 push / pull_request 이벤트 (대상: `main`) 마다 다음 3 잡을 자동 실행합니다.
+
+| 잡 | 단계 |
+|---|---|
+| `backend / pytest` | Python 3.12 + pip cache → `pip install -e ".[dev]"` → `pytest -q` |
+| `frontend / vitest + build` | Node 20 + npm cache → `npm ci` → `npm run test` → `npm run build` |
+| `frontend / playwright e2e` | Node 20 + npm cache + Playwright 브라우저 캐시 → `npm ci` → `npx playwright install --with-deps chromium` → `npm run build` → `npm run e2e` (`vite preview` + `page.route` mock — 실 백엔드 / KIS / Telegram 호출 0건). 실패 시 `playwright-report/` artifact 업로드 |
+
+CI 환경 변수는 모두 mock / dry-run 값으로 강제됩니다 (`KIS_USE_PAPER=true`, `TELEGRAM_ENABLED=false`, `FEATURE_REAL_ORDER_EXECUTION=false`, `FEATURE_FULL_AUTO=false`, fake KIS / Telegram 키). 실 자격증명 / 실 KIS API / 실 텔레그램 봇 사용 0건.
+
+로컬에서 동일 게이트를 돌릴 때:
+
+```powershell
+# 백엔드
+.\.venv\bin\python.exe -m pytest -q
+
+# 프런트
+cd frontend
+npm run test
+npm run build
+npm run e2e
+```
+
+## 13. 운영 전 KIS 실 키 검증
 
 운영 환경에서 실 KIS 키 + 실 텔레그램으로 한 번 검증하기 전에는
 [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) 의 체크리스트를 항목 단위로
 확인한다. 코드 변경 없이 `.env` / 운영 SOP 만으로 통과해야 한다.
 
-## 13. Codex 첫 실행 프롬프트 예시
+## 14. Codex 첫 실행 프롬프트 예시
 
 ```text
 AGENTS.md, stock_ai_project_codex_brief.md, stock_ai_detailed_spec.md,
@@ -244,7 +271,7 @@ v0.1 범위를 벗어나지 않는 개발 계획을 작성해줘.
 아직 코드는 수정하지 말고 TASKS.md 업데이트 계획만 제안해줘.
 ```
 
-## 14. 주의
+## 15. 주의
 
 이 프로젝트는 투자 판단 보조 도구입니다.  
 v0.1에서는 실제 주문이나 자동매매를 구현하지 않습니다.

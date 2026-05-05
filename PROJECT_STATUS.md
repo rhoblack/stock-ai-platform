@@ -11,13 +11,13 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 
 ### v0.3 범위 (Phase A~E)
 
-| Phase | 작업 | 산출 태그 (예정) |
-|---|---|---|
-| A | GitHub Actions CI (backend pytest + frontend vitest+build + Playwright e2e) | `v0.3-phase-a-ci` |
-| B | 캔들 패턴 + ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (백엔드, DB 컬럼 추가) | `v0.3-backend-analysis` |
-| C | 한국거래소 휴장일 캘린더 (정적 JSON, Today/Jobs/Holdings 배너) | `v0.3-frontend-calendar` |
-| D | `GET /api/stocks/{symbol}/prices` 신규 + StockDetail 일봉 차트 (Recharts) | `v0.3-frontend-stock-chart` |
-| E | `RELEASE_NOTES_v0.3.md` + README/PROJECT_STATUS/TASKS 마감 + tag `v0.3-final` | `v0.3-final` |
+| Phase | 작업 | 상태 | 산출 태그 |
+|---|---|---|---|
+| A | GitHub Actions CI (backend pytest + frontend vitest+build + Playwright e2e) | ✅ 인수 (CI 그린 확인 후) | `v0.3-phase-a-ci` |
+| B | 캔들 패턴 + ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (백엔드, DB 컬럼 추가) | ⏳ 진입 대기 | `v0.3-backend-analysis` |
+| C | 한국거래소 휴장일 캘린더 (정적 JSON, Today/Jobs/Holdings 배너) | ⏳ | `v0.3-frontend-calendar` |
+| D | `GET /api/stocks/{symbol}/prices` 신규 + StockDetail 일봉 차트 (Recharts) | ⏳ | `v0.3-frontend-stock-chart` |
+| E | `RELEASE_NOTES_v0.3.md` + README/PROJECT_STATUS/TASKS 마감 + tag `v0.3-final` | ⏳ | `v0.3-final` |
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0003`, 체크리스트는 [`TASKS.md`](./TASKS.md) `v0.3 — 분석 보강 + 운영 정착` 섹션 참조.
 
