@@ -93,6 +93,7 @@ JOB_NAME_PRE_MARKET_HOLDING_CHECK = "run_pre_market_holding_check"
 JOB_NAME_POST_MARKET_HOLDING_CHECK = "run_post_market_holding_check"
 JOB_NAME_UPDATE_RECOMMENDATION_RESULTS = "update_recommendation_results"
 JOB_NAME_UPDATE_REPORT_CONSENSUS = "update_report_consensus_snapshots"
+JOB_NAME_COLLECT_NEWS = "collect_news"
 
 
 @dataclass(frozen=True)
@@ -978,6 +979,87 @@ def update_report_consensus_snapshots(session: Session) -> JobResult:
     )
 
 
+# ---------- 19:00 collect_news (v0.5 Phase A PR2) ----------
+
+
+def _resolve_news_provider(session: Session):
+    """Return the injected ``news_provider`` if any, else ``None``.
+
+    v0.5 Phase A 에서는 실 RSS / Naver 금융 / DART 등 외부 provider 구현체가
+    아직 없다. 운영 환경에서는 ``session.info["news_provider"]`` 가 비어 있는
+    상태이며, ``collect_news`` 잡은 enabled=true 라도 provider 부재 시 SKIPPED
+    분기로 즉시 종료한다 (외부 호출 0건). 테스트는 FakeNewsProvider 를 동일
+    경로로 주입한다.
+    """
+    return session.info.get("news_provider")
+
+
+def collect_news(session: Session) -> JobResult:
+    """Collect recent news metadata when ``news_collection_enabled`` is true.
+
+    JobResult.status mapping:
+      * NEWS_COLLECTION_ENABLED=false (default) → SUCCESS,
+        data_status=SKIPPED, reason="news_collection_disabled". 외부 provider
+        는 생성 / 호출되지 않는다.
+      * NEWS_COLLECTION_ENABLED=true 이지만 ``session.info["news_provider"]``
+        가 비어 있음 → SUCCESS, data_status=SKIPPED,
+        reason="no_provider_configured". v0.5 Phase A 시점에는 실 provider
+        구현체가 없으므로 운영 default 동작.
+      * provider 가 주입되어 있음 → ``NewsCollector.collect_recent`` 실행
+        후 SUCCESS + counters.
+
+    KIS / Telegram / 외부 호출 0건. 실 provider 도입은 v0.5 Phase B+ 또는
+    별도 cycle 의 RSS / DART 모듈 도입 후 자연스럽게 활성화된다.
+    """
+    from app.data.collectors import NewsCollector
+    from app.data.repositories.news_items import NewsItemRepository
+
+    settings = _resolve_settings(session)
+    if not settings.news_collection_enabled:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.5-A",
+                "data_status": "SKIPPED",
+                "reason": "news_collection_disabled",
+                "fetched": 0,
+                "inserted": 0,
+                "skipped_duplicates": 0,
+                "truncated_summaries": 0,
+            },
+        )
+
+    provider = _resolve_news_provider(session)
+    if provider is None:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.5-A",
+                "data_status": "SKIPPED",
+                "reason": "no_provider_configured",
+                "fetched": 0,
+                "inserted": 0,
+                "skipped_duplicates": 0,
+                "truncated_summaries": 0,
+            },
+        )
+
+    collector = NewsCollector(provider, NewsItemRepository(session))
+    result = collector.collect_recent(limit=50)
+
+    return JobResult(
+        status=JOB_STATUS_SUCCESS,
+        summary={
+            "phase": "v0.5-A",
+            "data_status": "SUCCESS",
+            "fetched": result.fetched,
+            "inserted": result.inserted,
+            "skipped_duplicates": result.skipped_duplicates,
+            "truncated_summaries": result.truncated_summaries,
+        },
+    )
+
+
 # ---------- registry for the scheduler module ----------
 
 JOB_FUNCTIONS: dict[str, JobFn] = {
@@ -988,4 +1070,5 @@ JOB_FUNCTIONS: dict[str, JobFn] = {
     JOB_NAME_POST_MARKET_HOLDING_CHECK: run_post_market_holding_check,
     JOB_NAME_UPDATE_RECOMMENDATION_RESULTS: update_recommendation_results,
     JOB_NAME_UPDATE_REPORT_CONSENSUS: update_report_consensus_snapshots,
+    JOB_NAME_COLLECT_NEWS: collect_news,
 }

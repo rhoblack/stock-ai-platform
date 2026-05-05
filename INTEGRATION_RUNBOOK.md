@@ -400,3 +400,71 @@ print(outcome.status, outcome.result_summary)
 - `job_runs` 테이블에서 `job_name='update_report_consensus_snapshots'` 행을 확인
 - `report_consensus_snapshots` 의 `(symbol, snapshot_date, window_days=90)` 행이 종목별로 1건씩 갱신되는지 확인
 - 컨센서스가 산정되지 않은 종목은 컨센서스 row 자체가 부재 (오류 아님 — Phase C 의 score 계산이 null fallback)
+
+---
+
+## 10. 뉴스 수집 (v0.5 Phase A)
+
+`collect_news` 잡 (8번째, 19:00 KST) 은 **default OFF** — 운영자가 명시적으로
+opt-in 한 경우에만 NewsCollector 가 실 외부 provider 를 호출한다. v0.1 부터
+유지된 read-only / 외부 호출 0건 정책의 연장.
+
+### 10.1 기본 동작 (default — 외부 호출 0건)
+
+`.env` 에 `NEWS_COLLECTION_ENABLED=true` 가 없거나 false 인 상태:
+
+- 19:00 KST 에 `collect_news` 잡이 실행되지만 즉시 SKIPPED 분기로 종료
+- `JobRun.result_summary = { phase: "v0.5-A", data_status: "SKIPPED", reason: "news_collection_disabled", fetched: 0, ... }`
+- 외부 provider 생성 / 호출 일체 없음
+
+### 10.2 NewsCollector 활성화 (운영자 opt-in)
+
+`.env` 에 다음 한 줄 추가 후 backend 재기동:
+
+```
+NEWS_COLLECTION_ENABLED=true
+```
+
+이 상태에서 `collect_news` 잡은 두 가지 분기:
+
+- 운영 환경에 실 NewsProvider 가 주입되지 않은 경우 (v0.5 Phase A 시점 default — 실 RSS / DART 구현체 부재):
+  → SKIPPED + `reason: "no_provider_configured"`. 외부 호출 0건. v0.5 Phase B+ 또는 별도 cycle 에서 실 provider 가 도입되면 자동 활성화.
+- 실 provider 가 주입된 경우 (v0.6+ 후보):
+  → NewsCollector 실행 + `result_summary.data_status = "SUCCESS"` + counters (fetched / inserted / skipped_duplicates / truncated_summaries).
+
+### 10.3 수동 트리거 (테스트 / 디버깅용)
+
+```powershell
+.\.venv\bin\python.exe -c "
+from sqlalchemy.orm import sessionmaker
+from app.db.session import create_db_engine
+from app.scheduler.jobs import run_job, collect_news, JOB_NAME_COLLECT_NEWS
+from app.config.settings import Settings
+from tests.mocks.fake_news_provider import FakeNewsProvider
+
+engine = create_db_engine()
+factory = sessionmaker(engine, future=True)
+
+def fn(session):
+    s = Settings()
+    object.__setattr__(s, 'news_collection_enabled', True)
+    session.info['settings'] = s
+    session.info['news_provider'] = FakeNewsProvider()  # 결정론적 3-row 샘플
+    return collect_news(session)
+
+outcome = run_job(session_factory=factory, job_name=JOB_NAME_COLLECT_NEWS, fn=fn)
+print(outcome.status, outcome.result_summary)
+"
+```
+
+### 10.4 운영 점검
+
+- `job_runs` 에서 `job_name='collect_news'` 행 확인 (`status` / `result_summary.data_status` / `result_summary.reason`)
+- enabled 상태에서 수집된 뉴스는 `news_items` 테이블에 적재 (PR1 의 `category` 컬럼 + url-keyed 멱등 upsert)
+- 활성 NewsProvider 가 외부 API rate limit 에 걸리거나 실패하면 잡 wrapper 가 자동 FAILED 기록 → `job_runs.error_message` 에 예외 타입 + 메시지 노출
+
+### 10.5 비활성화 / 롤백
+
+`.env` 에서 `NEWS_COLLECTION_ENABLED` 라인을 제거하거나 `false` 로 변경 후
+backend 재기동. 다음 19:00 KST 잡부터 SKIPPED 로 자동 전환. 기존 적재된
+`news_items` 행은 그대로 유지 (운영자가 수동으로 정리).

@@ -419,12 +419,13 @@ StockDetail 의 "관련 테마" 카드도 `impact_path` icon + reason 으로 가
 - ❌ 추천 산식 본 weight 변경 — `news_score` 가 50 → real 로 교체되지만 weight 25% 그대로
 - ❌ LLM 자동 sentiment 분석 — Phase C 는 룰 기반만, LLM 보강은 v0.6+ 후보
 
-### Phase A — News data layer + collector skeleton (PR1 ✅ / PR2 진입 대기)
+### Phase A — News data layer + collector skeleton ✅ 인수 (PR1 + PR2)
 
-> Phase A 는 두 PR 로 분리한다. **PR1 = data layer skeleton** (interface + DTO +
+> Phase A 는 두 PR 로 분리. **PR1 = data layer skeleton** (interface + DTO +
 > collector + repository + 모델 컬럼 + 통합 테스트). **PR2 = scheduler integration**
-> (`collect_news` 잡 + Settings flag + scheduler 등록). PR1 인수 시 backend pytest
-> **382 → 401 passed (+19)**, 회귀 0건. 태그 PR2 까지 완료 후 `v0.5-news-collector`.
+> (`collect_news` 잡 + Settings flag + scheduler 등록). PR1 인수 시 backend
+> pytest **382 → 401 passed (+19)**, PR2 인수 시 **401 → 406 passed (+5)**,
+> 회귀 0건. 두 PR 누적 후 태그 `v0.5-news-collector`.
 
 **PR1 — Data layer skeleton ✅ 인수**
 
@@ -439,13 +440,16 @@ StockDetail 의 "관련 테마" 카드도 `impact_path` icon + reason 으로 가
 - [x] backend pytest **382 → 401 passed (+19)**, 회귀 0건
 - [x] `DB_SCHEMA.md` §8 `news_items.category` 컬럼 + 저작권 정책 한 단락 추가
 
-**PR2 — Scheduler integration (다음 PR)**
+**PR2 — Scheduler integration ✅ 인수**
 
-- [ ] `app/scheduler/jobs.py` — `collect_news` 잡 (8번째, 19:00 KST). NEWS_COLLECTION_ENABLED=false 시 NO_DATA + SUCCESS, true 시 NewsCollector 실행
-- [ ] `app/scheduler/scheduler.py` — `JOB_NAME_COLLECT_NEWS` + DEFAULT_SCHEDULE 등록
-- [ ] `app/config/settings.py` — `news_collection_enabled: bool = False` (default OFF)
-- [ ] `tests/integration/test_scheduler_jobs.py` registry 7 → 8 jobs + flag disabled NO_DATA / enabled SUCCESS 분기 ~3 케이스
-- 완료 기준 (PR2): backend pytest 401 → ~404 passed, 회귀 0건. 태그 `v0.5-news-collector`.
+- [x] `app/config/settings.py` — `news_collection_enabled: bool = False` (default OFF, `NEWS_COLLECTION_ENABLED` env var 매핑)
+- [x] `app/scheduler/jobs.py` — `JOB_NAME_COLLECT_NEWS` 상수 + `_resolve_news_provider(session)` helper + `collect_news(session)` 함수 (3-way branch: disabled → SKIPPED + reason="news_collection_disabled" / enabled+no_provider → SKIPPED + reason="no_provider_configured" / enabled+provider → NewsCollector 실행 + counters)
+- [x] `app/scheduler/scheduler.py` — `JOB_NAME_COLLECT_NEWS` import + DEFAULT_SCHEDULE 19:00 KST 등록
+- [x] `app/scheduler/jobs.py` `JOB_FUNCTIONS` registry 7 → **8 jobs**
+- [x] `tests/integration/test_scheduler_jobs.py` 갱신 — `test_job_functions_registry_covers_all_seven_jobs` → `..._eight_jobs` + `test_default_schedule_includes_collect_news_at_1900_kst` 추가 + `collect_news` 분기 테스트 4건 (disabled provider 미호출 검증 / enabled+no_provider SKIPPED / enabled+FakeNewsProvider 3 inserted / 멱등 재실행 3 skipped_duplicates)
+- [x] `tests/unit/test_project_structure.py::test_settings_defaults` — `news_collection_enabled is False` 단언 추가
+- [x] backend pytest **401 → 406 passed (+5)**, 회귀 0건. frontend vitest 60 / build / e2e 9 변경 없음
+- 완료 기준 (PR2): backend pytest 401 → 406 passed (+5), 회귀 0건. Phase A 누적 PR1+PR2 마감 → 태그 `v0.5-news-collector`.
 
 ### Phase B — Disclosure subset + 분류 + 종목 매핑
 

@@ -94,6 +94,14 @@ class Settings:
         default_factory=lambda: _as_bool(os.getenv("SCHEDULER_ENABLED"), True),
     )
 
+    # v0.5 Phase A — News collection opt-in.
+    # 외부 뉴스 / RSS 호출은 default OFF. 운영자가 .env 에 NEWS_COLLECTION_ENABLED=true
+    # 를 명시적으로 설정한 경우에만 collect_news 잡이 NewsCollector 를 실행한다.
+    # disabled 상태에서는 잡이 SKIPPED 로 즉시 종료 (외부 호출 0건).
+    news_collection_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("NEWS_COLLECTION_ENABLED"), False),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

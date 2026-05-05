@@ -35,6 +35,7 @@ from app.scheduler.jobs import (
     JOB_FUNCTIONS,
     JOB_NAME_CALCULATE_INDICATORS,
     JOB_NAME_COLLECT_MARKET_CLOSE,
+    JOB_NAME_COLLECT_NEWS,
     JOB_NAME_POST_MARKET_HOLDING_CHECK,
     JOB_NAME_PRE_MARKET_HOLDING_CHECK,
     JOB_NAME_SEND_RECOMMENDATION_REPORT,
@@ -46,6 +47,7 @@ from app.scheduler.jobs import (
     JobResult,
     calculate_technical_indicators,
     collect_market_close_data,
+    collect_news,
     run_job,
     run_post_market_holding_check,
     run_pre_market_holding_check,
@@ -1295,8 +1297,8 @@ def test_update_recommendation_results_via_run_job_records_partial_summary(
 
 # ---------- registry sanity ----------
 
-def test_job_functions_registry_covers_all_seven_jobs():
-    """v0.4 Phase B 에서 update_report_consensus_snapshots 가 추가되어 7개."""
+def test_job_functions_registry_covers_all_eight_jobs():
+    """v0.5 Phase A PR2 에서 collect_news 가 추가되어 8개."""
     assert set(JOB_FUNCTIONS) == {
         JOB_NAME_COLLECT_MARKET_CLOSE,
         JOB_NAME_CALCULATE_INDICATORS,
@@ -1305,7 +1307,118 @@ def test_job_functions_registry_covers_all_seven_jobs():
         JOB_NAME_POST_MARKET_HOLDING_CHECK,
         JOB_NAME_UPDATE_RECOMMENDATION_RESULTS,
         JOB_NAME_UPDATE_REPORT_CONSENSUS,
+        JOB_NAME_COLLECT_NEWS,
     }
+
+
+def test_default_schedule_includes_collect_news_at_1900_kst():
+    """v0.5 Phase A PR2 — collect_news 가 19:00 KST 슬롯에 등록되어 있어야 한다."""
+    from app.scheduler.scheduler import DEFAULT_SCHEDULE
+
+    assert JOB_NAME_COLLECT_NEWS in DEFAULT_SCHEDULE
+    assert DEFAULT_SCHEDULE[JOB_NAME_COLLECT_NEWS] == (19, 0)
+
+
+# ---------- collect_news (v0.5 Phase A PR2) ----------
+
+def _settings_with_news_flag(*, enabled: bool):
+    """Build a Settings copy whose only deviation from .env is the news flag."""
+    from app.config.settings import Settings
+
+    s = Settings()
+    object.__setattr__(s, "news_collection_enabled", enabled)
+    return s
+
+
+def test_collect_news_disabled_returns_skipped_without_invoking_provider(session_factory):
+    """default (NEWS_COLLECTION_ENABLED=false) → SKIPPED, provider 호출 0건."""
+    from tests.mocks.fake_news_provider import FakeNewsProvider
+
+    spy_provider = FakeNewsProvider()
+
+    def fn(session):
+        session.info["settings"] = _settings_with_news_flag(enabled=False)
+        # Even if provider was injected, disabled flag should short-circuit
+        # before touching it.
+        session.info["news_provider"] = spy_provider
+        return collect_news(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_COLLECT_NEWS,
+        fn=fn,
+    )
+
+    assert outcome.status == JOB_STATUS_SUCCESS
+    assert outcome.result_summary["data_status"] == "SKIPPED"
+    assert outcome.result_summary["reason"] == "news_collection_disabled"
+    assert outcome.result_summary["fetched"] == 0
+    assert outcome.result_summary["inserted"] == 0
+    # Provider must NOT have been called when the feature is disabled.
+    assert spy_provider.calls == []
+
+
+def test_collect_news_enabled_without_provider_returns_skipped(session_factory):
+    """enabled=true 이지만 provider 미주입 → SKIPPED + reason=no_provider_configured."""
+
+    def fn(session):
+        session.info["settings"] = _settings_with_news_flag(enabled=True)
+        # Intentionally do NOT inject session.info["news_provider"]
+        return collect_news(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_COLLECT_NEWS,
+        fn=fn,
+    )
+
+    assert outcome.status == JOB_STATUS_SUCCESS
+    assert outcome.result_summary["data_status"] == "SKIPPED"
+    assert outcome.result_summary["reason"] == "no_provider_configured"
+
+
+def test_collect_news_enabled_with_fake_provider_inserts_three_rows(session_factory):
+    """enabled=true + FakeNewsProvider → SUCCESS + counters populated."""
+    from tests.mocks.fake_news_provider import FakeNewsProvider
+
+    def fn(session):
+        session.info["settings"] = _settings_with_news_flag(enabled=True)
+        session.info["news_provider"] = FakeNewsProvider()
+        return collect_news(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_COLLECT_NEWS,
+        fn=fn,
+    )
+
+    assert outcome.status == JOB_STATUS_SUCCESS
+    summary = outcome.result_summary
+    assert summary["data_status"] == "SUCCESS"
+    # FakeNewsProvider 의 default sample 은 3 row
+    assert summary["fetched"] == 3
+    assert summary["inserted"] == 3
+    assert summary["skipped_duplicates"] == 0
+    assert summary["truncated_summaries"] == 0
+
+
+def test_collect_news_enabled_re_run_is_idempotent(session_factory):
+    """동일 데이터를 두 번 fetch → 두 번째는 skipped_duplicates=3, inserted=0."""
+    from tests.mocks.fake_news_provider import FakeNewsProvider
+
+    provider = FakeNewsProvider()
+
+    def fn(session):
+        session.info["settings"] = _settings_with_news_flag(enabled=True)
+        session.info["news_provider"] = provider
+        return collect_news(session)
+
+    run_job(session_factory=session_factory, job_name=JOB_NAME_COLLECT_NEWS, fn=fn)
+    second = run_job(session_factory=session_factory, job_name=JOB_NAME_COLLECT_NEWS, fn=fn)
+
+    assert second.result_summary["fetched"] == 3
+    assert second.result_summary["inserted"] == 0
+    assert second.result_summary["skipped_duplicates"] == 3
 
 
 def test_run_job_with_registered_function(session_factory):

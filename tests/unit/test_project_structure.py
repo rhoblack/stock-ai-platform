@@ -14,6 +14,9 @@ def test_settings_defaults():
     assert settings.indicator_universe_name == "MARKET_CAP_TOP_500"
     assert settings.indicator_lookback_days == 250
     assert settings.indicator_batch_size == 100
+    # v0.5 Phase A PR2 — 뉴스 자동 수집은 default OFF. 운영자가 .env 에
+    # NEWS_COLLECTION_ENABLED=true 를 명시 설정한 경우에만 enable.
+    assert settings.news_collection_enabled is False
 
 
 def test_interfaces_importable():
