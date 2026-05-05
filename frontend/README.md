@@ -130,7 +130,13 @@ frontend/
   - Recommendations: rank / 등급 / 시장 / 종목 / total_score / 5컴포넌트 점수 / risk / 1·3·5·20일 close_return / 사유 / risk_note. 5분 자동 새로고침. `/recommendations/runs/:runId` 로 특정 run 상세 보기 지원.
   - Recommendation History: 4 metric card (run 수 / 총 추천 / avg success_rate / avg close_return 5d) + 2 Recharts 추세 라인 (success_rate, avg_close_return_5d) + run 별 표 (run_date 클릭 → 해당 run 상세). 5분 자동 새로고침.
   - 테스트: Recommendations 4건 (happy / empty / error 404 / `:runId` 라우팅) + History 3건 (happy / empty / error 500). jsdom ResizeObserver mock 추가 (Recharts ResponsiveContainer 의존).
-- [ ] (Phase D) Holdings + Stock Detail
+- [x] **Phase D** — 보유 종목 점검 + 종목 상세 화면 실 데이터 연동
+  - hooks: `useHoldings`, `useLatestHoldingChecks`, `useHoldingChecksForSymbol`, `useStockDetail`
+  - shared components 추가: `KeyValueGrid`
+  - Holdings: 좌측 보유 list (symbol/qty/avg_buy/strategy/decision/risk/return/alert) + 우측 선택 종목 패널 (4 metric card + KeyValueGrid + total_score/return_rate 추세 라인 2개 + 최근 점검 펼침 표). 행 클릭 → `/holdings/:symbol`. "종목 상세 →" 링크 → `/stocks/:symbol`. 60초 자동 새로고침.
+  - Stock Detail: 헤더 (name/symbol/market/sector) + 최신 가격 (open/high/low/close/volume/trading_value) + 최신 지표 (MA5/20/60/120 / RSI14 / MACD / volume_ratio_20d / breakout / ma_alignment / technical_score) + 최근 추천 이력 표 (rank/grade/total/risk + 1·3·5·20일 close_return + 사유) + 최근 보유 점검 표.
+  - 테스트: Holdings 4건 (happy with checks merge / row-click → trend panel + 4 metrics / empty / error 500) + StockDetail 3건 (happy 5 sections / empty placeholders / error 404).
+- [ ] (Phase E) MarketCap Top + Settings
 - [ ] (Phase E) MarketCap Top + Settings
 - [ ] (Phase F) Playwright e2e + Docker 배포 + `RELEASE_NOTES_v0.2_FRONTEND.md`
 

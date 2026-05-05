@@ -22,6 +22,7 @@ export function AppRoutes() {
         <Route path="recommendations/history" element={<RecommendationHistoryPage />} />
         <Route path="recommendations/runs/:runId" element={<RecommendationsPage />} />
         <Route path="holdings" element={<HoldingsPage />} />
+        <Route path="holdings/:symbol" element={<HoldingsPage />} />
         <Route path="stocks" element={<StockDetailPage />} />
         <Route path="stocks/:symbol" element={<StockDetailPage />} />
         <Route path="universe/market-cap-top" element={<MarketCapTopPage />} />

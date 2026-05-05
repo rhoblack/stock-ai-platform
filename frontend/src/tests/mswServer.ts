@@ -36,6 +36,30 @@ export const handlers = [
   http.get('*/api/recommendations/:runId', () =>
     HttpResponse.json({ detail: 'not found' }, { status: 404 }),
   ),
+  http.get('*/api/holdings', () => HttpResponse.json({ items: [] })),
+  http.get('*/api/holdings/checks/latest', () => HttpResponse.json({ items: [] })),
+  http.get('*/api/holdings/:symbol/checks', () =>
+    HttpResponse.json({
+      items: [],
+      summary: {
+        total_check_count: 0,
+        alert_count: 0,
+        high_risk_count: 0,
+        latest_check_date: null,
+        latest_total_score: null,
+        previous_total_score: null,
+        total_score_change: null,
+        latest_return_rate: null,
+        best_return_rate: null,
+        worst_return_rate: null,
+        latest_decision: null,
+        latest_risk_level: null,
+      },
+    }),
+  ),
+  http.get('*/api/stocks/:symbol', () =>
+    HttpResponse.json({ detail: 'not found' }, { status: 404 }),
+  ),
 ]
 
 export const server = setupServer(...handlers)
