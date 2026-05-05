@@ -12,6 +12,13 @@ permissions:
 # 모든 잡에 공통으로 강제하는 안전 / mock 환경. v0.1 정책 (read-only / 자동매매
 # 부재 / 실 KIS·실 텔레그램 호출 부재) 을 CI 에서도 그대로 강제한다.
 env:
+  # GitHub Actions Runner 의 Node 20 deprecation 경고를 차단하기 위해 모든
+  # JavaScript-based 액션 (actions/checkout, setup-python, setup-node,
+  # actions/cache, upload-artifact 등) 을 Node 24 런타임으로 강제한다.
+  # GitHub 일정: 2026-06-02 부터 Node 24 가 default, 2026-09-16 부터 Node 20
+  # 제거. 미리 opt-in 해 노이즈 0건 + 전환 시 무중단을 확보한다. 미인식
+  # 환경에서는 runner 가 자동으로 무시하므로 fail-open 안전 옵션이다.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   APP_ENV: ci
   TIMEZONE: Asia/Seoul
   LOG_TO_FILE: 'false'
