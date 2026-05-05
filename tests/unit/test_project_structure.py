@@ -36,8 +36,16 @@ def test_fastapi_app_metadata():
 
 
 def test_health_check_endpoint():
+    """/health 응답이 현재 Settings.app_env 를 그대로 반영하는지 검증.
+
+    `app_env` 는 APP_ENV 환경 변수로 주입되므로 로컬 (`local`) 과 CI (`ci`)
+    에서 값이 달라진다. 테스트는 하드코딩 대신 ``get_settings().app_env`` 를
+    참조해 환경 무관하게 통과하도록 한다 (`/health` 의 계약은 "현재 설정의
+    `app_env` 를 그대로 노출한다" 이며, 그 계약을 그대로 단언한다).
+    """
     from fastapi.testclient import TestClient
 
+    from app.config.settings import get_settings
     from app.main import app
 
     client = TestClient(app)
@@ -47,5 +55,5 @@ def test_health_check_endpoint():
     assert response.json() == {
         "status": "ok",
         "app": "stock_ai_platform",
-        "env": "local",
+        "env": get_settings().app_env,
     }
