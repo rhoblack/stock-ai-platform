@@ -28,7 +28,7 @@ ai 10% - risk_penalty) 는 변경하지 않는다 — `news_score` 가 placehold
 |---|---|---|---|
 | A | News data layer (`NewsProviderInterface` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 19:00 KST) | ✅ 인수 (PR1: pytest 382 → 401 / PR2: 401 → 406, 회귀 0건) | `v0.5-news-collector` |
 | B | Disclosure subset + 분류 5종 + `collect_disclosures` 잡 (20:00 KST) | ✅ 인수 (backend pytest 406 → 440, 회귀 0건) | `v0.5-disclosure-pipeline` |
-| C | `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine 통합 | ⏳ | `v0.5-news-score` |
+| C | `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine·HoldingCheckEngine·RiskEngine 통합 | ✅ 인수 (backend pytest 440 → 470 passed (+30), 회귀 0건) | `v0.5-news-score` |
 | D | 백엔드 `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` + 프런트 `/themes` 9번째 화면 + StockDetail 영향 강화 | ⏳ | `v0.5-frontend-themes` |
 | E | `RELEASE_NOTES_v0.5.md` + README / PROJECT_STATUS / TASKS / ARCHITECTURE 마감 + tag `v0.5-final` | ⏳ | `v0.5-final` |
 
@@ -91,6 +91,24 @@ ai 10% - risk_penalty) 는 변경하지 않는다 — `news_score` 가 placehold
 - `DB_SCHEMA.md` §8 `news_items.category` 설명 보강 — 뉴스/공시 통합 저장 + DisclosureCollector keyword priority 명시.
 - `INTEGRATION_RUNBOOK.md` §11 신규 — 5 단락 (기본 동작 / opt-in / 분류 룰 표 / 수동 트리거 / 운영 점검 / 롤백). §10 News 와 동일 패턴.
 - 회귀: backend pytest **406 → 440 passed (+34)**. frontend vitest 60 / build / e2e 9 변경 없음. KIS / Telegram / API 라우터 / 프런트 / 자동매매 / 외부 호출 일체 변경 0건. DISCLOSURE_COLLECTION_ENABLED default false 라 프로덕션 동작 영향 0건 (8 잡 timeline + 20:00 SKIPPED 1 잡 추가).
+
+### Phase C 결과 (요약) — RealNewsScoreProducer + DisclosureRiskProducer + RiskEngine 보강
+
+> v0.1 의 `DummyScoreProducer.news_score = 50` placeholder 가 **처음으로 real
+> 값으로 교체**됨. RecommendationEngine / HoldingCheckEngine / RiskEngine 모두
+> 새 producer 를 받지만, **추천·보유 본 weight 산식은 0건 변경**. v0.4-final
+> 까지의 모든 회귀 테스트 그대로 통과.
+
+- `app/analysis/score_producers.py` 전면 정리 — `ScoreProducerInterface` ABC 추출. `DummyScoreProducer` 가 ABC 구현체로 유지 (기존 호출자 호환). `RealNewsScoreProducer` (composition pattern, fallback 으로 supply/fundamental/earnings/ai 위임) + `DisclosureRiskProducer` (14일 윈도우 + RISK_DISCLOSURE 카테고리) 신규.
+- 산식: `news_score = clip(50 + weighted_sentiment * 5 / max(news_count, 1), 0, 100)`. recency 가중치 (≤24h:1.0 / ≤3d:0.7 / ≤7d:0.3 / 그 외:0) × sentiment value (POSITIVE=+1 / NEUTRAL,UNKNOWN=0 / NEGATIVE=-1). `news_count = 0 → 50` (Dummy fallback 호환). SQLite/Postgres tz roundtrip 호환 (`_to_naive_utc` helper).
+- `DisclosureRiskProducer.evaluate(symbol)`: 14일 이내 RISK_DISCLOSURE 카테고리 news_items 조회 → `penalty_addition = min(count × 3, 10)` cap → `flag = "RISK_DISCLOSURE"` (count>0 시).
+- `app/decision/risk_engine.py` — `evaluate_recommendation` / `evaluate_holding` 에 `disclosure_risk_count: int = 0` + `disclosure_penalty_addition: Decimal = 0` 파라미터 추가. count > 0 시 `RISK_FLAG_DISCLOSURE` 추가 + penalty 가산. **default 0 으로 backward compat** — v0.4 이전 호출자 영향 0.
+- `app/decision/recommendation_engine.py` — constructor 에 `disclosure_risk_producer: DisclosureRiskProducer | None = None` 추가. `score_producer` 타입 `DummyScoreProducer | None` → `ScoreProducerInterface | None`. `generate()` 에서 producer 호출 → RiskEngine 에 disclosure 파라미터 전달 → `_Candidate.disclosure_risk_evidence` 저장 → `_persist_candidate()` 에서 `data_snapshots.market_context_json` + `decision_logs.rule_result_json` 양쪽에 `news_evidence` (components.metadata 에서 추출) + `disclosure_risk_evidence` 기록.
+- `app/decision/holding_check_engine.py` — 동일 패턴. ScoringEngine 본 산식 / 3-pass 흐름 변경 0건. news_score 만 real 화 + RiskEngine 에 disclosure 파라미터 전달 + 양쪽 evidence 기록.
+- **저작권 / 안전 정책 강제**: producer 가 evidence 빌더에서 `title / url / provider / published_at / sentiment` 만 노출 (body / content / full_text / source_file_path 등 0건). 단위 테스트가 evidence 의 키 집합을 명시 단언.
+- `tests/unit/test_real_news_score_producer.py` 신규 — **17 케이스** (RealNewsScoreProducer 9 + DisclosureRiskProducer 8). `tests/integration/test_recommendation_engine.py` 보강 5건 + `test_holding_check_engine.py` 보강 3건 + `test_risk_engine.py` 보강 5건.
+- 회귀: backend pytest **440 → 470 passed (+30)**. frontend vitest 60 / build / e2e 9 변경 없음. ScoringEngine 본 weight (technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%) 산식 0건 변경 — `news_score` 가 50 → real 로 교체될 뿐 가중치 25% 그대로.
+- API 라우터 / 프런트 / KIS / Telegram / 자동매매 일체 변경 0건. `news_evidence` / `disclosure_risk_evidence` 의 명시적 schema 필드 추가 (RecommendationItemSchema 등) 는 frontend 노출 시점인 **Phase D 로 이연** — 지금은 JSON 컬럼 (`market_context_json` / `rule_result_json`) 에 저장만.
 
 ### 후보 비교 / 선택 사유 (요약)
 

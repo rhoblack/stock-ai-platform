@@ -718,3 +718,199 @@ def test_engine_top_n_zero_yields_empty_run(session):
     assert result.candidate_count == 1
     assert result.saved_count == 0
     assert RecommendationRepository(session).list_by_run_id(result.run_id) == []
+
+
+# ---------------------------------------------------------------------------
+# v0.5 Phase C — RealNewsScoreProducer + DisclosureRiskProducer integration
+# ---------------------------------------------------------------------------
+
+
+def _make_engine_with_news_and_disclosure(
+    session,
+    *,
+    now,
+):
+    """Engine wired with RealNewsScoreProducer + DisclosureRiskProducer."""
+    from app.analysis.score_producers import (
+        DisclosureRiskProducer,
+        RealNewsScoreProducer,
+    )
+    from app.data.repositories import NewsItemRepository
+
+    news_repo = NewsItemRepository(session)
+    return RecommendationEngine(
+        scoring_engine=ScoringEngine(),
+        risk_engine=RiskEngine(),
+        universe_repository=StockUniverseRepository(session),
+        member_repository=StockUniverseMemberRepository(session),
+        stock_repository=StockRepository(session),
+        indicator_repository=StockIndicatorRepository(session),
+        snapshot_repository=DataSnapshotRepository(session),
+        run_repository=RecommendationRunRepository(session),
+        recommendation_repository=RecommendationRepository(session),
+        decision_log_repository=DecisionLogRepository(session),
+        score_producer=RealNewsScoreProducer(news_repo, now=now),
+        disclosure_risk_producer=DisclosureRiskProducer(news_repo, now=now),
+    )
+
+
+def test_engine_uses_real_news_score_when_news_present(session):
+    """RealNewsScoreProducer 가 주입되면 placeholder 50 대신 실 news_score 가 반영된다."""
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="삼성전자",
+        technical_score=Decimal("70"),
+    )
+    # Seed 1 POSITIVE news within ≤24h
+    from app.data.repositories import NewsItemRepository
+
+    NewsItemRepository(session).upsert_by_url(
+        url="https://example.com/news/005930/positive",
+        published_at=_dt(2026, 5, 4, 0, 0, tzinfo=_tz.utc),
+        source="UnitTest",
+        title="positive news",
+        related_symbols=["005930"],
+        sentiment="POSITIVE",
+        category="NEWS",
+    )
+    session.commit()
+
+    engine = _make_engine_with_news_and_disclosure(
+        session, now=_dt(2026, 5, 4, 12, 0, tzinfo=_tz.utc),
+    )
+    result = engine.generate(run_date=date(2026, 5, 4))
+    session.commit()
+    assert result.saved_count == 1
+
+    rec = RecommendationRepository(session).list_by_run_id(result.run_id)[0]
+    # 50 + 1.0 * 5 / 1 = 55 (POSITIVE 1, recency 1.0)
+    assert rec.news_score == Decimal("55.0000")
+
+
+def test_engine_records_news_evidence_in_decision_log(session):
+    """decision_logs.rule_result_json["news_evidence"] 필드가 채워진다."""
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="삼성전자",
+        technical_score=Decimal("70"),
+    )
+    from app.data.repositories import NewsItemRepository
+
+    NewsItemRepository(session).upsert_by_url(
+        url="https://example.com/news/005930/p",
+        published_at=_dt(2026, 5, 4, 0, 0, tzinfo=_tz.utc),
+        source="W1",
+        title="positive headline",
+        related_symbols=["005930"],
+        sentiment="POSITIVE",
+        category="NEWS",
+    )
+    session.commit()
+
+    engine = _make_engine_with_news_and_disclosure(
+        session, now=_dt(2026, 5, 4, 12, 0, tzinfo=_tz.utc),
+    )
+    result = engine.generate(run_date=date(2026, 5, 4))
+    session.commit()
+
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    news_ev = log.rule_result_json["news_evidence"]
+    assert news_ev["news_count"] == 1
+    assert news_ev["positive_count"] == 1
+    assert news_ev["top_news"][0]["title"] == "positive headline"
+    # Safe-fields-only — no body/content/full_text
+    assert set(news_ev["top_news"][0].keys()) == {
+        "title", "url", "provider", "published_at", "sentiment",
+    }
+
+
+def test_engine_records_disclosure_risk_evidence_and_flag(session):
+    """RISK_DISCLOSURE 가 14일 이내에 발견되면 flag 추가 + penalty 가산 + evidence 기록."""
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="삼성전자",
+        technical_score=Decimal("70"),
+    )
+    from app.data.repositories import NewsItemRepository
+
+    repo = NewsItemRepository(session)
+    repo.upsert_by_url(
+        url="https://example.com/disc/005930/halt",
+        published_at=_dt(2026, 5, 2, 0, 0, tzinfo=_tz.utc),
+        source="DART",
+        title="거래정지",
+        related_symbols=["005930"],
+        sentiment="NEGATIVE",
+        category="RISK_DISCLOSURE",
+    )
+    session.commit()
+
+    engine = _make_engine_with_news_and_disclosure(
+        session, now=_dt(2026, 5, 4, 12, 0, tzinfo=_tz.utc),
+    )
+    result = engine.generate(run_date=date(2026, 5, 4))
+    session.commit()
+
+    rec = RecommendationRepository(session).list_by_run_id(result.run_id)[0]
+    assert rec.risk_score == Decimal("3.0000")  # 1 disclosure × 3
+
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    assert "RISK_DISCLOSURE" in log.risk_result_json["alerts"]
+    disc_ev = log.rule_result_json["disclosure_risk_evidence"]
+    assert disc_ev["risk_disclosure_count"] == 1
+    assert disc_ev["recent_risk_disclosures"][0]["title"] == "거래정지"
+
+
+def test_engine_no_news_no_disclosure_keeps_default_dummy_behavior(session):
+    """RealNewsScoreProducer 주입했지만 news_items 비어 있으면 placeholder 50 유지."""
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="삼성전자",
+        technical_score=Decimal("70"),
+    )
+
+    engine = _make_engine_with_news_and_disclosure(
+        session, now=_dt(2026, 5, 4, 12, 0, tzinfo=_tz.utc),
+    )
+    result = engine.generate(run_date=date(2026, 5, 4))
+    session.commit()
+
+    rec = RecommendationRepository(session).list_by_run_id(result.run_id)[0]
+    assert rec.news_score == Decimal("50.0000")  # neutral fallback
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    # disclosure_risk_evidence is recorded (count=0) since producer was injected
+    assert log.rule_result_json["disclosure_risk_evidence"]["risk_disclosure_count"] == 0
+    # No RISK_DISCLOSURE flag
+    assert "RISK_DISCLOSURE" not in log.risk_result_json["alerts"]
+
+
+def test_engine_dummy_only_does_not_emit_evidence(session):
+    """Backward compat: DummyScoreProducer-only 주입 시 evidence 필드는 None."""
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session, universe=universe, symbol="005930", name="삼성전자",
+        technical_score=Decimal("70"),
+    )
+
+    engine = _make_engine(session)  # default DummyScoreProducer, no disclosure producer
+    result = engine.generate(run_date=date(2026, 5, 4))
+    session.commit()
+
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    # evidence keys exist but are None (or absent — both acceptable; we set None)
+    assert log.rule_result_json.get("news_evidence") is None
+    assert log.rule_result_json.get("disclosure_risk_evidence") is None
+    # No RISK_DISCLOSURE flag, existing risk flags work as before
+    assert "RISK_DISCLOSURE" not in log.risk_result_json["alerts"]

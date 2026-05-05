@@ -29,7 +29,12 @@ from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from app.analysis.score_producers import DummyScoreProducer, HoldingComponentScores
+from app.analysis.score_producers import (
+    DisclosureRiskProducer,
+    DummyScoreProducer,
+    HoldingComponentScores,
+    ScoreProducerInterface,
+)
 from app.data.repositories.daily_prices import DailyPriceRepository
 from app.data.repositories.decision_logs import DecisionLogRepository
 from app.data.repositories.holdings import HoldingRepository
@@ -222,11 +227,13 @@ class HoldingCheckEngine:
         snapshot_repository: DataSnapshotRepository,
         holding_check_repository: HoldingCheckRepository,
         decision_log_repository: DecisionLogRepository,
-        score_producer: DummyScoreProducer | None = None,
+        score_producer: ScoreProducerInterface | None = None,
+        disclosure_risk_producer: DisclosureRiskProducer | None = None,
     ) -> None:
         self._scoring_engine = scoring_engine
         self._risk_engine = risk_engine
         self._score_producer = score_producer or DummyScoreProducer()
+        self._disclosure_risk_producer = disclosure_risk_producer
         self._holding_repository = holding_repository
         self._daily_price_repository = daily_price_repository
         self._indicator_repository = indicator_repository
@@ -319,6 +326,13 @@ class HoldingCheckEngine:
             before_type=check_type,
         )
 
+        # v0.5 Phase C — disclosure risk feed
+        disclosure_result = (
+            self._disclosure_risk_producer.evaluate(holding.symbol)
+            if self._disclosure_risk_producer is not None
+            else None
+        )
+
         # Pass 2: RiskEngine consumes pre-penalty current_total_score.
         assessment = self._risk_engine.evaluate_holding(
             technical_score=indicator.technical_score,
@@ -329,6 +343,16 @@ class HoldingCheckEngine:
             current_price=current_price,
             ma20=indicator.ma20,
             return_rate=return_rate,
+            disclosure_risk_count=(
+                disclosure_result.risk_disclosure_count
+                if disclosure_result is not None
+                else 0
+            ),
+            disclosure_penalty_addition=(
+                disclosure_result.penalty_addition
+                if disclosure_result is not None
+                else Decimal("0")
+            ),
         )
 
         # Pass 3: final scoring with risk_penalty applied.
@@ -349,6 +373,12 @@ class HoldingCheckEngine:
             risk_flags=assessment.risk_flags,
         )
 
+        # v0.5 Phase C — extract evidence dicts for snapshot + decision_log
+        news_evidence = (components.metadata or {}).get("news_evidence")
+        disclosure_risk_evidence = (
+            disclosure_result.evidence if disclosure_result is not None else None
+        )
+
         snapshot = self._snapshot_repository.add(
             DataSnapshot(
                 snapshot_time=started_at,
@@ -363,6 +393,8 @@ class HoldingCheckEngine:
                     "phase": self.PHASE_TAG,
                     "component_score_metadata": components.metadata,
                     "risk_summary": _serialize_risk_summary(assessment),
+                    "news_evidence": news_evidence,
+                    "disclosure_risk_evidence": disclosure_risk_evidence,
                 },
             ),
         )
@@ -405,6 +437,8 @@ class HoldingCheckEngine:
             "current_price": _decimal_to_str(current_price),
             "avg_buy_price": _decimal_to_str(holding.avg_buy_price),
             "grade": grade,
+            "news_evidence": news_evidence,
+            "disclosure_risk_evidence": disclosure_risk_evidence,
         }
 
         self._decision_log_repository.add(

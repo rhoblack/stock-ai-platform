@@ -34,6 +34,10 @@ RISK_FLAG_VOLUME_RATIO_EXTREME = "VOLUME_RATIO_EXTREME"
 RISK_FLAG_SCORE_DROP = "SCORE_DROP"
 RISK_FLAG_MA20_BREAKDOWN = "MA20_BREAKDOWN"
 RISK_FLAG_STOP_LOSS_NEAR = "STOP_LOSS_NEAR"
+# v0.5 Phase C — fed by DisclosureRiskProducer (recent RISK_DISCLOSURE
+# news_items rows for the symbol). Penalty cap is enforced by the producer
+# (≤10) so RiskEngine can stay agnostic of the formula.
+RISK_FLAG_DISCLOSURE = "RISK_DISCLOSURE"
 
 RISK_LEVEL_LOW = "LOW"
 RISK_LEVEL_MEDIUM = "MEDIUM"
@@ -86,7 +90,19 @@ class RiskEngine:
         technical_score: Decimal | None,
         ma_alignment: str | None,
         volume_ratio_20d: Decimal | None,
+        disclosure_risk_count: int = 0,
+        disclosure_penalty_addition: Decimal = Decimal("0"),
     ) -> RiskAssessment:
+        """Evaluate new-watch-candidate risk.
+
+        v0.5 Phase C — ``disclosure_risk_count`` and ``disclosure_penalty_addition``
+        are computed upstream by :class:`app.analysis.score_producers.DisclosureRiskProducer`.
+        When count > 0, RISK_DISCLOSURE flag is appended and the (already-capped)
+        penalty addition is folded into the total. The penalty cap formula is
+        owned by DisclosureRiskProducer; RiskEngine only consumes the result.
+        Default 0 keeps behavior unchanged for callers that don't pass disclosure
+        data (v0.4 and earlier callers).
+        """
         flags: list[str] = []
         penalty = Decimal("0")
 
@@ -108,6 +124,10 @@ class RiskEngine:
             flags.append(RISK_FLAG_VOLUME_RATIO_EXTREME)
             penalty += self.PENALTY_VOLUME_EXTREME
 
+        if disclosure_risk_count > 0:
+            flags.append(RISK_FLAG_DISCLOSURE)
+            penalty += disclosure_penalty_addition
+
         capped = _quantize_penalty(min(penalty, self.PENALTY_CAP))
         level = self._classify_risk_level(capped)
         details = {
@@ -116,6 +136,8 @@ class RiskEngine:
             "volume_ratio_20d": _decimal_to_str(volume_ratio_20d),
             "low_technical_score_threshold": str(self.LOW_TECHNICAL_SCORE_THRESHOLD),
             "volume_ratio_extreme_threshold": str(self.VOLUME_RATIO_EXTREME_THRESHOLD),
+            "disclosure_risk_count": disclosure_risk_count,
+            "disclosure_penalty_addition": _decimal_to_str(disclosure_penalty_addition),
         }
         return RiskAssessment(
             risk_penalty=capped,
@@ -133,6 +155,8 @@ class RiskEngine:
         current_price: Decimal,
         ma20: Decimal | None,
         return_rate: Decimal | None,
+        disclosure_risk_count: int = 0,
+        disclosure_penalty_addition: Decimal = Decimal("0"),
     ) -> RiskAssessment:
         """Evaluate holding-check risk.
 
@@ -170,6 +194,10 @@ class RiskEngine:
             flags.append(RISK_FLAG_LOW_TECHNICAL_SCORE)
             penalty += self.PENALTY_LOW_TECH_HOLD
 
+        if disclosure_risk_count > 0:
+            flags.append(RISK_FLAG_DISCLOSURE)
+            penalty += disclosure_penalty_addition
+
         capped = _quantize_penalty(min(penalty, self.PENALTY_CAP))
         level = self._classify_risk_level(capped)
         details = {
@@ -182,6 +210,8 @@ class RiskEngine:
             "score_drop_threshold": str(self.SCORE_DROP_THRESHOLD),
             "stop_loss_return_threshold": str(self.STOP_LOSS_RETURN_THRESHOLD),
             "low_technical_score_threshold": str(self.LOW_TECHNICAL_SCORE_THRESHOLD),
+            "disclosure_risk_count": disclosure_risk_count,
+            "disclosure_penalty_addition": _decimal_to_str(disclosure_penalty_addition),
         }
         return RiskAssessment(
             risk_penalty=capped,

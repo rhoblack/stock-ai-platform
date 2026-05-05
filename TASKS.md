@@ -470,22 +470,22 @@ StockDetail 의 "관련 테마" 카드도 `impact_path` icon + reason 으로 가
 - [x] backend pytest **406 → 440 passed (+34)**, 회귀 0건. frontend vitest 60 / build / e2e 9 변경 없음
 - 완료 기준: backend pytest 406 → 440 passed (+34), 회귀 0건. 태그 `v0.5-disclosure-pipeline`.
 
-### Phase C — `RealNewsScoreProducer` + `DisclosureRiskProducer` + ScoreProducerInterface ABC
+### Phase C — `RealNewsScoreProducer` + `DisclosureRiskProducer` + ScoreProducerInterface ABC ✅ 인수
 
-- [ ] `app/analysis/score_producers.py` — `ScoreProducerInterface` ABC 추출 (DummyScoreProducer 는 ABC 구현체로 유지)
-- [ ] `app/analysis/score_producers.py` — `RealNewsScoreProducer` 신규 (산식: `clip(50 + recency_factor * 5 / news_count, 0, 100)`, news_count=0 시 50 fallback)
-- [ ] `app/analysis/score_producers.py` — `DisclosureRiskProducer` 신규 (RISK_DISCLOSURE 발견 시 risk_penalty +N, max +10)
-- [ ] `app/decision/risk_engine.py` — `evaluate_recommendation` / `evaluate_holding` 에 `RISK_DISCLOSURE` flag 처리
-- [ ] `app/decision/recommendation_engine.py` — score_producer 가 ABC 통해 주입. RealNewsScoreProducer 사용 시 NewsItemRepository 조회 + 산식 적용
-- [ ] `app/decision/recommendation_engine.py` — `decision_logs.rule_result_json["news_evidence"]` 추가 (top 3 / sentiment 분포 / recency)
-- [ ] `app/decision/holding_check_engine.py` — 동일 패턴 (산식 변경 0건, news_score 만 real 화)
-- [ ] `app/api/schemas.py` — `RecommendationItemSchema` / `HoldingCheckSchema` 의 `news_evidence: Optional[Dict]` 추가
-- [ ] `tests/unit/test_real_news_score_producer.py` 신규 (~10 케이스: 산식 / clip 경계 / news_count=0 / sentiment 분포 / recency 계산)
-- [ ] `tests/integration/test_recommendation_engine.py` RealNewsScoreProducer 시나리오 보강 ~3건
-- [ ] `tests/integration/test_risk_engine.py` `RISK_DISCLOSURE` flag 케이스 ~2건
-- [ ] `tests/integration/test_api_routes.py` `/api/recommendations/latest` 의 `news_evidence` 노출 검증 ~2건
-- [ ] HoldingCheckEngine / ScoringEngine 본 weight 산식 변경 0건 검증
-- 완료 기준: backend pytest ~398 → ~415 passed, 회귀 0건. 태그 `v0.5-news-score`.
+- [x] `app/analysis/score_producers.py` — `ScoreProducerInterface` ABC 추출. `DummyScoreProducer` 가 ABC 구현체로 유지 (기존 호출자 호환)
+- [x] `app/analysis/score_producers.py` — `RealNewsScoreProducer` 신규. composition 패턴 — fallback (default DummyScoreProducer) 가 supply/fundamental/earnings/ai 처리, news_score 만 NewsItemRepository 기반 real 화. 산식: `clip(50 + weighted_sentiment * 5 / max(news_count, 1), 0, 100)`. `news_count = 0 → 50` (Dummy fallback 호환). recency: ≤24h:1.0 / ≤3d:0.7 / ≤7d:0.3 / 그 외:0. SQLite/Postgres tz roundtrip 호환 (`_to_naive_utc` helper).
+- [x] `app/analysis/score_producers.py` — `DisclosureRiskProducer` + `DisclosureRiskResult`. 14일 윈도우 + symbol-first 필터 + category=RISK_DISCLOSURE. `penalty_addition = min(count × 3, 10)` cap. count=0 → flag=None / penalty=0. Evidence top 3 by recency.
+- [x] `app/decision/risk_engine.py` — `evaluate_recommendation` / `evaluate_holding` 에 `disclosure_risk_count: int = 0` + `disclosure_penalty_addition: Decimal = 0` 파라미터 추가. count > 0 시 `RISK_FLAG_DISCLOSURE` 추가 + penalty 가산. **default 0 으로 backward compat** (기존 호출자 영향 0). `details` 에 `disclosure_risk_count` / `disclosure_penalty_addition` 기록.
+- [x] `app/decision/recommendation_engine.py` — constructor 에 `disclosure_risk_producer` 옵션 추가 + `score_producer` 타입을 `ScoreProducerInterface` 로 확장. `generate()` 에서 producer 호출 → RiskEngine 에 disclosure 파라미터 전달 → `_Candidate.disclosure_risk_evidence` 저장 → `_persist_candidate()` 에서 `data_snapshots.market_context_json` + `decision_logs.rule_result_json` 양쪽에 `news_evidence` (components.metadata 에서 추출) + `disclosure_risk_evidence` 기록
+- [x] `app/decision/holding_check_engine.py` — 동일 패턴. ScoringEngine 본 산식 / 3-pass 흐름 변경 0건. news_score 만 real 화 + RiskEngine 에 disclosure 파라미터 전달 + 양쪽 evidence 기록
+- [x] API schema — `RecommendationItemSchema` / `HoldingCheckSchema` 의 `news_evidence` 별도 필드 추가는 **Phase D 로 이연** (사용자 spec "검토" 단계). evidence 는 `data_snapshots.market_context_json` + `decision_logs.rule_result_json` 에 이미 저장 — Phase D 의 frontend 노출 시점에 명시 schema 필드 추가
+- [x] **Safe-fields-only whitelist 강제**: producer 가 evidence 빌더에서 `title / url / provider / published_at / sentiment` 만 노출 (body / content / full_text / source_file_path 0건). 단위 테스트가 명시 단언
+- [x] `tests/unit/test_real_news_score_producer.py` 신규 — **17 케이스**: news_count=0 / 양수 recent / 음수 recent / 6일 (≤7d) / 7일 윈도우 외 제외 / mixed sentiment / evidence top 3 / fallback delegation / score_holding 패턴 + DisclosureRiskProducer 8 케이스 (no risk / 1 → 3 penalty / 3 → 9 penalty / 10 → cap 10 / 14일 윈도우 / symbol 필터 / non-risk category 제외 / evidence top 3)
+- [x] `tests/integration/test_recommendation_engine.py` RealNewsScoreProducer 시나리오 보강 5건 (real news_score persist / news_evidence in decision_log + safe fields / RISK_DISCLOSURE flag + evidence + penalty / no-news fallback to 50 / dummy-only backward compat with no evidence)
+- [x] `tests/integration/test_holding_check_engine.py` 보강 3건 (real news_score in HoldingCheck / RISK_DISCLOSURE flag + evidence / 기존 MA20_BREAKDOWN + STOP_LOSS_NEAR + RISK_DISCLOSURE 동시 누적 검증)
+- [x] `tests/unit/test_risk_engine.py` `RISK_DISCLOSURE` flag 케이스 5건 (default 0 backward compat / count>0 → flag+penalty / 기존 flags 와 누적 / holding default 0 / holding count>0)
+- [x] HoldingCheckEngine / ScoringEngine 본 weight 산식 변경 0건 검증 — 기존 회귀 테스트 모두 그대로 통과
+- 완료 기준: backend pytest **440 → 470 passed (+30)**, frontend vitest 60 / build / e2e 9 변경 없음, 회귀 0건. 태그 `v0.5-news-score`.
 
 ### Phase D — 테마 랭킹 화면 + StockDetail 영향 설명 강화
 

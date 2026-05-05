@@ -34,8 +34,10 @@ from app.analysis.report_score_calculator import (
     calculate_theme_signal_score,
 )
 from app.analysis.score_producers import (
+    DisclosureRiskProducer,
     DummyScoreProducer,
     RecommendationComponentScores,
+    ScoreProducerInterface,
 )
 from app.data.repositories.daily_prices import DailyPriceRepository
 from app.data.repositories.decision_logs import DecisionLogRepository
@@ -91,6 +93,9 @@ class _Candidate:
     report_score: ReportScoreResult | None = None
     theme_signal_score: ThemeSignalScoreResult | None = None
     score_adjustment: ScoreAdjustmentResult | None = None
+    # v0.5 Phase C — DisclosureRiskProducer evidence (None when producer is
+    # not injected, which is the v0.4 / earlier default behavior).
+    disclosure_risk_evidence: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -246,12 +251,13 @@ class RecommendationEngine:
         run_repository: RecommendationRunRepository,
         recommendation_repository: RecommendationRepository,
         decision_log_repository: DecisionLogRepository,
-        score_producer: DummyScoreProducer | None = None,
+        score_producer: ScoreProducerInterface | None = None,
         daily_price_repository: DailyPriceRepository | None = None,
         report_consensus_repository: ReportConsensusSnapshotRepository | None = None,
         theme_mapping_repository: ThemeStockMappingRepository | None = None,
         report_signal_event_repository: ReportSignalEventRepository | None = None,
         report_score_log_repository: ReportScoreLogRepository | None = None,
+        disclosure_risk_producer: DisclosureRiskProducer | None = None,
     ) -> None:
         self._scoring_engine = scoring_engine
         self._risk_engine = risk_engine
@@ -269,6 +275,7 @@ class RecommendationEngine:
         self._theme_mapping_repository = theme_mapping_repository
         self._report_signal_event_repository = report_signal_event_repository
         self._report_score_log_repository = report_score_log_repository
+        self._disclosure_risk_producer = disclosure_risk_producer
 
     def generate(
         self,
@@ -310,10 +317,25 @@ class RecommendationEngine:
                 skipped_no_indicator += 1
                 continue
 
+            disclosure_result = (
+                self._disclosure_risk_producer.evaluate(stock.symbol)
+                if self._disclosure_risk_producer is not None
+                else None
+            )
             risk = self._risk_engine.evaluate_recommendation(
                 technical_score=indicator.technical_score,
                 ma_alignment=indicator.ma_alignment,
                 volume_ratio_20d=indicator.volume_ratio_20d,
+                disclosure_risk_count=(
+                    disclosure_result.risk_disclosure_count
+                    if disclosure_result is not None
+                    else 0
+                ),
+                disclosure_penalty_addition=(
+                    disclosure_result.penalty_addition
+                    if disclosure_result is not None
+                    else Decimal("0")
+                ),
             )
             components = self._score_producer.score_recommendation(
                 stock=stock,
@@ -349,6 +371,11 @@ class RecommendationEngine:
                     report_score=report_score,
                     theme_signal_score=theme_signal_score,
                     score_adjustment=score_adjustment,
+                    disclosure_risk_evidence=(
+                        disclosure_result.evidence
+                        if disclosure_result is not None
+                        else None
+                    ),
                 ),
             )
 
@@ -411,6 +438,15 @@ class RecommendationEngine:
             theme_signal_score=candidate.theme_signal_score,
             score_adjustment=candidate.score_adjustment,
         )
+        # v0.5 Phase C — extract news_evidence (set by RealNewsScoreProducer)
+        # and disclosure_risk_evidence (set by DisclosureRiskProducer in
+        # generate()). Both are optional; absent when only DummyScoreProducer
+        # / no disclosure producer was injected.
+        news_evidence = (
+            (candidate.components.metadata or {}).get("news_evidence")
+        )
+        disclosure_risk_evidence = candidate.disclosure_risk_evidence
+
         snapshot = self._snapshot_repository.add(
             DataSnapshot(
                 snapshot_time=started_at,
@@ -427,6 +463,8 @@ class RecommendationEngine:
                     "component_score_metadata": candidate.components.metadata,
                     "risk_summary": _serialize_risk_summary(candidate.risk),
                     "report_evidence": report_evidence,
+                    "news_evidence": news_evidence,
+                    "disclosure_risk_evidence": disclosure_risk_evidence,
                 },
             ),
         )
@@ -485,6 +523,8 @@ class RecommendationEngine:
                     },
                     "score_producer": candidate.components.metadata,
                     "report_evidence": report_evidence,
+                    "news_evidence": news_evidence,
+                    "disclosure_risk_evidence": disclosure_risk_evidence,
                 },
                 ai_result_json=None,
                 risk_result_json=_serialize_risk_details(candidate.risk),

@@ -333,3 +333,91 @@ def test_risk_level_medium_at_5_inclusive():
 def test_risk_level_high_at_15_inclusive():
     assert RiskEngine._classify_risk_level(Decimal("15")) == RISK_LEVEL_HIGH
     assert RiskEngine._classify_risk_level(Decimal("100")) == RISK_LEVEL_HIGH
+
+
+# ---------- v0.5 Phase C — disclosure_risk_count flag ----------
+
+def test_recommendation_disclosure_risk_count_zero_no_flag():
+    """default disclosure_risk_count=0 → backward compat (기존 호출자 영향 0)."""
+    from app.decision.risk_engine import RISK_FLAG_DISCLOSURE
+
+    engine = RiskEngine()
+    result = engine.evaluate_recommendation(
+        technical_score=Decimal("80"),
+        ma_alignment="BULL",
+        volume_ratio_20d=Decimal("1.5"),
+    )
+    assert RISK_FLAG_DISCLOSURE not in result.risk_flags
+    assert result.risk_penalty == Decimal("0.0000")
+
+
+def test_recommendation_disclosure_risk_adds_flag_and_penalty():
+    """count > 0 → RISK_DISCLOSURE flag + penalty addition 가산."""
+    from app.decision.risk_engine import RISK_FLAG_DISCLOSURE
+
+    engine = RiskEngine()
+    result = engine.evaluate_recommendation(
+        technical_score=Decimal("80"),
+        ma_alignment="BULL",
+        volume_ratio_20d=Decimal("1.5"),
+        disclosure_risk_count=2,
+        disclosure_penalty_addition=Decimal("6"),
+    )
+    assert RISK_FLAG_DISCLOSURE in result.risk_flags
+    assert result.risk_penalty == Decimal("6.0000")
+    assert result.details["disclosure_risk_count"] == 2
+    assert result.details["disclosure_penalty_addition"] == "6"
+
+
+def test_recommendation_disclosure_combined_with_existing_flags():
+    """기존 BEARISH_MA + LOW_TECH 와 함께 RISK_DISCLOSURE 가 누적된다 (cap 50)."""
+    from app.decision.risk_engine import RISK_FLAG_DISCLOSURE
+
+    engine = RiskEngine()
+    result = engine.evaluate_recommendation(
+        technical_score=Decimal("10"),
+        ma_alignment="BEAR",
+        volume_ratio_20d=Decimal("1.5"),
+        disclosure_risk_count=3,
+        disclosure_penalty_addition=Decimal("9"),
+    )
+    # 10 (low_tech) + 8 (bear) + 9 (disclosure) = 27, < cap 50
+    assert RISK_FLAG_LOW_TECHNICAL_SCORE in result.risk_flags
+    assert RISK_FLAG_BEARISH_MA_ALIGNMENT in result.risk_flags
+    assert RISK_FLAG_DISCLOSURE in result.risk_flags
+    assert result.risk_penalty == Decimal("27.0000")
+
+
+def test_holding_disclosure_risk_count_zero_no_flag():
+    from app.decision.risk_engine import RISK_FLAG_DISCLOSURE
+
+    engine = RiskEngine()
+    result = engine.evaluate_holding(
+        technical_score=Decimal("70"),
+        current_total_score=Decimal("70"),
+        previous_total_score=None,
+        current_price=Decimal("110"),
+        ma20=Decimal("100"),
+        return_rate=Decimal("5"),
+    )
+    assert RISK_FLAG_DISCLOSURE not in result.risk_flags
+    assert result.risk_penalty == Decimal("0.0000")
+
+
+def test_holding_disclosure_risk_adds_flag_and_penalty():
+    from app.decision.risk_engine import RISK_FLAG_DISCLOSURE
+
+    engine = RiskEngine()
+    result = engine.evaluate_holding(
+        technical_score=Decimal("70"),
+        current_total_score=Decimal("70"),
+        previous_total_score=None,
+        current_price=Decimal("110"),
+        ma20=Decimal("100"),
+        return_rate=Decimal("5"),
+        disclosure_risk_count=4,
+        disclosure_penalty_addition=Decimal("10"),  # capped at producer
+    )
+    assert RISK_FLAG_DISCLOSURE in result.risk_flags
+    assert result.risk_penalty == Decimal("10.0000")
+    assert result.details["disclosure_risk_count"] == 4

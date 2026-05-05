@@ -10,10 +10,10 @@
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **335 passed** (v0.1 296 → v0.3 319 → v0.4 Phase A 335) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **59 passed** (12 파일, jsdom + msw v2) |
+| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **470 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 Phase A PR1 401 → PR2 406 → Phase B 440 → Phase C 470) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **60 passed** (12 파일, jsdom + msw v2) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, vendor-charts 청크 383 kB / gzip 105 kB) |
-| Playwright e2e | `cd frontend && npx playwright test` | **8 passed** (chromium + page.route mock) |
+| Playwright e2e | `cd frontend && npx playwright test` | **9 passed** (chromium + page.route mock) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
@@ -211,6 +211,21 @@ v0.4 Phase A 에서 **통합 테스트 16건** 신규 (`tests/integration/test_a
   `source_file_path` 마스킹 검증 / programmatic entry
 - `tests/integration/test_consensus_snapshot_job.py` — NO_DATA / 다종목 산정 /
   90일 윈도우 외 제외 / non-COMPANY 제외 / 멱등 upsert / job_runs 기록
+
+## 6.9 v0.5 Phase A/B/C — News, Disclosure, RealNewsScoreProducer 테스트
+
+v0.5 cycle 의 News + Disclosure + 점수 실제화 테스트 카운트:
+
+- Phase A PR1 (data layer skeleton) — `tests/integration/test_news_collector.py` 신규 19 케이스 (DTO 본문 필드 0 가드 / FakeNewsProvider determinism / collector 멱등 / category persist / repository 메서드)
+- Phase A PR2 (scheduler integration) — `tests/integration/test_scheduler_jobs.py` 보강 5 케이스 (registry 7→8 jobs / 19:00 schedule / collect_news 3-way branch / 멱등) + `test_settings_defaults` 의 `news_collection_enabled is False` 단언
+- Phase B (Disclosure subset) — `tests/integration/test_disclosure_collector.py` 신규 24 케이스 (DTO 가드 / classify_disclosure 18 (parametrized Korean keywords + priority RISK > EARNINGS > GOVERNANCE / OTHER fallback) / FakeDisclosureProvider 4 / collector flow 7) + scheduler 보강 5 케이스 (registry 8→9 / 20:00 / collect_disclosures 분기 / 멱등) + `test_settings_defaults` 의 `disclosure_collection_enabled is False`
+- Phase C (RealNewsScoreProducer + DisclosureRiskProducer) — `tests/unit/test_real_news_score_producer.py` 신규 17 케이스 (RealNews 9: news_count=0 / 양수·음수 recent / 6일·7일 윈도우 / mixed sentiment / evidence top 3 / fallback delegation / score_holding 패턴 + Disclosure 8: no risk / penalty 3·9·cap10 / 14일 윈도우 / symbol 필터 / non-risk 제외 / evidence top 3) + RecommendationEngine 보강 5 케이스 + HoldingCheckEngine 보강 3 케이스 + RiskEngine 보강 5 케이스
+
+핵심 안전 가드:
+- DTO 본문 필드 0 — `dataclass.fields(NewsItemDTO)` / `DisclosureItemDTO` 명시 단언
+- Evidence safe-fields whitelist — top_news / recent_risk_disclosures 의 dict key 가 정확히 `{title, url, provider, published_at, sentiment}` (또는 sentiment 제외 disclosure 세트) 인지 단언. body / content / full_text / source_file_path 0건
+- collect_news / collect_disclosures default OFF — disabled spy provider 의 `calls == []` 명시 검증 (외부 호출 0건 가드)
+- ScoringEngine 본 weight (technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%) 산식 변경 0건 — Phase C 가 news_score 만 50 → real 로 교체, 기존 추천 / 보유 회귀 테스트 그대로 통과
 
 ## 7. 금지 사항
 

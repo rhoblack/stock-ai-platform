@@ -507,3 +507,144 @@ def test_engine_does_not_compute_alerts_when_ma20_missing(session):
     log = DecisionLogRepository(session).list_by_symbol("005930")[0]
     assert log.risk_result_json["alerts"] == []
     assert log.risk_result_json["ma20"] is None
+
+
+# ---------------------------------------------------------------------------
+# v0.5 Phase C — RealNewsScoreProducer + DisclosureRiskProducer integration
+# ---------------------------------------------------------------------------
+
+
+def _make_engine_with_phase_c(session, *, now):
+    """HoldingCheckEngine wired with RealNewsScoreProducer + DisclosureRiskProducer."""
+    from app.analysis.score_producers import (
+        DisclosureRiskProducer,
+        RealNewsScoreProducer,
+    )
+    from app.data.repositories import NewsItemRepository
+
+    news_repo = NewsItemRepository(session)
+    return HoldingCheckEngine(
+        scoring_engine=ScoringEngine(),
+        risk_engine=RiskEngine(),
+        holding_repository=HoldingRepository(session),
+        daily_price_repository=DailyPriceRepository(session),
+        indicator_repository=StockIndicatorRepository(session),
+        snapshot_repository=DataSnapshotRepository(session),
+        holding_check_repository=HoldingCheckRepository(session),
+        decision_log_repository=DecisionLogRepository(session),
+        score_producer=RealNewsScoreProducer(news_repo, now=now),
+        disclosure_risk_producer=DisclosureRiskProducer(news_repo, now=now),
+    )
+
+
+def test_holding_engine_uses_real_news_score_when_news_present(session):
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    from app.data.repositories import NewsItemRepository
+
+    _seed_holding(session, symbol="005930", avg_buy_price=Decimal("100"))
+    _seed_price(session, symbol="005930", price_date=date(2026, 5, 4), close=Decimal("110"))
+    _seed_indicator(session, symbol="005930", indicator_date=date(2026, 5, 4),
+                    technical_score=Decimal("70"), ma20=Decimal("100"))
+    NewsItemRepository(session).upsert_by_url(
+        url="https://example.com/news/005930/p",
+        published_at=_dt(2026, 5, 4, 0, 0, tzinfo=_tz.utc),
+        source="UnitTest",
+        title="positive",
+        related_symbols=["005930"],
+        sentiment="POSITIVE",
+        category="NEWS",
+    )
+    session.commit()
+
+    engine = _make_engine_with_phase_c(
+        session, now=_dt(2026, 5, 4, 12, 0, tzinfo=_tz.utc),
+    )
+    engine.run(check_date=date(2026, 5, 4), check_type=CHECK_TYPE_PRE_MARKET)
+    session.commit()
+
+    check = HoldingCheckRepository(session).list_by_symbol("005930")[0]
+    # 50 + 1.0 * 5 / 1 = 55
+    assert check.news_score == Decimal("55.0000")
+
+
+def test_holding_engine_records_risk_disclosure_flag_and_evidence(session):
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    from app.data.repositories import NewsItemRepository
+
+    _seed_holding(session, symbol="005930", avg_buy_price=Decimal("100"))
+    _seed_price(session, symbol="005930", price_date=date(2026, 5, 4), close=Decimal("105"))
+    _seed_indicator(session, symbol="005930", indicator_date=date(2026, 5, 4),
+                    technical_score=Decimal("70"), ma20=Decimal("100"))
+    NewsItemRepository(session).upsert_by_url(
+        url="https://example.com/disc/005930/halt",
+        published_at=_dt(2026, 5, 2, 0, 0, tzinfo=_tz.utc),
+        source="DART",
+        title="거래정지",
+        related_symbols=["005930"],
+        sentiment="NEGATIVE",
+        category="RISK_DISCLOSURE",
+    )
+    session.commit()
+
+    engine = _make_engine_with_phase_c(
+        session, now=_dt(2026, 5, 4, 12, 0, tzinfo=_tz.utc),
+    )
+    result = engine.run(check_date=date(2026, 5, 4), check_type=CHECK_TYPE_PRE_MARKET)
+    session.commit()
+
+    # RISK_DISCLOSURE flag triggers alert
+    assert result.alert_count == 1
+    check = HoldingCheckRepository(session).list_by_symbol("005930")[0]
+    assert check.alert is True
+    assert check.risk_score == Decimal("3.0000")  # 1 disclosure × 3
+
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    assert "RISK_DISCLOSURE" in log.risk_result_json["alerts"]
+    disc_ev = log.rule_result_json["disclosure_risk_evidence"]
+    assert disc_ev["risk_disclosure_count"] == 1
+    assert disc_ev["recent_risk_disclosures"][0]["title"] == "거래정지"
+
+
+def test_holding_engine_existing_risk_flags_still_work_alongside_disclosure(session):
+    """기존 MA20_BREAKDOWN / STOP_LOSS_NEAR / LOW_TECHNICAL flags 회귀 없음."""
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    from app.data.repositories import NewsItemRepository
+
+    _seed_holding(session, symbol="005930", avg_buy_price=Decimal("100"))
+    # close 95 < ma20 100 → MA20_BREAKDOWN
+    # return = -5% → STOP_LOSS_NEAR
+    _seed_price(session, symbol="005930", price_date=date(2026, 5, 4), close=Decimal("95"))
+    _seed_indicator(session, symbol="005930", indicator_date=date(2026, 5, 4),
+                    technical_score=Decimal("70"), ma20=Decimal("100"))
+    NewsItemRepository(session).upsert_by_url(
+        url="https://example.com/disc/005930/halt2",
+        published_at=_dt(2026, 5, 2, 0, 0, tzinfo=_tz.utc),
+        source="DART",
+        title="감사의견 거절",
+        related_symbols=["005930"],
+        sentiment="NEGATIVE",
+        category="RISK_DISCLOSURE",
+    )
+    session.commit()
+
+    engine = _make_engine_with_phase_c(
+        session, now=_dt(2026, 5, 4, 12, 0, tzinfo=_tz.utc),
+    )
+    engine.run(check_date=date(2026, 5, 4), check_type=CHECK_TYPE_PRE_MARKET)
+    session.commit()
+
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    flags = log.risk_result_json["alerts"]
+    # All four flags present — RISK_DISCLOSURE adds to existing v0.1~v0.4 flags
+    assert ALERT_MA20_BREAKDOWN in flags
+    assert ALERT_STOP_LOSS_NEAR in flags
+    assert "RISK_DISCLOSURE" in flags
+    # MA20_BREAKDOWN(8) + STOP_LOSS(15) + RISK_DISCLOSURE(3) = 26
+    check = HoldingCheckRepository(session).list_by_symbol("005930")[0]
+    assert check.risk_score == Decimal("26.0000")
