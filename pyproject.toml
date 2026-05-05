@@ -19,6 +19,15 @@ dev = [
     "pytest>=8.0,<9.0",
 ]
 
+# Setuptools 의 flat-layout 자동 탐지가 top-level 디렉터리 (app / logs /
+# frontend / tests / scripts) 를 모두 후보로 잡아 "Multiple top-level packages"
+# 오류를 발생시키는 것을 방지한다. Python 배포 대상은 ``app`` 패키지뿐 — 그
+# 외 디렉터리는 빌드 산출물 / 운영 자산 / 프런트엔드 / 테스트 fixture 다.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["tests*", "scripts*", "frontend*", "logs*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
