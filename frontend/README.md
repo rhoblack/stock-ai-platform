@@ -142,9 +142,28 @@ frontend/
   - MarketCap TOP: rank 정렬 가능 TanStack Table + 시장 필터 (KOSPI/KOSDAQ/ALL — ALL 은 두 시장 병합) + symbol/name 검색. 종목 클릭 → `/stocks/:symbol`. 1시간 자동 새로고침.
   - Settings: 4 KeyValueGrid 섹션 (앱·환경 / KIS / Telegram / v0.1 안전 플래그) + freeze 배너 ("v0.1 백엔드 동결 / 변경은 .env + 재시작") + `MaskedSecret` 비밀값 평문 노출 자동 감지 (⚠ unmasked 표시). 안전 플래그 5개가 모두 false 인지 색상으로 한눈 확인.
   - 테스트: MarketCap 5건 (happy / market 필터 KOSPI→KOSDAQ→ALL / symbol·name 검색 / empty / 500) + Settings 5건 (happy + 4 sections / 모든 비밀 마스킹 검증 / 평문 누출 시 unmasked 마커 / 안전 플래그 위반 시 빨강 + 헤더 카운트 / 500 에러).
-- [ ] (Phase F) 마감 — Playwright e2e + Recharts 코드 스플릿 + Docker 프론트 서비스 + `RELEASE_NOTES_v0.2_FRONTEND.md`
-- [ ] (Phase E) MarketCap Top + Settings
-- [ ] (Phase F) Playwright e2e + Docker 배포 + `RELEASE_NOTES_v0.2_FRONTEND.md`
+- [x] **Phase F** — v0.2 MVP 마감 (`v0.2-frontend-final`)
+  - 코드 스플릿: 모든 페이지 `React.lazy` + `<Suspense>`, `manualChunks` 로 react/query/table/charts 분리. 첫 진입 (Today) gzip ≈ 80 kB, Recharts 청크 (gzip 105 kB) 는 추세 화면 진입 시에만 로드.
+  - Playwright e2e (`npm run e2e`): 8 화면 sidebar 순회 / Jobs JSON 패널 / MarketCap 필터+검색 / Settings 마스킹 가드 / 자동매매 UI 부재 검증 — 6 tests passed (5.5s). `vite preview` 자동 기동 + `page.route` mock — 실 백엔드 / KIS / Telegram 호출 0건.
+  - Docker 프런트 서비스: [`Dockerfile`](./Dockerfile) (Node 20 build → nginx 1.27 serve) + [`nginx.conf`](./nginx.conf) (`/api`, `/health` → `backend:8000` proxy) + 루트 [`../docker-compose.yml`](../docker-compose.yml) `web` 서비스 (port 8080). FastAPI 정적 서빙 미사용.
+  - 릴리스 문서: [`../RELEASE_NOTES_v0.2_FRONTEND.md`](../RELEASE_NOTES_v0.2_FRONTEND.md), 루트 README + PROJECT_STATUS 마감 선언.
+
+### Phase F — Docker 한 줄 실행
+
+```powershell
+docker compose up --build
+# 프런트: http://127.0.0.1:8080  (nginx 가 /api 와 /health 를 backend 로 proxy)
+# 백엔드: http://127.0.0.1:8000  (직접 접근도 가능, FastAPI 정적 서빙 미사용)
+```
+
+### Phase F — e2e 한 줄 실행
+
+```powershell
+cd frontend
+npm install
+npx playwright install chromium    # 1회 (~110 MiB)
+npm run e2e
+```
 
 ### Phase B 실행 빠른 가이드
 

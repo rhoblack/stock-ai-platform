@@ -5,10 +5,28 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 
 ---
 
-## 0. v0.1 백엔드 마감 선언
+## 0. v0.2 PC 대시보드 마감 선언
+
+**v0.2 frontend 는 종료 (마감) 상태이다.** v0.1 backend 동결 (`v0.1-backend-final`)
+위에 PC 대시보드 8 화면이 모두 read-only 로 연결되었고, vitest 36 + Playwright
+e2e 6 + 백엔드 pytest 296 회귀 게이트가 모두 통과. 종합 인수 사유는
+[`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md) 참조.
+
+| 항목 | 값 |
+|---|---|
+| 최종 frontend 태그 | `v0.2-frontend-final` |
+| 누적 frontend 태그 | `phase-a` (골격) → `phase-b` (Today/Jobs) → `phase-c` (Recommendations/History) → `phase-d` (Holdings/StockDetail) → `phase-e` (MarketCap/Settings) → `final` (lazy + e2e + Docker + 릴리스) |
+| 8 화면 | 오늘 / 추천 / 추천 이력 / 보유 / 종목 상세 / 시총 TOP / 잡 / 설정 — 모두 실 데이터 연동 + 빈/에러 상태 처리 |
+| 번들 (첫 진입 Today) | ≈ 297 kB / gzip ~80 kB (lazy + manualChunks 적용 후). Recharts 청크는 추세 화면 진입 시에만 로드 |
+| Docker | `docker compose up --build` → 백엔드 (8000) + 프런트 (8080) 동시 기동, nginx `/api` → backend proxy |
+| 자동매매 / 실 주문 | **v0.2 범위 밖** — `BrokerInterface` ABC placeholder 유지 / POST 트리거 UI 0건 |
+
+---
+
+## 0-1. v0.1 백엔드 마감 선언 (참고)
 
 **v0.1 백엔드는 종료 (마감) 상태이다.** 새 기능 / 리팩터 / 잡 / 라우터 추가는
-사용자의 명시적 v0.2 진입 요청 전까지 진행하지 않는다.
+사용자의 명시적 v0.2 backend 진입 요청 전까지 진행하지 않는다.
 
 | 항목 | 값 |
 |---|---|

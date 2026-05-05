@@ -9,10 +9,14 @@
 > placeholder 만 유지). 종합 인수 사유 / 알려진 한계 / v0.2 후보는
 > [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) 참조.
 >
-> **v0.2 Phase A 시작.** PC 대시보드 골격이 [`frontend/`](./frontend) 에 들어왔다.
-> Vite + React + TypeScript + Tailwind + TanStack Query 기반, 8 메뉴 + 빈
-> 페이지 + `/health` hook + vitest. 데이터 연동은 Phase B 부터.
-> 실행 / 디렉터리 구조는 [`frontend/README.md`](./frontend/README.md) 참조.
+> **v0.2 frontend 마감.** 최종 태그 `v0.2-frontend-final`. 8개 화면 모두
+> 백엔드 read-only API 에 연결되었고 vitest 36 / Playwright e2e 6 / 백엔드
+> pytest 296 모두 통과. 코드 스플릿 적용 (첫 진입 gzip ~80 kB), Docker 프런트
+> 서비스 (`docker compose up` → `http://127.0.0.1:8080`) 추가. 종합 인수
+> 사유 / 알려진 한계 / v0.3 후보는
+> [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md) 참조.
+> 자동매매 / 실 주문 / POST 트리거 UI 는 v0.2 범위 밖이며 본 릴리스에 코드
+> 일체 포함하지 않습니다.
 
 ## 1. 프로젝트 목표
 

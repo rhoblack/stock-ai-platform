@@ -1,17 +1,38 @@
+import { lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/layout/AppLayout'
-import { TodayReportPage } from './pages/TodayReport'
-import { RecommendationsPage } from './pages/Recommendations'
-import { RecommendationHistoryPage } from './pages/RecommendationHistory'
-import { HoldingsPage } from './pages/Holdings'
-import { StockDetailPage } from './pages/StockDetail'
-import { MarketCapTopPage } from './pages/MarketCapTop'
-import { JobsPage } from './pages/Jobs'
-import { SettingsPage } from './pages/Settings'
 
-// v0.2 Phase A는 loader / action 을 쓰지 않으므로 legacy non-data router
-// (`<Routes>` / `<Route>`) 로 충분. 후속 phase 에서 데이터 라우터로 옮길
-// 필요가 생기면 그때 createBrowserRouter 로 전환.
+// v0.2 Phase F: 모든 페이지를 React.lazy 로 분리해 페이지 단위 코드 스플릿.
+// Recharts (RecommendationHistory, Holdings) / TanStack Table 가 무거워
+// 첫 진입 번들에서 분리되도록 한다. 페이지는 named export 를 그대로 두고
+// router 만 lazy chunk 로 진입하도록 wrap.
+const TodayReportPage = lazy(() =>
+  import('./pages/TodayReport').then(m => ({ default: m.TodayReportPage })),
+)
+const RecommendationsPage = lazy(() =>
+  import('./pages/Recommendations').then(m => ({ default: m.RecommendationsPage })),
+)
+const RecommendationHistoryPage = lazy(() =>
+  import('./pages/RecommendationHistory').then(m => ({
+    default: m.RecommendationHistoryPage,
+  })),
+)
+const HoldingsPage = lazy(() =>
+  import('./pages/Holdings').then(m => ({ default: m.HoldingsPage })),
+)
+const StockDetailPage = lazy(() =>
+  import('./pages/StockDetail').then(m => ({ default: m.StockDetailPage })),
+)
+const MarketCapTopPage = lazy(() =>
+  import('./pages/MarketCapTop').then(m => ({ default: m.MarketCapTopPage })),
+)
+const JobsPage = lazy(() =>
+  import('./pages/Jobs').then(m => ({ default: m.JobsPage })),
+)
+const SettingsPage = lazy(() =>
+  import('./pages/Settings').then(m => ({ default: m.SettingsPage })),
+)
+
 export function AppRoutes() {
   return (
     <Routes>

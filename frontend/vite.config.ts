@@ -32,6 +32,19 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        // Phase F: 무거운 vendor 라이브러리를 별도 청크로 분리해 첫 진입
+        // 번들 크기를 줄인다. recharts 가 가장 크므로 우선 분리.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-query': ['@tanstack/react-query'],
+          'vendor-table': ['@tanstack/react-table'],
+          'vendor-charts': ['recharts'],
+        },
+      },
+    },
   },
   test: {
     globals: true,

@@ -1,11 +1,12 @@
 node_modules/
 dist/
 .vite/
-*.local
-.env
-.env.local
 coverage/
-*.tsbuildinfo
 playwright-report/
 test-results/
 playwright/.cache/
+.env
+.env.local
+*.local
+*.tsbuildinfo
+.DS_Store

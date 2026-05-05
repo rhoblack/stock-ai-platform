@@ -59,5 +59,19 @@ services:
       db:
         condition: service_healthy
 
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: stock_ai_web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    # nginx.conf 가 /api 와 /health 를 backend:8000 으로 proxy 한다. 백엔드의
+    # FastAPI 가 정적 파일을 서빙하지 않도록 본 web 컨테이너가 정적 자산을
+    # 책임진다 (v0.1-backend-final 동결 정책).
+
 volumes:
   postgres_data:
