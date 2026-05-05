@@ -9,7 +9,7 @@
 
 ## 0. v0.6 시작 선언 — Fundamental & Earnings Intelligence
 
-**v0.6 cycle 진입 (Phase A 진입 대기).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
+**v0.6 cycle 진입 (Phase A PR1 완료).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
 origin/main 동기화 완료). v0.1 backend + v0.2 frontend + v0.3 분석·운영 +
 v0.4 Analyst & Theme Intelligence + v0.5 News·공시·테마 랭킹 모두 마감 위에
 **재무 / 실적 데이터 라인 + 어닝 인텔리전스 기초** 5 phase 를 진행한다. v0.1 의
@@ -36,7 +36,7 @@ API 구현체는 v0.7+ 로 이연 (FakeProvider 만 제공). 추천 산식 본 w
 
 | Phase | 작업 | 상태 | 산출 태그 (예정) |
 |---|---|---|---|
-| A | Fundamental data layer (`FundamentalProviderInterface` ABC + `FundamentalSnapshot` 24번째 테이블 + Repository + `scripts/import_fundamentals.py` argparse CLI + 8 지표 검증) | ⏳ 진입 대기 | `v0.6-fundamental-data-layer` |
+| A | Fundamental data layer (`FundamentalProviderInterface` ABC + `FundamentalSnapshot` 24번째 테이블 + Repository + `scripts/import_fundamentals.py` argparse CLI + 8 지표 검증) | ✅ PR1 완료 / PR2 대기 | `v0.6-fundamental-data-layer` |
 | B | Earnings event layer + 어닝 캘린더 (`EarningsProviderInterface` ABC + `EarningsEvent` 25번째 테이블 + Repository + `scripts/import_earnings.py` + BEAT/MEET/MISS 분류 룰) | ⏳ | `v0.6-earnings-event-pipeline` |
 | C | `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + RecommendationEngine·HoldingCheckEngine 통합 + decision evidence 기록 | ⏳ | `v0.6-fundamental-score` |
 | D | 백엔드 read-only API 3종 (`/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`) + `RecommendationItemSchema` / `HoldingCheckSchema` evidence 필드 + 프런트 StockDetail 카드 + Today 다가오는 어닝 + Recommendations/Holdings evidence 통합 | ⏳ | `v0.6-frontend-fundamentals` |
@@ -98,6 +98,27 @@ API 구현체는 v0.7+ 로 이연 (FakeProvider 만 제공). 추천 산식 본 w
 | D | `frontend/src/api/types.ts` / `hooks/` | 타입 + hook 신규 |
 
 DB 마이그레이션 = `CREATE TABLE fundamental_snapshots ...; CREATE TABLE earnings_events ...;` 두 줄, destructive 0건. 기존 테이블 변경 0건.
+
+### v0.6 Phase A PR1 결과 (요약) — FundamentalSnapshot ORM + Repository
+
+> Phase A 전체 중 첫 번째 PR. 이번 PR 은 `FundamentalSnapshot` 24번째 테이블과
+> Repository 기반만 추가하고, CSV import / provider / scheduler / API / frontend 는
+> 후속 PR 로 남겼다.
+
+- `app/db/models.py` — `fundamental_snapshots` 신규. `symbol`, `snapshot_date`,
+  `fiscal_year` 인덱스와 `(symbol, snapshot_date, fiscal_year, fiscal_quarter)`
+  unique constraint 추가. `fiscal_quarter` 는 연간 데이터 저장을 위해 nullable.
+- `app/data/repositories/fundamental_snapshots.py` — `create`,
+  `upsert_by_symbol_period`, `get_latest_by_symbol`, `list_recent_by_symbol`,
+  `list_by_fiscal_year` 추가. upsert 는 같은 period row 를 찾아 정규화 metric 필드를
+  갱신하고 같은 row 를 반환하는 정책.
+- `app/data/repositories/__init__.py` — `FundamentalSnapshotRepository` export.
+- `tests/integration/test_fundamental_repository.py` — metadata 생성, CRUD, upsert 멱등,
+  latest/recent/fiscal_year 조회, nullable quarter, Decimal round-trip, 본문/원문/blob
+  컬럼 부재 가드.
+- `DB_SCHEMA.md` / `TASKS.md` — Phase A PR1 범위와 `fundamental_snapshots` 정책 갱신.
+- 안전 범위: DART / KIS / Telegram 호출 0건, POST 라우터 0건, 자동매매/주문 코드 0건,
+  재무제표 PDF/Excel BLOB 및 본문 paragraph 저장 0건.
 
 ### v0.6 누적 태그 (예정)
 

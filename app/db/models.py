@@ -670,3 +670,48 @@ class ReportScoreLog(Base):
             name="uq_report_score_logs_symbol_date_run",
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.6 -- Fundamental & Earnings Intelligence
+#
+# FundamentalSnapshot stores normalized financial metrics only. Financial
+# statement source documents, PDF/Excel blobs, full body text, paragraphs, and
+# raw filing content are intentionally out of scope.
+# ---------------------------------------------------------------------------
+
+
+class FundamentalSnapshot(TimestampMixin, Base):
+    __tablename__ = "fundamental_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    fiscal_year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    fiscal_quarter: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revenue: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    operating_income: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    net_income: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    total_assets: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    total_liabilities: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    total_equity: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    eps: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    bps: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    per: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    pbr: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    roe: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    debt_ratio: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    dividend_yield: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    revenue_growth_yoy: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    operating_income_growth_yoy: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "snapshot_date",
+            "fiscal_year",
+            "fiscal_quarter",
+            name="uq_fundamental_snapshots_symbol_period",
+        ),
+    )

@@ -486,6 +486,47 @@ nullable FK 로 연계되어 추천 잡의 cycle 별 evidence 를 추적한다.
 
 **Unique**: `(symbol, score_date, recommendation_run_id)`. **Index**: `symbol`, `score_date`, `recommendation_run_id`.
 
+## 24. fundamental_snapshots
+
+v0.6 Phase A PR1 에서 추가한 재무 지표 스냅샷 테이블. 수동 CSV / 향후 DART subset
+정규화 결과를 저장하기 위한 기반이며, 이번 PR 에서는 import / provider / scheduler / API 를
+추가하지 않는다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | 내부 ID |
+| symbol | 종목코드. indexed |
+| snapshot_date | 스냅샷 기준일. indexed |
+| fiscal_year | 회계연도. indexed |
+| fiscal_quarter | 회계분기. nullable. 연간 데이터는 null 허용 |
+| revenue | 매출액 |
+| operating_income | 영업이익 |
+| net_income | 순이익 |
+| total_assets | 총자산 |
+| total_liabilities | 총부채 |
+| total_equity | 총자본 |
+| eps | EPS |
+| bps | BPS |
+| per | PER |
+| pbr | PBR |
+| roe | ROE |
+| debt_ratio | 부채비율 |
+| dividend_yield | 배당수익률 |
+| revenue_growth_yoy | 전년 대비 매출 성장률 |
+| operating_income_growth_yoy | 전년 대비 영업이익 성장률 |
+| source | 데이터 출처 태그. 예: MANUAL_CSV |
+| created_at, updated_at | 생성 / 갱신 시각 |
+
+**Unique**: `(symbol, snapshot_date, fiscal_year, fiscal_quarter)`. **Index**:
+`symbol`, `snapshot_date`, `fiscal_year`.
+
+**저작권 / 보안 정책**: 재무제표 PDF / Excel BLOB, 원문 전문, 본문 paragraph,
+body / content / full_text / raw_text / source_file_path 계열 컬럼은 저장하지 않는다.
+정규화된 수치 지표와 출처 태그만 저장한다.
+
+> **운영 환경 마이그레이션**: v0.6 Phase A PR1 은 신규 `CREATE TABLE
+> fundamental_snapshots ...` 1개만 추가한다. 기존 테이블 destructive 변경 0건.
+
 > **운영 환경 마이그레이션**: v0.4 Phase A 는 신규 `CREATE TABLE` 6개 — 기존
 > 데이터는 손대지 않는다 (destructive 0건). Alembic 미사용 환경은
 > `Base.metadata.create_all` 또는 동등한 SQL 6 줄을 한 번 실행하면 된다.
