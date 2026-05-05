@@ -124,7 +124,12 @@ frontend/
   - Jobs: TanStack Table 기반 list + 우측 패널 detail (`result_summary` JSON 뷰), 30초 자동 새로고침, 행 클릭 → `/jobs/:jobId`
   - Today Report: 추천 TOP / 보유 점검 알림 / HIGH risk / 마지막 run 4 카드, 60초 자동 새로고침
   - 테스트: Jobs + Today 각각 happy / empty / error 3종
-- [ ] (Phase C) Recommendations + Recommendation History
+- [x] **Phase C** — 추천 종목 + 추천 이력 화면 실 데이터 연동
+  - hooks: `useLatestRecommendationRun`, `useRecommendationRunDetail`, `useRecommendationHistory`
+  - shared components 추가: `MetricCard`, `TrendLineChart` (Recharts wrapper)
+  - Recommendations: rank / 등급 / 시장 / 종목 / total_score / 5컴포넌트 점수 / risk / 1·3·5·20일 close_return / 사유 / risk_note. 5분 자동 새로고침. `/recommendations/runs/:runId` 로 특정 run 상세 보기 지원.
+  - Recommendation History: 4 metric card (run 수 / 총 추천 / avg success_rate / avg close_return 5d) + 2 Recharts 추세 라인 (success_rate, avg_close_return_5d) + run 별 표 (run_date 클릭 → 해당 run 상세). 5분 자동 새로고침.
+  - 테스트: Recommendations 4건 (happy / empty / error 404 / `:runId` 라우팅) + History 3건 (happy / empty / error 500). jsdom ResizeObserver mock 추가 (Recharts ResponsiveContainer 의존).
 - [ ] (Phase D) Holdings + Stock Detail
 - [ ] (Phase E) MarketCap Top + Settings
 - [ ] (Phase F) Playwright e2e + Docker 배포 + `RELEASE_NOTES_v0.2_FRONTEND.md`

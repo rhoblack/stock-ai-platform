@@ -114,6 +114,29 @@ export interface TodayReportResponse {
   holding_alerts: HoldingCheck[]
 }
 
+// ----- /api/recommendations -----
+
+export interface RecommendationRunDetailResponse {
+  run: RecommendationRun
+  recommendations: RecommendationItem[]
+}
+
+export interface RecommendationHistoryItem {
+  run: RecommendationRun
+  recommendation_count: number
+  success_rate: string | null
+  avg_close_return_1d: string | null
+  avg_close_return_3d: string | null
+  avg_close_return_5d: string | null
+  avg_close_return_20d: string | null
+}
+
+export interface RecommendationHistoryResponse {
+  items: RecommendationHistoryItem[]
+  limit: number
+  offset: number
+}
+
 // ----- /api/jobs -----
 
 export type JobStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | string

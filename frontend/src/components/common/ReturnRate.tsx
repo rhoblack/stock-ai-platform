@@ -18,11 +18,27 @@ export function ReturnRate({
   unit = '%',
 }: ReturnRateProps) {
   if (value === null || value === undefined || value === '') {
-    return <span className={cn('text-muted-foreground tabular-nums', className)}>—</span>
+    return (
+      <span
+        data-testid="return-rate"
+        data-state="empty"
+        className={cn('text-muted-foreground tabular-nums', className)}
+      >
+        —
+      </span>
+    )
   }
   const num = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(num)) {
-    return <span className={cn('text-muted-foreground tabular-nums', className)}>—</span>
+    return (
+      <span
+        data-testid="return-rate"
+        data-state="invalid"
+        className={cn('text-muted-foreground tabular-nums', className)}
+      >
+        —
+      </span>
+    )
   }
   const formatted = num.toFixed(precision)
   const tone =

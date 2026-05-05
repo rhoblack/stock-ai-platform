@@ -20,6 +20,7 @@ export function AppRoutes() {
         <Route path="today" element={<TodayReportPage />} />
         <Route path="recommendations" element={<RecommendationsPage />} />
         <Route path="recommendations/history" element={<RecommendationHistoryPage />} />
+        <Route path="recommendations/runs/:runId" element={<RecommendationsPage />} />
         <Route path="holdings" element={<HoldingsPage />} />
         <Route path="stocks" element={<StockDetailPage />} />
         <Route path="stocks/:symbol" element={<StockDetailPage />} />

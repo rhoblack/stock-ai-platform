@@ -27,6 +27,15 @@ export const handlers = [
       holding_alerts: [],
     }),
   ),
+  http.get('*/api/recommendations/latest', () =>
+    HttpResponse.json({ detail: 'No recommendation runs found' }, { status: 404 }),
+  ),
+  http.get('*/api/recommendations/history', () =>
+    HttpResponse.json({ items: [], limit: 20, offset: 0 }),
+  ),
+  http.get('*/api/recommendations/:runId', () =>
+    HttpResponse.json({ detail: 'not found' }, { status: 404 }),
+  ),
 ]
 
 export const server = setupServer(...handlers)
