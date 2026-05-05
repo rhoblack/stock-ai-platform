@@ -208,12 +208,85 @@ class HoldingCheckSymbolResponse(_BaseSchema):
     summary: HoldingCheckSymbolMetrics
 
 
+class ReportConsensusSchema(_BaseSchema):
+    symbol: str
+    snapshot_date: date_type
+    window_days: int
+    report_count: int
+    avg_target_price: Optional[str] = None
+    min_target_price: Optional[str] = None
+    max_target_price: Optional[str] = None
+    strong_buy_count: int = 0
+    buy_count: int = 0
+    hold_count: int = 0
+    sell_count: int = 0
+    strong_sell_count: int = 0
+    latest_published_at: Optional[date_type] = None
+
+
+class AnalystReportSchema(_BaseSchema):
+    id: int
+    symbol: Optional[str] = None
+    company_name: Optional[str] = None
+    market: Optional[str] = None
+    report_type: str
+    broker_name: str
+    analyst_name: Optional[str] = None
+    published_at: date_type
+    title: str
+    rating: Optional[str] = None
+    normalized_rating: Optional[str] = None
+    target_price: Optional[str] = None
+    currency: Optional[str] = None
+    summary: Optional[str] = None
+    source_url: Optional[str] = None
+
+
+class RelatedThemeSchema(_BaseSchema):
+    theme_id: int
+    theme_name: str
+    theme_category: str
+    direction: str
+    time_horizon: str
+    summary: Optional[str] = None
+    mapping_id: int
+    impact_direction: str
+    impact_strength: Optional[str] = None
+    impact_path: Optional[str] = None
+    relation_type: Optional[str] = None
+    benefit_type: Optional[str] = None
+    time_lag: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class ReportSignalEventSchema(_BaseSchema):
+    id: int
+    report_id: int
+    symbol: Optional[str] = None
+    theme_id: Optional[int] = None
+    event_type: str
+    direction: str
+    strength: Optional[str] = None
+    time_horizon: str
+    summary: Optional[str] = None
+    evidence_json: Optional[Dict[str, Any]] = None
+
+
+class StockReportsResponse(_BaseSchema):
+    symbol: str
+    latest_consensus: Optional[ReportConsensusSchema] = None
+    recent_reports: List[AnalystReportSchema] = []
+    related_themes: List[RelatedThemeSchema] = []
+    recent_signal_events: List[ReportSignalEventSchema] = []
+
+
 class StockDetailResponse(_BaseSchema):
     stock: StockBriefSchema
     latest_price: Optional[DailyPriceSchema] = None
     latest_indicator: Optional[StockIndicatorSchema] = None
     recent_recommendations: List[RecommendationItemSchema] = []
     recent_holding_checks: List[HoldingCheckSchema] = []
+    analyst_reports: Optional[StockReportsResponse] = None
 
 
 class StockPriceSeriesResponse(_BaseSchema):

@@ -76,6 +76,75 @@ const HAPPY = {
       ],
     },
   ],
+  analyst_reports: {
+    symbol: '005930',
+    latest_consensus: {
+      symbol: '005930',
+      snapshot_date: '2026-05-04',
+      window_days: 90,
+      report_count: 2,
+      avg_target_price: '82000',
+      min_target_price: '78000',
+      max_target_price: '86000',
+      strong_buy_count: 0,
+      buy_count: 2,
+      hold_count: 0,
+      sell_count: 0,
+      strong_sell_count: 0,
+      latest_published_at: '2026-05-02',
+    },
+    recent_reports: [
+      {
+        id: 31,
+        symbol: '005930',
+        company_name: '삼성전자',
+        market: 'KOSPI',
+        report_type: 'COMPANY',
+        broker_name: '테스트증권',
+        analyst_name: '홍길동',
+        published_at: '2026-05-02',
+        title: '삼성전자 HBM 수요 회복',
+        rating: 'BUY',
+        normalized_rating: 'BUY',
+        target_price: '84000',
+        currency: 'KRW',
+        summary: 'HBM 수요 회복과 서버 메모리 가격 반등',
+        source_url: 'https://example.com/reports/005930',
+      },
+    ],
+    related_themes: [
+      {
+        theme_id: 41,
+        theme_name: 'HBM',
+        theme_category: 'SEMICONDUCTOR',
+        direction: 'POSITIVE',
+        time_horizon: 'MID',
+        summary: 'AI 서버 메모리 수요',
+        mapping_id: 51,
+        impact_direction: 'POSITIVE',
+        impact_strength: '0.800',
+        impact_path: 'DEMAND_INCREASE',
+        relation_type: 'SUPPLIER',
+        benefit_type: 'PRICE_POWER',
+        time_lag: 'MID',
+        reason: 'HBM 공급사',
+      },
+    ],
+    recent_signal_events: [
+      {
+        id: 61,
+        report_id: 32,
+        symbol: '005930',
+        theme_id: 41,
+        event_type: 'SUPPLY_SHORTAGE',
+        direction: 'POSITIVE',
+        strength: '0.700',
+        time_horizon: 'MID',
+        summary: 'HBM 공급 부족 지속',
+        evidence_json: { source: 'fixture' },
+      },
+    ],
+  },
   recent_holding_checks: [
     {
       id: 21,
@@ -121,12 +190,24 @@ describe('StockDetailPage', () => {
     await waitFor(() =>
       expect(screen.getByTestId('stock-detail-price')).toBeInTheDocument(),
     )
-    expect(screen.getByText('삼성전자', { exact: false })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: /삼성전자 \(005930\)/ }),
+    ).toBeInTheDocument()
     // KOSPI 가 헤더 메타에 노출
     expect(screen.getByText(/KOSPI/)).toBeInTheDocument()
     // indicator card
     expect(screen.getByTestId('stock-detail-indicator')).toBeInTheDocument()
     expect(screen.getByText('BULL')).toBeInTheDocument()
+    // analyst report cards
+    expect(screen.getByTestId('stock-detail-consensus')).toBeInTheDocument()
+    expect(screen.getByText('Analyst Consensus')).toBeInTheDocument()
+    expect(screen.getByText('삼성전자 HBM 수요 회복')).toBeInTheDocument()
+    expect(screen.getByTestId('stock-detail-theme-51')).toHaveTextContent('HBM')
+    expect(screen.getByTestId('stock-detail-signal-61')).toHaveTextContent(
+      'SUPPLY_SHORTAGE',
+    )
+    expect(screen.queryByText(/source_file_path/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/D:\/private/)).not.toBeInTheDocument()
     // recommendations table — recommendation row
     expect(screen.getByTestId('stock-detail-rec-7')).toBeInTheDocument()
     expect(screen.getByTestId('grade-A')).toBeInTheDocument()
@@ -150,6 +231,13 @@ describe('StockDetailPage', () => {
           latest_indicator: null,
           recent_recommendations: [],
           recent_holding_checks: [],
+          analyst_reports: {
+            symbol: '123456',
+            latest_consensus: null,
+            recent_reports: [],
+            related_themes: [],
+            recent_signal_events: [],
+          },
         }),
       ),
     )
@@ -159,6 +247,10 @@ describe('StockDetailPage', () => {
       expect(screen.getByTestId('stock-detail-price-empty')).toBeInTheDocument(),
     )
     expect(screen.getByTestId('stock-detail-indicator-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('stock-detail-consensus-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('stock-detail-analyst-reports-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('stock-detail-related-themes-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('stock-detail-signal-events-empty')).toBeInTheDocument()
     expect(screen.getByText('표시할 추천 이력이 없습니다.')).toBeInTheDocument()
     expect(screen.getByText('표시할 점검 이력이 없습니다.')).toBeInTheDocument()
   })

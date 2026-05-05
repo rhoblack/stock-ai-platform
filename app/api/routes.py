@@ -22,6 +22,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
+    AnalystReportSchema,
     DailyPriceSchema,
     HoldingCheckSchema,
     HoldingCheckSymbolMetrics,
@@ -43,17 +44,22 @@ from app.api.schemas import (
     RecommendationResultSchema,
     RecommendationRunDetailResponse,
     RecommendationRunSchema,
+    RelatedThemeSchema,
+    ReportConsensusSchema,
+    ReportSignalEventSchema,
     RiskSummarySchema,
     SettingsResponse,
     StockBriefSchema,
     StockDetailResponse,
     StockIndicatorSchema,
     StockPriceSeriesResponse,
+    StockReportsResponse,
     TodayReportResponse,
 )
 from app.config.settings import Settings, get_settings
 from app.data.collectors.kis_client import mask_sensitive_value
 from app.data.repositories import (
+    AnalystReportRepository,
     DailyPriceRepository,
     DataSnapshotRepository,
     HoldingCheckRepository,
@@ -65,9 +71,12 @@ from app.data.repositories import (
     RecommendationRepository,
     RecommendationResultRepository,
     RecommendationRunRepository,
+    ReportConsensusSnapshotRepository,
     ReportScoreLogRepository,
+    ReportSignalEventRepository,
     StockIndicatorRepository,
     StockRepository,
+    ThemeStockMappingRepository,
 )
 from app.db.models import (
     DataSnapshot,
@@ -237,6 +246,62 @@ def _resolve_recent_recommendations_for_symbol(
         )
         items.append(_recommendation_to_schema(rec, snapshot, results, run, report_log))
     return items
+
+
+def _mapping_to_related_theme_schema(mapping) -> RelatedThemeSchema:
+    theme = mapping.theme
+    return RelatedThemeSchema(
+        theme_id=theme.id,
+        theme_name=theme.theme_name,
+        theme_category=theme.theme_category,
+        direction=theme.direction,
+        time_horizon=theme.time_horizon,
+        summary=theme.summary,
+        mapping_id=mapping.id,
+        impact_direction=mapping.impact_direction,
+        impact_strength=mapping.impact_strength,
+        impact_path=mapping.impact_path,
+        relation_type=mapping.relation_type,
+        benefit_type=mapping.benefit_type,
+        time_lag=mapping.time_lag,
+        reason=mapping.reason,
+    )
+
+
+def _resolve_stock_reports(
+    *,
+    session: Session,
+    symbol: str,
+    report_limit: int,
+    theme_limit: int,
+    signal_limit: int,
+) -> StockReportsResponse:
+    consensus = ReportConsensusSnapshotRepository(session).get_latest_by_symbol(symbol)
+    reports = AnalystReportRepository(session).list_by_symbol(
+        symbol,
+        limit=report_limit,
+    )
+    mappings = ThemeStockMappingRepository(session).list_by_symbol(
+        symbol,
+        limit=theme_limit,
+    )
+    events = ReportSignalEventRepository(session).list_by_symbol(
+        symbol,
+        limit=signal_limit,
+    )
+    return StockReportsResponse(
+        symbol=symbol,
+        latest_consensus=(
+            ReportConsensusSchema.from_orm(consensus)
+            if consensus is not None
+            else None
+        ),
+        recent_reports=[AnalystReportSchema.from_orm(row) for row in reports],
+        related_themes=[_mapping_to_related_theme_schema(row) for row in mappings],
+        recent_signal_events=[
+            ReportSignalEventSchema.from_orm(row) for row in events
+        ],
+    )
 
 
 _AGGREGATE_DAYS_AFTER = (1, 3, 5, 20)
@@ -636,6 +701,9 @@ def get_stock_detail(
     symbol: str,
     recommendation_limit: int = Query(10, ge=0, le=100),
     holding_check_limit: int = Query(20, ge=0, le=200),
+    report_limit: int = Query(5, ge=0, le=50),
+    theme_limit: int = Query(10, ge=0, le=50),
+    signal_limit: int = Query(10, ge=0, le=50),
     session: Session = Depends(get_session),
 ) -> StockDetailResponse:
     stock = StockRepository(session).get_by_symbol(symbol)
@@ -670,6 +738,37 @@ def get_stock_detail(
         ),
         recent_recommendations=recent_recommendations,
         recent_holding_checks=recent_holding_checks,
+        analyst_reports=_resolve_stock_reports(
+            session=session,
+            symbol=symbol,
+            report_limit=report_limit,
+            theme_limit=theme_limit,
+            signal_limit=signal_limit,
+        ),
+    )
+
+
+@router.get(
+    "/api/stocks/{symbol}/reports",
+    response_model=StockReportsResponse,
+    tags=["stocks"],
+)
+def get_stock_reports(
+    symbol: str,
+    report_limit: int = Query(5, ge=0, le=50),
+    theme_limit: int = Query(10, ge=0, le=50),
+    signal_limit: int = Query(10, ge=0, le=50),
+    session: Session = Depends(get_session),
+) -> StockReportsResponse:
+    stock = StockRepository(session).get_by_symbol(symbol)
+    if stock is None:
+        raise HTTPException(status_code=404, detail=f"symbol {symbol} not found")
+    return _resolve_stock_reports(
+        session=session,
+        symbol=symbol,
+        report_limit=report_limit,
+        theme_limit=theme_limit,
+        signal_limit=signal_limit,
     )
 
 

@@ -39,6 +39,13 @@ const HAPPY_LATEST = {
       snapshot_id: 11,
       risk_level: 'LOW',
       risk_flags: [],
+      report_score: '75.00',
+      theme_signal_score: '60.00',
+      report_evidence: {
+        report_score_adjustment: '2.50',
+        theme_signal_adjustment: '1.00',
+        top_themes: [{ theme_name: 'HBM' }],
+      },
       results: [
         {
           days_after: 1,
@@ -93,8 +100,39 @@ describe('RecommendationsPage', () => {
     expect(screen.getByTestId('rec-metric-grade-dist')).toHaveTextContent('A:1')
     expect(screen.getByTestId('grade-A')).toBeInTheDocument()
     expect(screen.getByTestId('risk-LOW')).toBeInTheDocument()
+    expect(screen.getByTestId('rec-report-score-005930')).toHaveTextContent('75.00')
+    expect(screen.getByTestId('rec-theme-score-005930')).toHaveTextContent('60.00')
+    expect(screen.getByTestId('rec-report-evidence-005930')).toHaveTextContent(
+      'HBM',
+    )
     // 1/3/5/20 day result columns: 1d → +1.50%, 5d → +3.00%, 3d/20d → "—"
     expect(screen.getAllByTestId('return-rate').length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('renders report score null fallbacks as dashes', async () => {
+    server.use(
+      http.get('*/api/recommendations/latest', () =>
+        HttpResponse.json({
+          ...HAPPY_LATEST,
+          recommendations: [
+            {
+              ...HAPPY_LATEST.recommendations[0],
+              report_score: null,
+              theme_signal_score: null,
+              report_evidence: null,
+            },
+          ],
+        }),
+      ),
+    )
+
+    renderRecsAt('/recommendations')
+    await waitFor(() =>
+      expect(screen.getByTestId('rec-row-005930')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('rec-report-score-005930')).toHaveTextContent('—')
+    expect(screen.getByTestId('rec-theme-score-005930')).toHaveTextContent('—')
+    expect(screen.getByTestId('rec-report-evidence-005930')).toHaveTextContent('—')
   })
 
   it('shows empty table when run has no recommendations', async () => {

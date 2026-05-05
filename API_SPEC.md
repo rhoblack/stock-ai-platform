@@ -141,6 +141,18 @@ Query:
 * `stock`: 종목 기본정보
 * `latest_price`: 최신 일봉 가격 (`daily_prices`)
 * `latest_indicator`: 최신 기술 지표 (`stock_indicators`)
+* `analyst_reports`: v0.4 Phase D Analyst & Theme Intelligence 요약.
+  * `latest_consensus`: 최신 `report_consensus_snapshots` 1건. `report_count`,
+    `avg_target_price`, `min_target_price`, `max_target_price`, rating distribution,
+    `latest_published_at` 포함.
+  * `recent_reports`: 최근 analyst report 목록. `broker_name`, `published_at`,
+    `title`, `rating`, `target_price`, 짧은 `summary`, `source_url` 포함.
+  * `related_themes`: 종목 관련 테마와 mapping 영향. `theme_name`,
+    `theme_category`, `direction`, `time_horizon`, `impact_direction`,
+    `impact_path` 포함.
+  * `recent_signal_events`: 최근 signal event 목록. `event_type`, `direction`,
+    `strength`, 짧은 `summary` 포함.
+  * `source_file_path`는 schema와 응답에서 제외한다.
 * `recent_recommendations`: 최근 추천 이력. 각 항목은 `run_id`, `run_date`,
   `telegram_sent`, component score, `risk_level`, `risk_flags`, `risk_summary`,
   `results[]` 추천 성과를 포함한다.
@@ -151,6 +163,24 @@ Query:
 
 - `recommendation_limit`: default 10, max 100
 - `holding_check_limit`: default 20, max 200
+- `report_limit`: default 5, max 50
+- `theme_limit`: default 10, max 50
+- `signal_limit`: default 10, max 50
+
+### GET /api/stocks/{symbol}/reports
+
+종목 상세의 Analyst & Theme Intelligence 블록만 조회하는 read-only API이다.
+`GET /api/stocks/{symbol}.analyst_reports`와 동일한 구조를 반환한다.
+
+Query:
+
+- `report_limit`: default 5, max 50
+- `theme_limit`: default 10, max 50
+- `signal_limit`: default 10, max 50
+
+오류:
+
+- 404: 해당 `symbol` 의 `stocks` 레코드가 존재하지 않음
 
 ### GET /api/stocks/{symbol}/prices
 

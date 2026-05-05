@@ -57,6 +57,9 @@ export interface RecommendationItem {
   risk_level?: string | null
   risk_flags?: string[]
   risk_summary?: RiskSummary | null
+  report_score?: string | null
+  theme_signal_score?: string | null
+  report_evidence?: Record<string, unknown> | null
   results?: RecommendationResult[]
 }
 
@@ -236,12 +239,85 @@ export interface StockIndicatorRow {
   technical_score: string | null
 }
 
+export interface ReportConsensus {
+  symbol: string
+  snapshot_date: string
+  window_days: number
+  report_count: number
+  avg_target_price: string | null
+  min_target_price: string | null
+  max_target_price: string | null
+  strong_buy_count: number
+  buy_count: number
+  hold_count: number
+  sell_count: number
+  strong_sell_count: number
+  latest_published_at: string | null
+}
+
+export interface AnalystReport {
+  id: number
+  symbol: string | null
+  company_name: string | null
+  market: string | null
+  report_type: string
+  broker_name: string
+  analyst_name: string | null
+  published_at: string
+  title: string
+  rating: string | null
+  normalized_rating: string | null
+  target_price: string | null
+  currency: string | null
+  summary: string | null
+  source_url: string | null
+}
+
+export interface RelatedTheme {
+  theme_id: number
+  theme_name: string
+  theme_category: string
+  direction: string
+  time_horizon: string
+  summary: string | null
+  mapping_id: number
+  impact_direction: string
+  impact_strength: string | null
+  impact_path: string | null
+  relation_type: string | null
+  benefit_type: string | null
+  time_lag: string | null
+  reason: string | null
+}
+
+export interface ReportSignalEvent {
+  id: number
+  report_id: number
+  symbol: string | null
+  theme_id: number | null
+  event_type: string
+  direction: string
+  strength: string | null
+  time_horizon: string
+  summary: string | null
+  evidence_json: Record<string, unknown> | null
+}
+
+export interface StockReportsResponse {
+  symbol: string
+  latest_consensus: ReportConsensus | null
+  recent_reports: AnalystReport[]
+  related_themes: RelatedTheme[]
+  recent_signal_events: ReportSignalEvent[]
+}
+
 export interface StockDetailResponse {
   stock: StockBrief
   latest_price: DailyPriceRow | null
   latest_indicator: StockIndicatorRow | null
   recent_recommendations: RecommendationItem[]
   recent_holding_checks: HoldingCheck[]
+  analyst_reports?: StockReportsResponse | null
 }
 
 export interface StockPriceSeriesResponse {

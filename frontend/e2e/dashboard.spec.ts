@@ -90,6 +90,28 @@ test.describe('v0.2 Phase F — dashboard happy paths (8 screens, mocked API)', 
     )
   })
 
+  test('StockDetail analyst report cards expose safe read-only summaries', async ({
+    page,
+  }) => {
+    await page.goto('/stocks/005930')
+    await expect(page.getByTestId('stock-detail-consensus')).toBeVisible()
+    await expect(page.getByTestId('stock-detail-analyst-reports')).toContainText(
+      '삼성전자 HBM 수요 회복',
+    )
+    await expect(page.getByTestId('stock-detail-related-themes')).toContainText('HBM')
+    await expect(page.getByTestId('stock-detail-signal-events')).toContainText(
+      'SUPPLY_SHORTAGE',
+    )
+    await expect(page.getByText(/source_file_path/)).toHaveCount(0)
+    await expect(page.getByText(/D:\/private/)).toHaveCount(0)
+
+    const payload = await page.evaluate(async () => {
+      const response = await fetch('/api/stocks/005930')
+      return response.json()
+    })
+    expect(JSON.stringify(payload)).not.toContain('source_file_path')
+  })
+
   test('MarketCap TOP filter switches from KOSPI to KOSDAQ to ALL', async ({
     page,
   }) => {

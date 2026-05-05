@@ -24,6 +24,28 @@ function findResult(
   return results?.find(r => r.days_after === daysAfter)
 }
 
+function evidenceSummary(evidence: Record<string, unknown> | null | undefined) {
+  if (!evidence) return '—'
+  const reportAdj = evidence.report_score_adjustment
+  const themeAdj = evidence.theme_signal_adjustment
+  const topThemes = Array.isArray(evidence.top_themes)
+    ? evidence.top_themes
+        .map(item =>
+          item && typeof item === 'object' && 'theme_name' in item
+            ? String((item as { theme_name?: unknown }).theme_name ?? '')
+            : '',
+        )
+        .filter(Boolean)
+        .slice(0, 2)
+    : []
+  const parts = [
+    reportAdj ? `report ${reportAdj}` : null,
+    themeAdj ? `theme ${themeAdj}` : null,
+    topThemes.length > 0 ? topThemes.join(', ') : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : '—'
+}
+
 export function RecommendationsTable({ rows }: RecommendationsTableProps) {
   const columns = useMemo<ColumnDef<RecommendationItem>[]>(
     () => [
@@ -70,6 +92,32 @@ export function RecommendationsTable({ rows }: RecommendationsTableProps) {
         cell: ({ row }) => (
           <span className="font-mono text-sm font-semibold tabular-nums">
             {row.original.total_score ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'report_scores',
+        header: 'report / theme',
+        cell: ({ row }) => (
+          <div className="flex flex-col gap-0.5 font-mono text-xs tabular-nums">
+            <span data-testid={`rec-report-score-${row.original.symbol}`}>
+              {row.original.report_score ?? '—'}
+            </span>
+            <span data-testid={`rec-theme-score-${row.original.symbol}`}>
+              {row.original.theme_signal_score ?? '—'}
+            </span>
+          </div>
+        ),
+      },
+      {
+        id: 'report_evidence',
+        header: 'report evidence',
+        cell: ({ row }) => (
+          <span
+            data-testid={`rec-report-evidence-${row.original.symbol}`}
+            className="text-xs text-muted-foreground"
+          >
+            {evidenceSummary(row.original.report_evidence)}
           </span>
         ),
       },

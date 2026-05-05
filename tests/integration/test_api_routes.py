@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.config.settings import Settings, get_settings
 from app.data.repositories import (
+    AnalystReportRepository,
     DailyPriceRepository,
     DataSnapshotRepository,
     DecisionLogRepository,
@@ -21,11 +22,15 @@ from app.data.repositories import (
     RecommendationRepository,
     RecommendationResultRepository,
     RecommendationRunRepository,
+    ReportConsensusSnapshotRepository,
     ReportScoreLogRepository,
+    ReportSignalEventRepository,
+    ReportThemeRepository,
     StockIndicatorRepository,
     StockRepository,
     StockUniverseMemberRepository,
     StockUniverseRepository,
+    ThemeStockMappingRepository,
 )
 from app.db import Base
 from app.db.models import (
@@ -46,6 +51,17 @@ from app.db.models import (
     StockUniverseMember,
 )
 from app.db.session import create_session_factory, get_session
+
+
+def _assert_no_source_file_path(value) -> None:
+    assert "source_file_path" not in str(value)
+    if isinstance(value, dict):
+        assert "source_file_path" not in value
+        for child in value.values():
+            _assert_no_source_file_path(child)
+    elif isinstance(value, list):
+        for child in value:
+            _assert_no_source_file_path(child)
 
 
 @pytest.fixture()
@@ -327,6 +343,85 @@ def _seed_full_dataset(session) -> dict:
         recommendation_run_id=run.run_id,
     )
 
+    AnalystReportRepository(session).create(
+        report_type="COMPANY",
+        broker_name="테스트증권",
+        published_at=today - timedelta(days=3),
+        title="삼성전자 HBM 수요 회복",
+        symbol="005930",
+        company_name="삼성전자",
+        market="KOSPI",
+        analyst_name="홍길동",
+        rating="BUY",
+        normalized_rating="BUY",
+        target_price=Decimal("84000"),
+        currency="KRW",
+        summary="HBM 수요 회복과 서버 메모리 가격 반등을 반영한 짧은 요약",
+        source_url="https://example.com/reports/005930",
+        source_file_path="D:/private/reports/005930.pdf",
+        language="ko",
+        extraction_method="MANUAL",
+    )
+    theme_report = AnalystReportRepository(session).create(
+        report_type="THEME",
+        broker_name="테스트증권",
+        published_at=today - timedelta(days=2),
+        title="HBM 공급 부족 테마",
+        summary="AI 서버 투자 확대로 HBM 공급 부족이 지속된다는 짧은 요약",
+        source_url="https://example.com/reports/theme-hbm",
+        source_file_path="D:/private/reports/theme-hbm.pdf",
+        language="ko",
+        extraction_method="MANUAL",
+    )
+    session.flush()
+    theme = ReportThemeRepository(session).create(
+        source_report_id=theme_report.id,
+        theme_name="HBM",
+        theme_category="SEMICONDUCTOR",
+        direction="POSITIVE",
+        time_horizon="MID",
+        summary="AI 서버 메모리 수요",
+        extraction_method="MANUAL",
+    )
+    session.flush()
+    ThemeStockMappingRepository(session).create(
+        theme_id=theme.id,
+        symbol="005930",
+        company_name="삼성전자",
+        market="KOSPI",
+        relation_type="SUPPLIER",
+        impact_direction="POSITIVE",
+        impact_strength=Decimal("0.800"),
+        impact_path="DEMAND_INCREASE",
+        benefit_type="PRICE_POWER",
+        time_lag="MID",
+        reason="HBM 공급사",
+        extraction_method="MANUAL",
+    )
+    ReportSignalEventRepository(session).create(
+        report_id=theme_report.id,
+        symbol="005930",
+        theme_id=theme.id,
+        event_type="SUPPLY_SHORTAGE",
+        direction="POSITIVE",
+        strength=Decimal("0.700"),
+        time_horizon="MID",
+        summary="HBM 공급 부족 지속",
+        evidence_json={"source": "fixture"},
+        extraction_method="MANUAL",
+    )
+    ReportConsensusSnapshotRepository(session).upsert_by_symbol_date_window(
+        symbol="005930",
+        snapshot_date=today,
+        window_days=90,
+        report_count=2,
+        avg_target_price=Decimal("82000"),
+        min_target_price=Decimal("78000"),
+        max_target_price=Decimal("86000"),
+        buy_count=2,
+        latest_published_at=today - timedelta(days=2),
+    )
+
     # Seed 1/3/5/20-day results for the recommendation
     result_repo = RecommendationResultRepository(session)
     result_repo.upsert(
@@ -555,6 +650,9 @@ def test_today_report_top_recommendations_include_result_rows(client, session):
     top = body["top_recommendations"][0]
     days = {r["days_after"] for r in top["results"]}
     assert days == {1, 3, 5, 20}
+    assert top["report_score"] == "75.00"
+    assert top["theme_signal_score"] == "60.00"
+    assert top["report_evidence"]["top_themes"] == [{"theme_name": "HBM"}]
 
 
 def test_recommendations_run_detail_empty_results_list_when_none_seeded(
@@ -582,7 +680,11 @@ def test_recommendations_run_detail_empty_results_list_when_none_seeded(
 
     response = client.get(f"/api/recommendations/{run.run_id}")
     body = response.json()
-    assert body["recommendations"][0]["results"] == []
+    rec = body["recommendations"][0]
+    assert rec["results"] == []
+    assert rec["report_score"] is None
+    assert rec["theme_signal_score"] is None
+    assert rec["report_evidence"] is None
 
 
 def test_recommendations_history_aggregates_none_when_no_results(client, session):
@@ -895,6 +997,20 @@ def test_stock_detail_returns_stock_with_latest_price_and_indicator(client, sess
     assert body["latest_price"]["close"] == "70500.0000"
     assert body["latest_indicator"]["technical_score"] == "82.0000"
     assert body["latest_indicator"]["ma_alignment"] == "PERFECT_BULL"
+    reports = body["analyst_reports"]
+    assert reports["symbol"] == "005930"
+    assert reports["latest_consensus"]["report_count"] == 2
+    assert reports["latest_consensus"]["avg_target_price"] == "82000.0000"
+    assert reports["latest_consensus"]["buy_count"] == 2
+    assert len(reports["recent_reports"]) == 1
+    assert reports["recent_reports"][0]["broker_name"] == "테스트증권"
+    assert reports["recent_reports"][0]["source_url"] == "https://example.com/reports/005930"
+    assert len(reports["related_themes"]) == 1
+    assert reports["related_themes"][0]["theme_name"] == "HBM"
+    assert reports["related_themes"][0]["impact_direction"] == "POSITIVE"
+    assert len(reports["recent_signal_events"]) == 1
+    assert reports["recent_signal_events"][0]["event_type"] == "SUPPLY_SHORTAGE"
+    _assert_no_source_file_path(body)
 
     assert len(body["recent_recommendations"]) == 1
     rec = body["recent_recommendations"][0]
@@ -937,6 +1053,13 @@ def test_stock_detail_returns_null_price_when_only_stock_seeded(client, session)
     assert body["latest_indicator"] is None
     assert body["recent_recommendations"] == []
     assert body["recent_holding_checks"] == []
+    assert body["analyst_reports"] == {
+        "symbol": "005930",
+        "latest_consensus": None,
+        "recent_reports": [],
+        "related_themes": [],
+        "recent_signal_events": [],
+    }
 
 
 def test_stock_detail_respects_history_limits(client, session):
@@ -948,6 +1071,38 @@ def test_stock_detail_respects_history_limits(client, session):
     body = response.json()
     assert body["recent_recommendations"] == []
     assert body["recent_holding_checks"] == []
+
+
+def test_stock_reports_endpoint_returns_read_only_report_summary(client, session):
+    _seed_full_dataset(session)
+    response = client.get("/api/stocks/005930/reports")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "005930"
+    assert body["latest_consensus"]["max_target_price"] == "86000.0000"
+    assert body["recent_reports"][0]["title"] == "삼성전자 HBM 수요 회복"
+    assert body["related_themes"][0]["theme_category"] == "SEMICONDUCTOR"
+    assert body["recent_signal_events"][0]["summary"] == "HBM 공급 부족 지속"
+    _assert_no_source_file_path(body)
+
+
+def test_stock_reports_endpoint_empty_when_no_reports(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    session.commit()
+    response = client.get("/api/stocks/005930/reports")
+    assert response.status_code == 200
+    assert response.json() == {
+        "symbol": "005930",
+        "latest_consensus": None,
+        "recent_reports": [],
+        "related_themes": [],
+        "recent_signal_events": [],
+    }
+
+
+def test_stock_reports_endpoint_404_for_unknown_symbol(client):
+    response = client.get("/api/stocks/UNKNOWN/reports")
+    assert response.status_code == 404
 
 
 # ---------- /api/stocks/{symbol}/prices ----------

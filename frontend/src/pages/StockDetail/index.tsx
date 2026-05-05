@@ -9,6 +9,7 @@ import { DecisionPill } from '@/components/common/DecisionPill'
 import { ReturnRate } from '@/components/common/ReturnRate'
 import { cn } from '@/lib/utils'
 import { PriceChart } from './PriceChart'
+import { AnalystReportsCard } from './AnalystReportsCard'
 import type {
   HoldingCheck,
   RecommendationItem,
@@ -83,8 +84,14 @@ export function StockDetailPage() {
 }
 
 function StockDetailContent({ data }: { data: StockDetailResponse }) {
-  const { stock, latest_price, latest_indicator, recent_recommendations, recent_holding_checks } =
-    data
+  const {
+    stock,
+    latest_price,
+    latest_indicator,
+    recent_recommendations,
+    recent_holding_checks,
+    analyst_reports,
+  } = data
 
   return (
     <section className="flex flex-col gap-4">
@@ -107,6 +114,8 @@ function StockDetailContent({ data }: { data: StockDetailResponse }) {
       </div>
 
       <PriceChartCard symbol={stock.symbol} />
+
+      <AnalystReportsCard data={analyst_reports} />
 
       <RecentRecommendationsCard items={recent_recommendations} />
       <RecentHoldingChecksCard items={recent_holding_checks} />
