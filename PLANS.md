@@ -738,3 +738,346 @@ v0.4-final                       ← Phase E 인수 / 마감 선언
 **위험 요소:**
 
 - 저작권 한계 명시 누락 → `RELEASE_NOTES_v0.4.md` §보안 섹션을 정책 4 항목 (원문 미저장 / PDF 미저장 / 자동 크롤링 금지 / 외부 공유 금지) 으로 명시
+
+---
+
+## PLAN-0005: v0.5 News, Disclosure & Theme Ranking (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.4-final` (HEAD `0f25be6` 시점, origin/main 동기화 완료)
+- v0.1 ~ v0.4 모두 인수 완료. 회귀 게이트: backend pytest **382**, frontend vitest **60**, e2e **9**, build 통과
+- v0.5 는 v0.4-final 위에 **News / Disclosure 데이터 라인** + **테마 랭킹 화면** 을 신규 추가한다. v0.1 의 read-only / 자동매매 부재 / 비밀 마스킹 / mock·DRY_RUN 정책 + v0.4 의 저작권 정책 (본문 paragraph 미저장 / 자동 크롤링 default OFF) 모두 그대로 유지한다.
+
+### 후보 비교 (v0.5 진입 시점 기준)
+
+| # | 후보 | 가치 | 난이도 | 위험 | 의존성 | v0.5 채택 |
+|---|---|---|---|---|---|---|
+| 1 | News / 공시 실제화 | 높음 (DummyScoreProducer.news_score 25% weight 첫 real 화) | 중 (NewsItem 테이블 v0.1 부터 존재, collector 신규) | 중 (외부 source 의존 / 저작권) | KIS placeholder method 부재 → 신규 collector | ✅ 채택 (Phase A·B·C) |
+| 2 | 재무 / 실적 점수 실제화 | 높음 (장기 가치) | 높음 (DART API + 신규 테이블 2종) | 높음 (재무제표 파싱 정확성) | FundamentalSnapshot / EarningsSnapshot 신규 | ❌ v0.6 후보 (DART 학습 비용 별도 cycle 필요) |
+| 3 | 리포트 인텔리전스 고도화 | 중 (v0.4 산식 미세 튜닝) | 낮음~중 | 낮음 | v0.4 인프라 그대로 | △ 부분 채택 (Phase D — `/themes` 화면 + impact_path 가시화) |
+| 4 | 관심종목 / Watchlist | 중 (UX) | 중 (POST 라우터 + 인증) | 중 (백엔드 read-only 정책 깨기) | 인증 의존 | ❌ v0.6 후보 (POST 도입은 인증 사이클과 묶음) |
+| 5 | 인증 / 보안 | 중 (POST 의 전제) | 중-높음 | 중 (잘못 설계 시 보안 구멍) | — | ❌ v0.6 후보 (Watchlist 와 묶어서) |
+| 6 | 전략 / 백테스트 기초 | 중 (장기) | 매우 높음 | 중 | Strategy ABC 부재 | ❌ v0.7+ 후보 (실 News + 재무 데이터 후행) |
+| 7 | 자동매매 / 실 주문 | (위험) | 매우 높음 | 매우 높음 | 모든 위 + 컴플라이언스 | ❌ Future Backlog (별도 보안 / 컴플라이언스 사이클 선행) |
+
+### 시나리오 옵션
+
+**Scenario X — 데이터 + UX 균형 (권장 ✅)**
+
+- Phase A: News data layer (collector + provider ABC + collect_news 잡 19:00 KST)
+- Phase B: Disclosure subset (DART / 공시 메타 + 분류 + collect_disclosures 잡 20:00 KST)
+- Phase C: `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine 통합
+- Phase D: 테마 랭킹 화면 + 종목→테마 reverse view + StockDetail 영향 설명 강화
+- Phase E: 마감
+
+**Scenario Y — News/Disclosure deep**
+
+- Phase A: News provider + 1 RSS source
+- Phase B: Disclosure provider + DART subset
+- Phase C: news_score sentiment 분석 (룰 기반 + cluster dedup)
+- Phase D: disclosure_event → RiskEngine 보강 (RISK_DISCLOSURE risk_flag 추가, risk_penalty 가산)
+- Phase E: 마감
+- 테마 랭킹 화면은 v0.6 으로 미룸 — 백엔드만 깊게 작업
+
+**Scenario Z — Theme/Report intelligence deep**
+
+- Phase A: 리포트 신뢰도 / broker_country 가중치 / 중복 검출 강화
+- Phase B: 테마 랭킹 알고리즘 (활성도 / impact_strength / recency 결합)
+- Phase C: `/themes` 화면 + 종목 영향 설명 강화
+- Phase D: report_score / theme_signal_score 산식 미세 튜닝 (recency exponential decay)
+- Phase E: 마감
+- News / 공시는 v0.6 으로 미룸 — 화면 / 산식 미세 조정 위주
+
+**최종 추천**: **Scenario X**. 이유:
+
+- 사용자 기본 추천과 정렬 (뉴스/공시 + 리포트·테마 인텔리전스 + 테마 랭킹)
+- DummyScoreProducer 의 5 컴포넌트 (news / supply / fundamental / earnings / ai) 중 가장 가치가 큰 `news_score` (가중치 25%) 를 첫 real 화 — 추천 점수 품질에 가장 큰 영향
+- v0.4 의 테마·시그널 데이터가 v0.5 까지 surface 0 인 상태인데 `/themes` 화면으로 첫 노출 — 누적 데이터의 가시성 회복
+- Y 는 백엔드만 두꺼워지고 화면 정체, Z 는 데이터 layer 정체 — 둘 다 누적 가치 손실
+- 재무 / Watchlist / 인증은 별도 cycle 로 분리하는 게 검증 / 정책 / 일정 모두 안전
+
+### 범위 (5 Phase)
+
+- **Phase A** — News data layer + collector skeleton (`NewsProviderInterface` ABC + `FakeNewsProvider` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 19:00 KST + 단위 / 통합 테스트)
+- **Phase B** — Disclosure subset + 분류 + 종목 매핑 (`DisclosureProviderInterface` + Fake provider + `news_items.category` 활용 + `collect_disclosures` 잡 20:00 KST + 단위 / 통합 테스트)
+- **Phase C** — `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine 통합 (Dummy → Real news_score, RiskEngine 의 `RISK_DISCLOSURE` flag 추가) + decision_logs evidence 확장
+- **Phase D** — 백엔드 `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` (read-only) + 프런트 `/themes` 9번째 화면 + StockDetail 영향 설명 강화 + msw / e2e fixture
+- **Phase E** — `RELEASE_NOTES_v0.5.md` 신규 + README / PROJECT_STATUS / TASKS 마감 + tag `v0.5-final`
+
+### 제외 범위 (v0.5 에서 절대 하지 않을 것)
+
+- ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ POST / PUT / DELETE 라우터 — read-only API 만 (v0.1 ~ v0.4 일관 정책)
+- ❌ 뉴스 / 공시 본문 (paragraph) DB 저장 — title / URL / 메타데이터 / 분류 / sentiment 라벨만
+- ❌ 자동 fetch default ON — `Settings.news_collection_enabled` / `disclosure_collection_enabled` = false (운영자 명시 enable)
+- ❌ 재무 / 실적 점수 실제화 — v0.6 후보 (DART 재무제표 파싱은 별도 cycle)
+- ❌ 관심종목 / Watchlist / 인증 — v0.6 후보 (POST 도입은 인증 사이클과 묶음)
+- ❌ Strategy / Backtest / MockBroker — v0.7+ 후보 (실 News + 재무 데이터 후행)
+- ❌ HoldingCheckEngine 산식 변경 (보유 점검 그대로)
+- ❌ 추천 산식 본 weight 변경 — `news_score` 가 50 → real 로 교체되지만 weight 25% 그대로
+- ❌ KIS API 외 외부 자격증명 추가 — 무료 RSS / DART 공공 API 만 (default OFF)
+- ❌ LLM 자동 sentiment 분석 — Phase C 는 룰 기반만, LLM 보강은 v0.6+ 후보
+
+### 데이터 모델 변경 (Phase A 상세)
+
+**`news_items` 컬럼 1개 추가** (ALTER ADD COLUMN, nullable):
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `category` | String(32) nullable | NEWS / EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER. v0.1 부터 존재한 `theme` / `sentiment` / `importance` 는 그대로 유지. |
+
+신규 테이블 0건 — 기존 `news_items` 테이블을 News + Disclosure 양쪽에 활용 (`category` 컬럼으로 구분). 운영 환경 마이그레이션 = `ALTER TABLE news_items ADD COLUMN category VARCHAR(32);` 한 줄, destructive 0건.
+
+### Score 산식 (Phase C 상세)
+
+**`news_score` 산식** — `RealNewsScoreProducer`:
+
+```
+recency_factor = sum_{news in last 7d} (
+    weight_by_age * sentiment_mapping(news.sentiment)
+)
+weight_by_age = 1.0 (≤24h) / 0.7 (≤3d) / 0.3 (≤7d)
+sentiment_mapping = POSITIVE: +1, NEUTRAL: 0, NEGATIVE: -1, UNKNOWN: 0
+news_score = clip( 50 + recency_factor * 5 / news_count, 0, 100 )
+
+# news_count = 0 → 50 (placeholder behavior 유지, dummy 와 호환)
+```
+
+**`disclosure_signal`** — `DisclosureRiskProducer` (RiskEngine 보강):
+
+```
+risk_disclosures = filter(news_items, category=RISK_DISCLOSURE, last 14d)
+if risk_disclosures non-empty:
+    add risk_flag "RISK_DISCLOSURE" to risk_assessment.flags
+    risk_penalty += min(risk_disclosures_count * 3, 10)  # cap +10
+```
+
+**추천 점수 통합**: `DummyScoreProducer.score_recommendation` 의 `news_score = 50` placeholder 자리에 `RealNewsScoreProducer` 결과 대입. 본 weight (technical 35% + news 25% + supply 15% + fundamental 15% + ai 10% - risk_penalty) 산식은 손대지 않는다. `decision_logs.rule_result_json["news_evidence"]` 추가 (top 3 news / sentiment 분포 / recency).
+
+### 프런트 노출 (Phase D 상세)
+
+- **신규 화면 `/themes` (9번째 화면)** — 활성 테마 랭킹 (최근 30일 발행 리포트 기준). 컬럼: theme_name / theme_category / direction / report_count / mapping_count / signal_event_count / avg_impact_strength / latest_published_at. 검색 / 카테고리 필터 / direction 필터.
+- **테마 상세 (`/themes/:id`)** — 테마 메타 + 매핑된 종목 리스트 (impact_direction / impact_path / time_lag) + 최근 시그널 이벤트 5건. 종목 클릭 시 StockDetail 로 이동.
+- **StockDetail 의 "관련 테마" 카드 강화** — 기존 v0.4 카드에 `impact_path` icon (DEMAND_INCREASE / SUPPLY_SHORTAGE / COST_PRESSURE 등 11종) + reason 한 줄 가시화 추가. 테마 클릭 시 `/themes/:id` 로 이동.
+- **사이드바 nav 9번째 메뉴** — "테마 (β)" 추가 (v0.5 에서 첫 surface 라 베타 라벨).
+- **기존 8 화면 변경 0건** — Today / Recommendations / History / Holdings / MarketCapTop / Jobs / Settings 손대지 않음.
+
+### v0.5 누적 태그 (예정)
+
+```
+v0.4-final                      ← v0.5 시작점 (HEAD 0f25be6)
+v0.5-news-collector             ← Phase A 인수 (NewsCollector + collect_news 잡)
+v0.5-disclosure-pipeline        ← Phase B 인수 (Disclosure subset + collect_disclosures 잡)
+v0.5-news-score                 ← Phase C 인수 (RealNewsScoreProducer + RiskEngine 보강)
+v0.5-frontend-themes            ← Phase D 인수 (/themes 화면 + StockDetail 영향 강화)
+v0.5-final                      ← Phase E 인수 / 마감 선언
+```
+
+### v0.6+ 후보 (Backlog 등재용)
+
+- 실 재무 / 실적 점수 (PER/PBR/EPS/ROE + DART 재무제표 파싱) — `FundamentalSnapshot` / `EarningsSnapshot` 신규
+- 인증 / API key + Watchlist (POST 첫 도입)
+- LLM 보강 (analyst report 자동 요약 + news sentiment LLM 보강)
+- News/Disclosure 출처 다중화 (RSS 다중 + 외부 API)
+- KRX 휴장일 자동 fetch
+- 운영 모니터링 (Sentry / Prometheus / Grafana)
+- 모바일 / 태블릿 레이아웃
+- 자동매매 (별도 보안 / 컴플라이언스 cycle 선행 필수): MockBroker → APPROVAL → SMALL_AUTO
+
+---
+
+### Phase A — News data layer + collector skeleton
+
+**목표:** `news_items` 테이블에 처음으로 데이터가 채워지는 read-only 수집 파이프라인. 기본 default OFF — 운영자가 `.env` 에 `NEWS_COLLECTION_ENABLED=true` 명시 시에만 동작.
+
+**수정할 파일:**
+
+- `app/data/interfaces.py` — `NewsProviderInterface` ABC 추가 (`fetch_news(start_time, end_time, symbols=None) -> list[NewsItemDTO]`)
+- `app/data/dtos.py` — `NewsItemDTO` dataclass 추가
+- `app/data/collectors/news_collector.py` (신규) — `NewsCollector` 서비스. provider → normalize → `NewsItemRepository.upsert` 흐름. 멱등 (URL hash unique).
+- `app/data/collectors/__init__.py` — 신규 export
+- `app/db/models.py` — `NewsItem.category: String(32) nullable` ALTER ADD COLUMN
+- `app/data/repositories/news_items.py` — `upsert_by_url` / `list_recent_by_symbol` / `list_by_category_and_date` 메서드 추가
+- `app/scheduler/jobs.py` — `collect_news` 잡 신규. 활성 시 19:00 KST 에 NewsCollector 실행. NEWS_COLLECTION_ENABLED=false 시 NO_DATA + status=SUCCESS.
+- `app/scheduler/scheduler.py` — `JOB_NAME_COLLECT_NEWS` 등록 (8번째 잡, 19:00 KST)
+- `app/config/settings.py` — `news_collection_enabled: bool = False` 추가
+- `tests/mocks/fake_news_provider.py` (신규) — `FakeNewsProvider` for tests
+- `tests/integration/test_news_collector.py` (신규) — happy / 멱등 / NEWS_COLLECTION_ENABLED 분기 / unknown symbol 처리 ~5건
+- `tests/integration/test_scheduler_jobs.py` — registry 7 → 8 jobs 갱신 + `collect_news` 시간 검증
+- `DB_SCHEMA.md` — `news_items` §9 에 `category` 컬럼 추가 명시
+
+**수정하지 않을 파일:**
+
+- `app/decision/`, `app/notification/`, `frontend/` — 본 phase 에서 변경 없음
+- KIS / Telegram 관련 코드 0건 (NewsCollector 는 별도 provider)
+
+**단계:**
+
+1. `NewsProviderInterface` ABC + `NewsItemDTO` + `FakeNewsProvider` (mock-only)
+2. `NewsCollector` 서비스 + 단위 / 통합 테스트
+3. `news_items.category` ALTER ADD COLUMN
+4. `Settings.news_collection_enabled = False` (default OFF) + 잡 등록
+5. `tests/integration/test_scheduler_jobs.py` 의 7 jobs registry → 8 jobs
+
+**테스트:**
+
+- 단위: `NewsCollector` happy / 빈 응답 / 잘못된 url skip / sentiment / theme 정규화
+- 통합: NEWS_COLLECTION_ENABLED=false → 잡이 NO_DATA 로 SUCCESS 반환, 행 0건
+- 통합: NEWS_COLLECTION_ENABLED=true + FakeNewsProvider → 행 N건 upsert, 멱등 재실행 시 추가 행 0건
+- 회귀: backend pytest 382 + 신규 → 모두 통과
+
+**완료 기준:**
+
+- backend pytest 382 → ~390 passed
+- `news_items` 에 FakeNewsProvider 데이터 정상 적재
+- 8번째 잡 `collect_news` (19:00 KST) 등록 + DEFAULT_SCHEDULE 노출
+- 외부 호출 0건 (NEWS_COLLECTION_ENABLED=false default)
+- 태그 `v0.5-news-collector`
+
+**위험 요소:**
+
+- `news_items.url` unique 제약 (현재 nullable) — `upsert_by_url` 의 NULL 처리 명시
+- 외부 source 의존 → v0.5 는 FakeNewsProvider + 1 free RSS 만, 자동 fetch default OFF
+- 잡 시간 충돌 — 19:00 비어 있음 (확인 완료)
+
+### Phase B — Disclosure subset + 분류 + 종목 매핑
+
+**목표:** 공시 메타데이터 수집 + 카테고리 분류 (EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER). DART API 자동 fetch 는 default OFF, 수동 / Fake provider 위주.
+
+**수정할 파일:**
+
+- `app/data/interfaces.py` — `DisclosureProviderInterface` ABC
+- `app/data/dtos.py` — `DisclosureItemDTO` dataclass
+- `app/data/collectors/disclosure_collector.py` (신규) — `DisclosureCollector` + 분류 함수 (룰 기반: keyword → category)
+- `app/data/collectors/__init__.py` — export 추가
+- `app/scheduler/jobs.py` — `collect_disclosures` 잡 (20:00 KST)
+- `app/scheduler/scheduler.py` — `JOB_NAME_COLLECT_DISCLOSURES` (9번째 잡)
+- `app/config/settings.py` — `disclosure_collection_enabled: bool = False`
+- `tests/mocks/fake_disclosure_provider.py` (신규)
+- `tests/integration/test_disclosure_collector.py` (신규, ~6 케이스)
+- `tests/integration/test_scheduler_jobs.py` — 9 jobs registry 갱신
+- `INTEGRATION_RUNBOOK.md` — §10 News / Disclosure 운영 절차 추가
+
+**테스트:**
+
+- 단위: 분류 룰 (keyword → category) 정확성 (실적공시 → EARNINGS_REPORT, 주식 등 대량보유 → OWNERSHIP_CHANGE, 거래정지 → RISK_DISCLOSURE 등)
+- 통합: Fake provider 활성 시 N건 upsert, 분류 정확도, 멱등성
+
+**완료 기준:**
+
+- backend pytest ~390 → ~398 passed
+- 9번째 잡 `collect_disclosures` 등록
+- 태그 `v0.5-disclosure-pipeline`
+
+**위험 요소:**
+
+- DART API rate limit / 한국어 분류 정확도 → v0.5 는 룰 기반 keyword 매칭 + 운영자 검토. LLM 분류는 v0.6+ 후보.
+
+### Phase C — `RealNewsScoreProducer` + RiskEngine 보강
+
+**목표:** DummyScoreProducer 의 `news_score = 50` placeholder 를 real 산식으로 교체. RiskEngine 에 `RISK_DISCLOSURE` flag 추가.
+
+**수정할 파일:**
+
+- `app/analysis/score_producers.py` — `ScoreProducerInterface` ABC 추출. `DummyScoreProducer` 는 ABC 구현체로 유지. `RealNewsScoreProducer` 신규.
+- `app/decision/risk_engine.py` — `evaluate_recommendation` / `evaluate_holding` 에 `risk_disclosure_count` 입력 + `RISK_DISCLOSURE` flag 처리 (penalty +N, max +10)
+- `app/decision/recommendation_engine.py` — score_producer 가 ABC 통해 주입. RealNewsScoreProducer 사용 시 NewsItem 조회 + 산식 적용. evidence 기록.
+- `app/decision/holding_check_engine.py` — 동일 패턴
+- `app/api/schemas.py` — `RecommendationItemSchema` / `HoldingCheckSchema` 의 `news_evidence: Optional[Dict]` 추가
+- `tests/unit/test_real_news_score_producer.py` (신규, ~10 케이스)
+- `tests/integration/test_recommendation_engine.py` — RealNewsScoreProducer 시나리오 보강 ~3건
+- `tests/integration/test_risk_engine.py` — RISK_DISCLOSURE flag 케이스 ~2건
+- `tests/integration/test_api_routes.py` — `/api/recommendations/latest` 의 `news_evidence` 노출 ~2건
+
+**테스트:**
+
+- 단위: 산식 — news_count=0 → 50 / +1 sentiment 우세 + recency ≤24h → 60+ / -1 sentiment 우세 → 40- / clip 경계
+- 통합: RecommendationEngine 가 NewsItem 조회 → news_score 가 50 이외 값 → recommendations.news_score 컬럼에 반영
+- 통합: RISK_DISCLOSURE 발견 시 risk_penalty 가산 + flags 에 추가
+- 회귀: HoldingCheckEngine / ScoringEngine 본 weight 산식 0건 변경, 기존 테스트 통과
+
+**완료 기준:**
+
+- backend pytest ~398 → ~415 passed
+- DummyScoreProducer.news_score = 50 placeholder → RealNewsScoreProducer real 값
+- 태그 `v0.5-news-score`
+
+**위험 요소:**
+
+- 추천 점수 분포 변동 → news_score 가 갑자기 흔들리면 등급 분포가 비정상화. mock seed 1회 적용 후 등급 분포 직전 / 직후 비교 검증.
+- RealNewsScoreProducer 가 `news_count = 0` 시 50 fallback (Dummy 와 동일) 안전망.
+
+### Phase D — 테마 랭킹 화면 + StockDetail 영향 설명 강화
+
+**목표:** v0.4 의 테마·매핑·시그널 데이터를 처음으로 화면에 surface. `/themes` 신규 화면 + StockDetail 영향 가시화 강화.
+
+**수정할 파일:**
+
+- `app/api/routes.py` — `GET /api/themes/ranking?as_of=...&category=...&direction=...&limit=20` (신규) + `GET /api/themes/{theme_id}` (신규). 모두 read-only.
+- `app/api/schemas.py` — `ThemeRankingItemSchema` / `ThemeDetailResponse` 신규
+- `tests/integration/test_api_routes.py` — happy / empty / 필터 / 404 ~4건
+- `frontend/src/api/types.ts` — `ThemeRankingItem` / `ThemeDetailResponse` 타입 추가
+- `frontend/src/hooks/useThemeRanking.ts` (신규)
+- `frontend/src/hooks/useThemeDetail.ts` (신규)
+- `frontend/src/pages/Themes/index.tsx` (신규) — 랭킹 리스트 + 검색 / 필터
+- `frontend/src/pages/Themes/ThemeDetail.tsx` (신규) — 테마 상세 + 매핑 종목 + 시그널 이벤트
+- `frontend/src/router.tsx` — `/themes` + `/themes/:themeId` lazy route 추가
+- `frontend/src/components/Sidebar.tsx` — "테마 (β)" 9번째 메뉴
+- `frontend/src/pages/StockDetail/AnalystReportsCard.tsx` — 관련 테마 섹션에 `impact_path` icon + reason 가시화 보강 (테마 클릭 → `/themes/:id`)
+- `frontend/src/tests/Themes.test.tsx` (신규, ~3 케이스: happy / empty / 필터)
+- `frontend/src/tests/mswServer.ts` — `/api/themes/*` 핸들러
+- `frontend/e2e/fixtures/apiMocks.ts` — fixture 추가
+- `frontend/e2e/dashboard.spec.ts` — 9 메뉴 nav 검증 + `/themes` 화면 visit + 자동매매 부재 가드 e2e 통과 확인 ~1건
+
+**테스트:**
+
+- backend pytest +4
+- frontend vitest +3
+- e2e +1 (9 → 10)
+
+**완료 기준:**
+
+- `/themes` 화면 노출 + 테마 상세 navigation
+- 사이드바 9 메뉴
+- StockDetail 영향 설명 강화
+- 회귀 게이트 모두 그린
+- 태그 `v0.5-frontend-themes`
+
+**위험 요소:**
+
+- 9번째 사이드바 메뉴 추가 시 layout overflow → "(β)" 라벨로 짧게. 1280px width 검증.
+- `/themes` 화면이 활성 테마 0 시 빈 상태 처리 — placeholder 명시.
+
+### Phase E — v0.5 릴리스 문서 / 마감
+
+**목표:** v0.5 인수 종료 선언, 산출물 / 검증 / 제외 / 한계 / v0.6 후보 / 운영 가이드 / 저작권·보안 정리.
+
+**수정할 파일:**
+
+- `RELEASE_NOTES_v0.5.md` (신규) — 7 섹션 (산출물 / 검증 / 제외 범위 / 알려진 한계 / v0.6 후보 / 운영 가이드 / 저작권·보안)
+- `README.md` — 상단 마감 배너 v0.5 갱신 + 누적 태그 라인 + 저작권 한 줄
+- `PROJECT_STATUS.md` — §0 v0.5 시작 → v0.5 마감 in-place 갱신, §0-1 v0.4 / §0-2 v0.3 / §0-3 v0.2 / §0-4 v0.1 으로 강등
+- `TASKS.md` — v0.5 phase 모두 [x]
+- `ARCHITECTURE.md` — 11 layer 구조 (News/Disclosure layer 추가) 반영
+
+**단계:**
+
+1. 모든 phase 통과 / 4 게이트 그린
+2. `RELEASE_NOTES_v0.5.md` 작성
+3. README / PROJECT_STATUS / TASKS / ARCHITECTURE 동기화
+4. tag `v0.5-final` 부여 + push
+
+**테스트:**
+
+- 코드 변경 없음. release 직전 4 게이트 1회 실행 (backend pytest ~419 / vitest ~63 / e2e ~10 / build).
+
+**완료 기준:**
+
+- `RELEASE_NOTES_v0.5.md` 작성 완료
+- 4 게이트 모두 그린
+- tag `v0.5-final` push 완료
+
+**위험 요소:**
+
+- News/Disclosure 자동 fetch flag 가 운영 환경에서 실수로 ON 되어 외부 source 호출 → `.env.example` 에 `NEWS_COLLECTION_ENABLED=false` / `DISCLOSURE_COLLECTION_ENABLED=false` 명시 + `KIS_OPS_CHECKLIST.md` 에 운영 진입 체크 항목 추가
