@@ -114,6 +114,50 @@ export interface TodayReportResponse {
   holding_alerts: HoldingCheck[]
 }
 
+// ----- /api/universe/market-cap-top -----
+
+export interface MarketCapRanking {
+  rank_date: string
+  market: string
+  rank: number
+  symbol: string
+  name: string
+  market_cap: string | null
+  close_price: string | null
+  listed_shares: number | null
+  sector: string | null
+  trading_value: string | null
+  is_analysis_target: boolean
+}
+
+export interface MarketCapRankingResponse {
+  rank_date: string | null
+  market: string | null
+  items: MarketCapRanking[]
+}
+
+// ----- /api/settings -----
+
+export interface SettingsResponse {
+  app_env: string
+  app_name: string
+  timezone: string
+  log_level: string
+  telegram_enabled: boolean
+  telegram_bot_token: string
+  telegram_chat_id: string
+  kis_app_key: string
+  kis_app_secret: string
+  kis_account_no: string
+  kis_use_paper: boolean
+  scheduler_enabled: boolean
+  feature_real_order_execution: boolean
+  feature_full_auto: boolean
+  feature_paper_trading: boolean
+  feature_backtest: boolean
+  feature_custom_ai_training: boolean
+}
+
 // ----- /api/holdings -----
 
 export interface Holding {

@@ -136,7 +136,13 @@ frontend/
   - Holdings: 좌측 보유 list (symbol/qty/avg_buy/strategy/decision/risk/return/alert) + 우측 선택 종목 패널 (4 metric card + KeyValueGrid + total_score/return_rate 추세 라인 2개 + 최근 점검 펼침 표). 행 클릭 → `/holdings/:symbol`. "종목 상세 →" 링크 → `/stocks/:symbol`. 60초 자동 새로고침.
   - Stock Detail: 헤더 (name/symbol/market/sector) + 최신 가격 (open/high/low/close/volume/trading_value) + 최신 지표 (MA5/20/60/120 / RSI14 / MACD / volume_ratio_20d / breakout / ma_alignment / technical_score) + 최근 추천 이력 표 (rank/grade/total/risk + 1·3·5·20일 close_return + 사유) + 최근 보유 점검 표.
   - 테스트: Holdings 4건 (happy with checks merge / row-click → trend panel + 4 metrics / empty / error 500) + StockDetail 3건 (happy 5 sections / empty placeholders / error 404).
-- [ ] (Phase E) MarketCap Top + Settings
+- [x] **Phase E** — 시가총액 TOP + 설정 화면 실 데이터 연동
+  - hooks: `useMarketCapTop`, `useSettings`
+  - shared components 추가: `SafetyFlagBadge`
+  - MarketCap TOP: rank 정렬 가능 TanStack Table + 시장 필터 (KOSPI/KOSDAQ/ALL — ALL 은 두 시장 병합) + symbol/name 검색. 종목 클릭 → `/stocks/:symbol`. 1시간 자동 새로고침.
+  - Settings: 4 KeyValueGrid 섹션 (앱·환경 / KIS / Telegram / v0.1 안전 플래그) + freeze 배너 ("v0.1 백엔드 동결 / 변경은 .env + 재시작") + `MaskedSecret` 비밀값 평문 노출 자동 감지 (⚠ unmasked 표시). 안전 플래그 5개가 모두 false 인지 색상으로 한눈 확인.
+  - 테스트: MarketCap 5건 (happy / market 필터 KOSPI→KOSDAQ→ALL / symbol·name 검색 / empty / 500) + Settings 5건 (happy + 4 sections / 모든 비밀 마스킹 검증 / 평문 누출 시 unmasked 마커 / 안전 플래그 위반 시 빨강 + 헤더 카운트 / 500 에러).
+- [ ] (Phase F) 마감 — Playwright e2e + Recharts 코드 스플릿 + Docker 프론트 서비스 + `RELEASE_NOTES_v0.2_FRONTEND.md`
 - [ ] (Phase E) MarketCap Top + Settings
 - [ ] (Phase F) Playwright e2e + Docker 배포 + `RELEASE_NOTES_v0.2_FRONTEND.md`
 

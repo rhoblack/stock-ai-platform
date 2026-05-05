@@ -60,6 +60,30 @@ export const handlers = [
   http.get('*/api/stocks/:symbol', () =>
     HttpResponse.json({ detail: 'not found' }, { status: 404 }),
   ),
+  http.get('*/api/universe/market-cap-top', () =>
+    HttpResponse.json({ rank_date: null, market: 'KOSPI', items: [] }),
+  ),
+  http.get('*/api/settings', () =>
+    HttpResponse.json({
+      app_env: 'test',
+      app_name: 'stock_ai_platform',
+      timezone: 'Asia/Seoul',
+      log_level: 'INFO',
+      telegram_enabled: false,
+      telegram_bot_token: 'fake****test',
+      telegram_chat_id: '12****90',
+      kis_app_key: 'PSnm****Zqry',
+      kis_app_secret: 'XxC8****4yc=',
+      kis_account_no: '5015****1-01',
+      kis_use_paper: true,
+      scheduler_enabled: false,
+      feature_real_order_execution: false,
+      feature_full_auto: false,
+      feature_paper_trading: false,
+      feature_backtest: false,
+      feature_custom_ai_training: false,
+    }),
+  ),
 ]
 
 export const server = setupServer(...handlers)
