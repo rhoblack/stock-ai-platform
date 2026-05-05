@@ -1,23 +1,40 @@
 # PROJECT_STATUS.md
 
-v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 이어서 작업을
-시작할 때 가장 먼저 읽어야 할 파일이다. AGENTS.md / TASKS.md와 함께 사용한다.
+진행 상태 스냅샷. 새 Codex 세션이 이어서 작업을 시작할 때 가장 먼저 읽어야 할
+파일이다. AGENTS.md / TASKS.md와 함께 사용한다. 마감 선언은 가장 최근 사이클이
+§0 에 위치하고 이전 사이클 마감은 §0-1, §0-2 로 강등된다.
 
 ---
 
-## 0. v0.3 시작 선언 — 분석 보강 + 운영 정착
+## 0. v0.3 마감 선언 — 분석 보강 + 운영 정착
 
-**v0.3 cycle 진입.** 기준선 `v0.2-frontend-final`. v0.1 backend + v0.2 frontend 양쪽 마감 위에 분석 / UX / CI 5 phase 를 진행한다. v0.1 의 read-only / 자동매매 부재 / 비밀 마스킹 정책은 그대로 유지한다.
+**v0.3 분석 보강 + 운영 정착 사이클은 종료 (마감) 상태이다.** 신규 기능 / 잡 /
+라우터 / 화면 추가는 사용자의 명시적 v0.4 진입 요청 전까지 진행하지 않는다.
 
-### v0.3 범위 (Phase A~E)
+| 항목 | 값 |
+|---|---|
+| 최종 태그 | `v0.3-final` |
+| 인수 일자 | 2026-05-05 (Asia/Seoul) |
+| 회귀 게이트 | **백엔드 pytest 319 / frontend vitest 59 / Playwright e2e 8 / build 그대로** (외부 호출 0건, mock / DRY_RUN 만) |
+| 자동매매 / 실 주문 | **v0.3 범위 밖** — `BrokerInterface` ABC placeholder 그대로 유지 / POST 트리거 0건 |
+| 누적 인수 태그 | `v0.3-phase-a-ci` → `v0.3-backend-analysis` → `v0.3-frontend-calendar` → `v0.3-frontend-stock-chart` → **`v0.3-final`** |
+| 종합 인수 사유 | [`RELEASE_NOTES_v0.3.md`](./RELEASE_NOTES_v0.3.md) |
+
+### v0.3 4 phase 인수 결과
 
 | Phase | 작업 | 상태 | 산출 태그 |
 |---|---|---|---|
-| A | GitHub Actions CI (backend pytest + frontend vitest+build + Playwright e2e) | ✅ 인수 | `v0.3-phase-a-ci` |
-| B | 캔들 패턴 + ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (백엔드, DB 컬럼 +3개) | ✅ 인수 (backend pytest 296 → 314, vitest 36 / e2e 6 / build 그대로) | `v0.3-backend-analysis` |
-| C | 한국거래소 휴장일 캘린더 (정적 JSON, Today/Jobs/Holdings 배너) | ✅ 인수 (vitest 36 → 55, e2e 6 → 7, build / backend pytest 314 회귀 0) | `v0.3-frontend-calendar` |
-| D | `GET /api/stocks/{symbol}/prices` 신규 + StockDetail 일봉 차트 (Recharts) | ✅ 인수 (backend pytest 314 → 319, vitest 55 → 59, e2e 7 → 8, build 그대로) | `v0.3-frontend-stock-chart` |
-| E | `RELEASE_NOTES_v0.3.md` + README/PROJECT_STATUS/TASKS 마감 + tag `v0.3-final` | ⏳ | `v0.3-final` |
+| A | GitHub Actions CI (backend pytest + frontend vitest+build + Playwright e2e 3 job) | ✅ 인수 | `v0.3-phase-a-ci` |
+| B | 캔들 패턴 5종 + Wilder ATR(14) + 변동성 분류 → `technical_score` 산식 보강 (DB 컬럼 +3) | ✅ 인수 (backend pytest 296 → 314, vitest / e2e / build 회귀 0) | `v0.3-backend-analysis` |
+| C | 정적 KRX 휴장일 캘린더 (2025–2027) + Today/Jobs/Holdings MarketStatusBanner | ✅ 인수 (vitest 36 → 55, e2e 6 → 7, build / backend pytest 314 회귀 0) | `v0.3-frontend-calendar` |
+| D | `GET /api/stocks/{symbol}/prices` 신규 + StockDetail 일봉 라인 차트 (Recharts) | ✅ 인수 (backend pytest 314 → 319, vitest 55 → 59, e2e 7 → 8, build 그대로) | `v0.3-frontend-stock-chart` |
+| E | `RELEASE_NOTES_v0.3.md` + README / PROJECT_STATUS / TASKS 마감 + tag `v0.3-final` | ✅ 인수 (코드 변경 없음, 4 게이트 그대로) | `v0.3-final` |
+
+### Phase A 결과 (요약)
+
+- `.github/workflows/ci.yml` 신규 — main / PR 양쪽에서 3 job 자동 실행: (1) backend pytest python 3.12 + `pip install -e ".[dev]"`, (2) frontend vitest + lint + build node 20, (3) Playwright e2e (`playwright install chromium` + `npm run e2e` + `playwright-report/` artifact 업로드).
+- PR 1건 의도적 실패로 빨강 한 번 확인 → 픽스 후 그린 상태로 마감.
+- 코드 변경 없음 (워크플로우 / config 만 추가). `.github/dependabot.yml` 은 v0.4 후보로 보류.
 
 ### Phase B 결과 (요약)
 
@@ -50,18 +67,41 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 - vitest 4건 신규 (chart success / empty / error / days 선택자 토글 + searchParams 검증), MSW 기본 핸들러 `/api/stocks/:symbol/prices` (count=0) 추가, e2e fixture `STOCK_PRICE_SERIES_005930` (5건) + 라우트 패턴 `/api/stocks/005930/prices` 우선순위 등록. 프런트 vitest **55 → 59**, Playwright e2e **7 → 8**.
 - 빌드 그대로 (vendor-charts 청크 383.32 kB 동일, StockDetail 페이지 청크만 8.28 → 11.36 kB 증가). 정책: 자동매매 / KIS 호출 / 텔레그램 / POST 라우터 / 추천·보유 산식 0건 변경.
 
+### Phase E 결과 (요약)
+
+- `RELEASE_NOTES_v0.3.md` 신규 (산출물 / 검증 / 제외 / 한계 / v0.4 후보 / 인수자 가이드 / 보안).
+- `README.md` 상단 마감 배너 갱신 — v0.3 마감 선언으로 교체, v0.1 / v0.2 는 누적 태그 라인으로 흡수.
+- `PROJECT_STATUS.md` §0 v0.3 마감 선언으로 변경 (본 섹션). 기존 §0-1 v0.2 / §0-2 v0.1 마감 선언은 그대로 보존.
+- `TASKS.md` v0.3 Phase E 모든 [x] + v0.4 백로그 정리.
+- 4 게이트 재확인 — backend pytest **319**, frontend vitest **59**, frontend build 그대로, Playwright e2e **8**. 회귀 0건.
+- **코드 변경 0건** (문서 마감 위주). 백엔드 라우터 / 프런트 화면 / 잡 / 산식 / 비밀값 일체 손대지 않음.
+
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0003`, 체크리스트는 [`TASKS.md`](./TASKS.md) `v0.3 — 분석 보강 + 운영 정착` 섹션 참조.
 
-### v0.3 에서 절대 하지 않을 것 (정책 재확인)
+### v0.3 에서 끝까지 하지 않은 것 (정책 재확인)
 
-- ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
-- ❌ POST 트리거 UI (수동 잡 실행 / 추천 즉시 생성 / 보유 추가·삭제 폼)
-- ❌ 실 News / Supply / Fundamental / Earnings 외부 파이프라인 (placeholder 유지, 캔들/ATR 만 추가)
+- ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO — 코드 0건 추가
+- ❌ POST 트리거 UI (수동 잡 실행 / 추천 즉시 생성 / 보유 추가·삭제 폼) — frontend / backend 양쪽 0건
+- ❌ 실 News / Supply / Fundamental / Earnings 외부 파이프라인 — `DummyScoreProducer` placeholder 유지, 캔들/ATR/변동성만 추가 (기존 일봉 데이터로 계산)
 - ❌ 즐겨찾기 / 관심 종목 / 인증 / 모니터링 / 모바일 — 모두 v0.4+ 후보
 
-### v0.3 백엔드 동결 정책 변경 안내
+### v0.3 백엔드 동결 정책 변경 (확정)
 
-`v0.1-backend-final` 동결을 일부 깬다. Phase B 가 `app/analysis/`, `app/db/models.py` (`StockIndicator` 컬럼 2개 추가), `app/data/repositories/stock_indicators.py`, `app/analysis/indicator_service.py`, `app/api/schemas.py` 를 수정. Phase D 가 `app/api/routes.py`, `app/api/schemas.py` 에 신규 read-only GET 1개 추가. **POST 라우터 / 잡 트리거 / 자동매매 코드는 추가하지 않는다.** DB 컬럼 추가는 ALTER ADD 만이라 destructive 아니지만 운영 환경 마이그레이션 안내가 필요.
+`v0.1-backend-final` 동결을 v0.3 에서 일부 깬 범위는 다음으로 한정 — POST 라우터 /
+잡 트리거 / 자동매매 코드는 추가하지 않았다.
+
+| Phase | 변경 파일 | 종류 |
+|---|---|---|
+| B | `app/analysis/technical_analyzer.py` | 신규 함수 (캔들 5종 / ATR / 변동성), 기존 산식 시그니처는 default None 키워드만 추가 |
+| B | `app/db/models.py` | `StockIndicator` ALTER ADD 3 컬럼 (모두 nullable) |
+| B | `app/data/repositories/stock_indicators.py` | `upsert` 키워드 3개 추가 |
+| B | `app/analysis/indicator_service.py` | snapshot 의 신규 필드 persist |
+| B/D | `app/api/schemas.py` | `StockIndicatorSchema` +3 optional / `StockPriceSeriesResponse` 신규 |
+| D | `app/api/routes.py` | 신규 read-only `GET /api/stocks/{symbol}/prices` 1개 |
+| B/D | `tests/integration/test_*.py` | +5 (Phase B indicator) +5 (Phase D prices) |
+
+DB 컬럼 추가는 `ALTER TABLE ADD COLUMN` 만이라 destructive 하지 않다. 운영 환경
+마이그레이션 안내는 [`RELEASE_NOTES_v0.3.md`](./RELEASE_NOTES_v0.3.md) §7.3 참조.
 
 ---
 

@@ -4,21 +4,21 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.1 백엔드 마감.** 최종 태그: `v0.1-backend-kis-paper-verified`. 회귀
-> 게이트 296 passed, mock seed 통합 시나리오 + KIS 모의투자 서버 read-only
-> 검증 모두 1회 인수 완료. 자동매매 / 실 주문은 v0.1 범위 밖이며 코드 /
-> 인터페이스 구현 일체 포함하지 않습니다 (`BrokerInterface` 는 ABC
-> placeholder 만 유지). 종합 인수 사유 / 알려진 한계 / v0.2 후보는
-> [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) 참조.
+> **v0.3 분석 보강 + 운영 정착 마감.** 최종 태그 `v0.3-final`. 4 phase
+> (CI / 캔들·ATR 분석 / KRX 휴장 캘린더 / StockDetail 일봉 차트) 모두 인수.
+> 회귀 게이트 — **백엔드 pytest 319 / frontend vitest 59 / Playwright e2e 8 /
+> build 통과**. 자동매매 / 실 주문 / POST 트리거 UI 는 v0.3 범위 밖이며 본
+> 릴리스에 코드 일체 포함하지 않습니다 (`BrokerInterface` 는 ABC
+> placeholder 만 유지). 종합 인수 사유 / 알려진 한계 / v0.4 후보는
+> [`RELEASE_NOTES_v0.3.md`](./RELEASE_NOTES_v0.3.md) 참조.
 >
-> **v0.2 frontend 마감.** 최종 태그 `v0.2-frontend-final`. 8개 화면 모두
-> 백엔드 read-only API 에 연결되었고 vitest 36 / Playwright e2e 6 / 백엔드
-> pytest 296 모두 통과. 코드 스플릿 적용 (첫 진입 gzip ~80 kB), Docker 프런트
-> 서비스 (`docker compose up` → `http://127.0.0.1:8080`) 추가. 종합 인수
-> 사유 / 알려진 한계 / v0.3 후보는
-> [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md) 참조.
-> 자동매매 / 실 주문 / POST 트리거 UI 는 v0.2 범위 밖이며 본 릴리스에 코드
-> 일체 포함하지 않습니다.
+> **누적 인수 태그**: `v0.1-backend-final` → `v0.1-backend-kis-paper-verified`
+> → `v0.2-frontend-final` → `v0.3-phase-a-ci` → `v0.3-backend-analysis` →
+> `v0.3-frontend-calendar` → `v0.3-frontend-stock-chart` → **`v0.3-final`**.
+>
+> 이전 사이클 마감 사유는 [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
+> (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
+> (PC 대시보드 8 화면, vitest 36 / e2e 6) 참조.
 
 ## 1. 프로젝트 목표
 
