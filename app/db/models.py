@@ -94,6 +94,10 @@ class StockIndicator(TimestampMixin, Base):
     breakout_60d: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     ma_alignment: Mapped[str | None] = mapped_column(String(32), nullable=True)
     technical_score: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    # v0.3 Phase B — additive nullable columns. Existing rows default to NULL.
+    atr14: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    candle_patterns: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    volatility_band: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("symbol", "date", name="uq_stock_indicators_symbol_date"),

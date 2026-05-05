@@ -45,6 +45,11 @@ class StockIndicatorRepository(BaseRepository[StockIndicator]):
         breakout_60d: bool | None = None,
         ma_alignment: str | None = None,
         technical_score: Decimal | None = None,
+        # v0.3 Phase B — additive optional kwargs (default None to keep all
+        # existing call sites numerically unchanged).
+        atr14: Decimal | None = None,
+        candle_patterns: list[str] | None = None,
+        volatility_band: str | None = None,
     ) -> StockIndicator:
         existing = self.get_by_symbol_date(symbol, indicator_date)
         if existing is None:
@@ -64,6 +69,9 @@ class StockIndicatorRepository(BaseRepository[StockIndicator]):
                     breakout_60d=breakout_60d,
                     ma_alignment=ma_alignment,
                     technical_score=technical_score,
+                    atr14=atr14,
+                    candle_patterns=candle_patterns,
+                    volatility_band=volatility_band,
                 ),
             )
 
@@ -79,5 +87,8 @@ class StockIndicatorRepository(BaseRepository[StockIndicator]):
         existing.breakout_60d = breakout_60d
         existing.ma_alignment = ma_alignment
         existing.technical_score = technical_score
+        existing.atr14 = atr14
+        existing.candle_patterns = candle_patterns
+        existing.volatility_band = volatility_band
         self.session.flush()
         return existing

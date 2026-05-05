@@ -349,3 +349,201 @@ def test_technical_analyzer_indicator_snapshot_quantizes_to_four_decimals():
     assert snapshot.ma20 is not None
     # last 20 closes are 110..129, mean = (110 + 129) / 2 = 119.5
     assert snapshot.ma20 == Decimal("119.5000")
+
+
+# ---------- v0.3 Phase B: ATR(14) + candle patterns + volatility ----------
+
+from app.analysis.technical_analyzer import (  # noqa: E402  (intentional grouping)
+    CANDLE_BEARISH_ENGULFING,
+    CANDLE_BULLISH_ENGULFING,
+    CANDLE_DOJI,
+    CANDLE_HAMMER,
+    CANDLE_SHOOTING_STAR,
+    VOLATILITY_EXTREME,
+    VOLATILITY_HIGH,
+    VOLATILITY_LOW,
+    VOLATILITY_NORMAL,
+    classify_volatility,
+    compute_atr14,
+    detect_bearish_engulfing,
+    detect_bullish_engulfing,
+    detect_candle_patterns,
+    detect_doji,
+    detect_hammer,
+    detect_shooting_star,
+)
+
+
+def _ohlc_bar(
+    *,
+    open_: Decimal,
+    high: Decimal,
+    low: Decimal,
+    close: Decimal,
+    bar_date: date = date(2026, 1, 1),
+    symbol: str = "005930",
+    volume: int = 1_000_000,
+) -> KisDailyPrice:
+    return KisDailyPrice(
+        symbol=symbol,
+        date=bar_date,
+        open=open_,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+    )
+
+
+def test_compute_atr14_returns_none_when_too_short():
+    assert compute_atr14(_bars([Decimal("100")] * 14)) is None  # 14 bars → only 13 TRs
+    assert compute_atr14([]) is None
+
+
+def test_compute_atr14_constant_step_uptrend():
+    # All bars: open=high=low=close=100+i. TR_i = |close_i - close_{i-1}| = 1.
+    # ATR(14) = 1.
+    closes = [Decimal(str(100 + i)) for i in range(20)]
+    bars = _bars(closes)
+    atr = compute_atr14(bars, period=14)
+    assert atr == Decimal("1")
+
+
+def test_detect_doji_flat_bar_qualifies():
+    bar = _ohlc_bar(open_=Decimal("100"), high=Decimal("100"), low=Decimal("100"), close=Decimal("100"))
+    assert detect_doji(bar) is True
+
+
+def test_detect_doji_large_body_does_not_qualify():
+    # body = 2 (2% of 100) > threshold 0.1%
+    bar = _ohlc_bar(open_=Decimal("100"), high=Decimal("103"), low=Decimal("99"), close=Decimal("102"))
+    assert detect_doji(bar) is False
+
+
+def test_detect_hammer_long_lower_shadow_small_body():
+    # body=0.5 (close-open), lower shadow=4 (>=2*body), upper shadow≈0
+    bar = _ohlc_bar(open_=Decimal("100"), high=Decimal("100.5"), low=Decimal("96"), close=Decimal("100.5"))
+    assert detect_hammer(bar) is True
+    assert detect_shooting_star(bar) is False
+
+
+def test_detect_shooting_star_long_upper_shadow_small_body():
+    bar = _ohlc_bar(open_=Decimal("100"), high=Decimal("104"), low=Decimal("99.5"), close=Decimal("99.5"))
+    assert detect_shooting_star(bar) is True
+    assert detect_hammer(bar) is False
+
+
+def test_detect_bullish_engulfing_pair():
+    prev = _ohlc_bar(open_=Decimal("105"), high=Decimal("105"), low=Decimal("100"), close=Decimal("100"))  # bearish
+    curr = _ohlc_bar(open_=Decimal("99"), high=Decimal("108"), low=Decimal("99"), close=Decimal("107"))  # bullish, engulfs
+    assert detect_bullish_engulfing(prev, curr) is True
+    assert detect_bearish_engulfing(prev, curr) is False
+
+
+def test_detect_bearish_engulfing_pair():
+    prev = _ohlc_bar(open_=Decimal("100"), high=Decimal("105"), low=Decimal("100"), close=Decimal("105"))  # bullish
+    curr = _ohlc_bar(open_=Decimal("106"), high=Decimal("106"), low=Decimal("98"), close=Decimal("99"))  # bearish, engulfs
+    assert detect_bearish_engulfing(prev, curr) is True
+    assert detect_bullish_engulfing(prev, curr) is False
+
+
+def test_detect_candle_patterns_aggregates_doji_only_when_flat():
+    flat = [_ohlc_bar(open_=Decimal("100"), high=Decimal("100"), low=Decimal("100"), close=Decimal("100"))]
+    patterns = detect_candle_patterns(flat)
+    assert patterns == [CANDLE_DOJI]
+
+
+def test_detect_candle_patterns_engulfing_uses_prior_bar():
+    prev = _ohlc_bar(
+        open_=Decimal("105"), high=Decimal("105"), low=Decimal("100"), close=Decimal("100"),
+        bar_date=date(2026, 1, 1),
+    )
+    curr = _ohlc_bar(
+        open_=Decimal("99"), high=Decimal("108"), low=Decimal("99"), close=Decimal("107"),
+        bar_date=date(2026, 1, 2),
+    )
+    patterns = detect_candle_patterns([prev, curr])
+    assert CANDLE_BULLISH_ENGULFING in patterns
+
+
+def test_classify_volatility_bands():
+    close = Decimal("100")
+    assert classify_volatility(Decimal("0.5"), close) == VOLATILITY_LOW
+    assert classify_volatility(Decimal("2"), close) == VOLATILITY_NORMAL
+    assert classify_volatility(Decimal("4"), close) == VOLATILITY_HIGH
+    assert classify_volatility(Decimal("6"), close) == VOLATILITY_EXTREME
+    assert classify_volatility(None, close) is None
+    assert classify_volatility(Decimal("1"), None) is None
+    assert classify_volatility(Decimal("1"), Decimal("0")) is None
+
+
+def test_calculate_technical_score_clamps_above_100_with_bullish_booster():
+    """Perfect setup (100점) + BULLISH_ENGULFING (+5) + LOW vol (+2) → clamp 100."""
+    score = calculate_technical_score(
+        ma_alignment=MA_ALIGNMENT_PERFECT_BULL,
+        volume_ratio_20d=Decimal("3.5"),
+        breakout_20d=True,
+        breakout_60d=True,
+        rsi14=Decimal("60"),
+        macd_value=Decimal("1.5"),
+        macd_signal=Decimal("0.5"),
+        candle_patterns=[CANDLE_BULLISH_ENGULFING],
+        volatility_band=VOLATILITY_LOW,
+    )
+    assert score == Decimal("100")
+
+
+def test_calculate_technical_score_floor_zero_with_bearish_setup():
+    score = calculate_technical_score(
+        ma_alignment=MA_ALIGNMENT_PERFECT_BEAR,
+        volume_ratio_20d=Decimal("0.5"),
+        breakout_20d=False,
+        breakout_60d=False,
+        rsi14=Decimal("20"),
+        macd_value=Decimal("-1.0"),
+        macd_signal=Decimal("-0.5"),
+        candle_patterns=[CANDLE_SHOOTING_STAR, CANDLE_BEARISH_ENGULFING],
+        volatility_band=VOLATILITY_EXTREME,
+    )
+    assert score == Decimal("0")
+
+
+def test_calculate_technical_score_mid_range_picks_up_hammer_bonus():
+    """Mid setup (BULL + 1.0 vol + breakout20 + RSI 55 + MACD>signal) = 22+5+15+10+10 = 62.
+    + HAMMER (+3) → 65."""
+    score = calculate_technical_score(
+        ma_alignment=MA_ALIGNMENT_BULL,
+        volume_ratio_20d=Decimal("1.0"),
+        breakout_20d=True,
+        breakout_60d=False,
+        rsi14=Decimal("55"),
+        macd_value=Decimal("1.0"),
+        macd_signal=Decimal("0.5"),
+        candle_patterns=[CANDLE_HAMMER],
+        volatility_band=VOLATILITY_NORMAL,
+    )
+    assert score == Decimal("65")
+
+
+def test_technical_analyzer_persists_atr_and_volatility_band_on_long_history():
+    closes = [Decimal(str(100 + i)) for i in range(130)]
+    snapshot = TechnicalAnalyzer().analyze_latest(_bars(closes, volumes=[1_000_000] * 130))
+    assert snapshot is not None
+    # 입력 OHLC 가 모두 동일 close (high=low=close) 이므로 TR=|Δclose|=1 → ATR=1.
+    assert snapshot.atr14 == Decimal("1.0000")
+    # close 가 229, ATR/close ≈ 0.44% → LOW band
+    assert snapshot.volatility_band == VOLATILITY_LOW
+    # 모든 OHLC 가 동일하므로 doji 만 트리거 (다른 패턴은 body=0 가드에 막힘)
+    assert snapshot.candle_patterns == [CANDLE_DOJI]
+
+
+def test_technical_analyzer_short_history_keeps_atr_and_patterns_safe():
+    snapshot = TechnicalAnalyzer().analyze_latest(_bars([Decimal("100")] * 4))
+    assert snapshot is not None
+    assert snapshot.atr14 is None
+    assert snapshot.volatility_band is None
+    # 4개 bar 가 모두 OHLC 동일 → doji 만 트리거
+    assert snapshot.candle_patterns == [CANDLE_DOJI]
+    # 짧은 히스토리이므로 base 컴포넌트는 모두 None / 0. doji bonus = 0, vol_band=None.
+    # → 최종 0
+    assert snapshot.technical_score == Decimal("0.0000")

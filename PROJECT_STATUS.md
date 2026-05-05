@@ -13,11 +13,21 @@ v0.1 진행 상태 스냅샷 (현재 세션 종료 시점). 새 Codex 세션이 
 
 | Phase | 작업 | 상태 | 산출 태그 |
 |---|---|---|---|
-| A | GitHub Actions CI (backend pytest + frontend vitest+build + Playwright e2e) | ✅ 인수 (CI 그린 확인 후) | `v0.3-phase-a-ci` |
-| B | 캔들 패턴 + ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (백엔드, DB 컬럼 추가) | ⏳ 진입 대기 | `v0.3-backend-analysis` |
-| C | 한국거래소 휴장일 캘린더 (정적 JSON, Today/Jobs/Holdings 배너) | ⏳ | `v0.3-frontend-calendar` |
+| A | GitHub Actions CI (backend pytest + frontend vitest+build + Playwright e2e) | ✅ 인수 | `v0.3-phase-a-ci` |
+| B | 캔들 패턴 + ATR 변동성 컴포넌트 → `technical_score` 산식 보강 (백엔드, DB 컬럼 +3개) | ✅ 인수 (backend pytest 296 → 314, vitest 36 / e2e 6 / build 그대로) | `v0.3-backend-analysis` |
+| C | 한국거래소 휴장일 캘린더 (정적 JSON, Today/Jobs/Holdings 배너) | ⏳ 진입 대기 | `v0.3-frontend-calendar` |
 | D | `GET /api/stocks/{symbol}/prices` 신규 + StockDetail 일봉 차트 (Recharts) | ⏳ | `v0.3-frontend-stock-chart` |
 | E | `RELEASE_NOTES_v0.3.md` + README/PROJECT_STATUS/TASKS 마감 + tag `v0.3-final` | ⏳ | `v0.3-final` |
+
+### Phase B 결과 (요약)
+
+- `app/analysis/technical_analyzer.py` 에 캔들 5종 (DOJI / HAMMER / SHOOTING_STAR / BULLISH_ENGULFING / BEARISH_ENGULFING) detector + Wilder ATR(14) + 4단계 volatility band (LOW/NORMAL/HIGH/EXTREME) 추가.
+- `calculate_technical_score` 에 보조 가산/감산 (`candle_bonus` ±5 cap, `volatility_bonus` -5~+2) 후 0~100 clamp 명시. 새 인자는 모두 default None 이라 기존 호출자는 수치 변화 0건.
+- `StockIndicator` 에 nullable 컬럼 3개 추가 (`atr14 Numeric(20,4)`, `candle_patterns JSON`, `volatility_band String(16)`). ALTER ADD only — 기존 데이터 무영향.
+- `StockIndicatorRepository.upsert` 시그니처에 신규 키워드 3개 (default None) + `TechnicalIndicatorService` 가 snapshot 의 신규 필드를 그대로 upsert.
+- `StockIndicatorSchema` (Pydantic) 에 3개 optional 필드 추가 → `/api/stocks/{symbol}.latest_indicator` 응답에 자동 포함. 프런트 타입은 Phase D 에서 명시 추가 예정.
+- 단위 테스트 16건 신규 (analyzer 32 → 48), 통합 테스트 2건 신규 (indicator 7 → 9), 기존 회귀 0건. 백엔드 전체: **296 → 314 passed**.
+- 부수 정정: `frontend/vite.config.ts` 의 vitest `include` / `exclude` 추가 — Playwright e2e 파일 (`e2e/**/*.spec.ts`) 이 vitest 의 기본 glob 에 잡혀 collect 단계 실패하던 노이즈 제거.
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0003`, 체크리스트는 [`TASKS.md`](./TASKS.md) `v0.3 — 분석 보강 + 운영 정착` 섹션 참조.
 

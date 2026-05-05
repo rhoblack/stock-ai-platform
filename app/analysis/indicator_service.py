@@ -85,6 +85,9 @@ class TechnicalIndicatorService:
             breakout_60d=snapshot.breakout_60d,
             ma_alignment=snapshot.ma_alignment,
             technical_score=snapshot.technical_score,
+            atr14=snapshot.atr14,
+            candle_patterns=snapshot.candle_patterns,
+            volatility_band=snapshot.volatility_band,
         )
         return snapshot
 

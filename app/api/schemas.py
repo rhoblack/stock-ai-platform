@@ -66,6 +66,10 @@ class StockIndicatorSchema(_BaseSchema):
     breakout_60d: Optional[bool]
     ma_alignment: Optional[str]
     technical_score: Optional[str]
+    # v0.3 Phase B — defaulted None so older callers / fixtures stay valid.
+    atr14: Optional[str] = None
+    candle_patterns: Optional[List[str]] = None
+    volatility_band: Optional[str] = None
 
 
 class RecommendationResultSchema(_BaseSchema):

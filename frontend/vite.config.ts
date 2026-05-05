@@ -52,5 +52,9 @@ export default defineConfig({
     setupFiles: ['./src/setupTests.ts'],
     css: true,
     restoreMocks: true,
+    // Playwright e2e 파일 (e2e/**/*.spec.ts) 은 별도 runner (`npm run e2e`)
+    // 에서 실행되므로 vitest 의 기본 glob 에서 제외한다.
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['node_modules', 'dist', '.vite', 'e2e/**'],
   },
 })
