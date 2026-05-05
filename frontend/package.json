@@ -1,0 +1,47 @@
+{
+  "name": "stock-ai-frontend",
+  "private": true,
+  "version": "0.2.0-phase-a",
+  "type": "module",
+  "description": "Stock AI Platform v0.2 PC dashboard (Phase A skeleton). Read-only consumer of the v0.1-backend-final FastAPI GET API.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "openapi": "openapi-typescript http://127.0.0.1:8000/openapi.json -o src/api/types.gen.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.51.0",
+    "@tanstack/react-table": "^8.20.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.452.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "recharts": "^2.13.0",
+    "tailwind-merge": "^2.5.0",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.5.0",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.5.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^25.0.0",
+    "msw": "^2.4.0",
+    "openapi-typescript": "^7.4.0",
+    "postcss": "^8.4.40",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}

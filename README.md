@@ -8,6 +8,11 @@
 > 인터페이스 구현 일체 포함하지 않습니다 (`BrokerInterface` 는 ABC
 > placeholder 만 유지). 종합 인수 사유 / 알려진 한계 / v0.2 후보는
 > [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) 참조.
+>
+> **v0.2 Phase A 시작.** PC 대시보드 골격이 [`frontend/`](./frontend) 에 들어왔다.
+> Vite + React + TypeScript + Tailwind + TanStack Query 기반, 8 메뉴 + 빈
+> 페이지 + `/health` hook + vitest. 데이터 연동은 Phase B 부터.
+> 실행 / 디렉터리 구조는 [`frontend/README.md`](./frontend/README.md) 참조.
 
 ## 1. 프로젝트 목표
 
