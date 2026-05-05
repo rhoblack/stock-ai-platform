@@ -117,3 +117,25 @@ class FundamentalSnapshotDTO:
     revenue_growth_yoy: Decimal | None = None
     operating_income_growth_yoy: Decimal | None = None
     source: str | None = None
+
+
+@dataclass(frozen=True)
+class EarningsEventDTO:
+    symbol: str
+    event_date: date
+    fiscal_year: int
+    event_type: str
+    company_name: str | None = None
+    fiscal_quarter: int | None = None
+    revenue_actual: Decimal | None = None
+    revenue_consensus: Decimal | None = None
+    operating_income_actual: Decimal | None = None
+    operating_income_consensus: Decimal | None = None
+    net_income_actual: Decimal | None = None
+    net_income_consensus: Decimal | None = None
+    eps_actual: Decimal | None = None
+    eps_consensus: Decimal | None = None
+    surprise_type: str | None = None
+    surprise_pct: Decimal | None = None
+    source: str | None = None
+    memo: str | None = None

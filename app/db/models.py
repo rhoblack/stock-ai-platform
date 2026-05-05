@@ -715,3 +715,38 @@ class FundamentalSnapshot(TimestampMixin, Base):
             name="uq_fundamental_snapshots_symbol_period",
         ),
     )
+
+
+class EarningsEvent(TimestampMixin, Base):
+    __tablename__ = "earnings_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    fiscal_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    fiscal_quarter: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    revenue_actual: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    revenue_consensus: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    operating_income_actual: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    operating_income_consensus: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    net_income_actual: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    net_income_consensus: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    eps_actual: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    eps_consensus: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    surprise_type: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    surprise_pct: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    memo: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "event_date",
+            "fiscal_year",
+            "fiscal_quarter",
+            "event_type",
+            name="uq_earnings_events_symbol_event",
+        ),
+    )

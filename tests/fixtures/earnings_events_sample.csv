@@ -1,0 +1,5 @@
+symbol,company_name,event_date,fiscal_year,fiscal_quarter,event_type,revenue_actual,revenue_consensus,operating_income_actual,operating_income_consensus,net_income_actual,net_income_consensus,eps_actual,eps_consensus,surprise_type,surprise_pct,source,memo
+005930,Samsung Electronics,2026-04-30,2026,1,FINAL,77000000.0000,75000000.0000,7100000.0000,6500000.0000,6200000.0000,5800000.0000,1100.0000,1000.0000,,,MANUAL_CSV_SAMPLE,beat sample
+000660,SK Hynix,2026-04-25,2026,1,FINAL,21000000.0000,20800000.0000,5000000.0000,4900000.0000,3900000.0000,3850000.0000,5400.0000,5300.0000,MEET,,MANUAL_CSV_SAMPLE,meet sample with explicit surprise type
+035420,NAVER,2026-04-20,2026,1,FINAL,2600000.0000,2700000.0000,350000.0000,400000.0000,280000.0000,320000.0000,1700.0000,1900.0000,,,MANUAL_CSV_SAMPLE,miss sample
+005380,Hyundai Motor,2026-05-20,2026,2,CONSENSUS,41000000.0000,41000000.0000,,,,,,,UNKNOWN,,MANUAL_CSV_SAMPLE,upcoming consensus sample

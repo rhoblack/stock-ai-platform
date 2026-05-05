@@ -3,6 +3,7 @@
 from app.data.repositories.analyst_reports import AnalystReportRepository
 from app.data.repositories.daily_prices import DailyPriceRepository
 from app.data.repositories.decision_logs import DecisionLogRepository
+from app.data.repositories.earnings_events import EarningsEventRepository
 from app.data.repositories.fundamental_snapshots import FundamentalSnapshotRepository
 from app.data.repositories.holdings import HoldingRepository
 from app.data.repositories.holding_checks import HoldingCheckRepository
@@ -36,6 +37,7 @@ __all__ = [
     "DataSnapshotRepository",
     "DailyPriceRepository",
     "DecisionLogRepository",
+    "EarningsEventRepository",
     "FundamentalSnapshotRepository",
     "HoldingRepository",
     "HoldingCheckRepository",

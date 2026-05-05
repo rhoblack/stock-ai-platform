@@ -2,7 +2,12 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime
 from typing import Any
 
-from app.data.dtos import DisclosureItemDTO, FundamentalSnapshotDTO, NewsItemDTO
+from app.data.dtos import (
+    DisclosureItemDTO,
+    EarningsEventDTO,
+    FundamentalSnapshotDTO,
+    NewsItemDTO,
+)
 
 
 class DataProviderInterface(ABC):
@@ -111,4 +116,22 @@ class FundamentalProviderInterface(ABC):
         fiscal_year: int,
         fiscal_quarter: int | None = None,
     ) -> list[FundamentalSnapshotDTO]:
+        raise NotImplementedError
+
+
+class EarningsProviderInterface(ABC):
+    """v0.6 typed earnings provider contract.
+
+    Interface only in Phase B. Real DART adapters, scheduler jobs, and API
+    routes are out of scope; tests use a deterministic fake provider.
+    """
+
+    @abstractmethod
+    def fetch_earnings_events(
+        self,
+        symbols: list[str],
+        since: date | None = None,
+        until: date | None = None,
+        limit: int = 100,
+    ) -> list[EarningsEventDTO]:
         raise NotImplementedError

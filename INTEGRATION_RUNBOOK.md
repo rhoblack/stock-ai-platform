@@ -664,3 +664,66 @@ DB URL 을 따로 지정할 때:
 - `NaN`, `-`, empty, `None`, `null`, `N/A`: optional 숫자에서 `None`
 - `revenue`, `total_assets`, `total_liabilities`, `total_equity`: 음수 불허
 - `operating_income`, `net_income`, `eps`, `roe`, 성장률 계열: 음수 허용
+
+## 14. Earnings CSV 수동 import (v0.6 Phase B)
+
+`earnings_events` 는 실적 이벤트와 어닝 캘린더의 read-only 기반 데이터다. Phase B 에서는
+운영자 CSV 수동 import 만 제공한다. 기본은 dry-run 이며 DART/KIS API, scheduler job,
+API 라우터, 프론트 화면은 추가하지 않는다.
+
+### 14.1 CSV 필수 컬럼
+
+```text
+symbol,event_date,fiscal_year,event_type
+```
+
+선택 컬럼:
+
+```text
+company_name,fiscal_quarter,revenue_actual,revenue_consensus,
+operating_income_actual,operating_income_consensus,net_income_actual,
+net_income_consensus,eps_actual,eps_consensus,surprise_type,surprise_pct,
+source,memo
+```
+
+`event_type` 은 `PRELIMINARY`, `FINAL`, `GUIDANCE`, `CONSENSUS`, `OTHER`.
+`surprise_type` 은 `BEAT`, `MEET`, `MISS`, `UNKNOWN`.
+
+### 14.2 dry-run 검증
+
+```powershell
+.\.venv\bin\python.exe -m scripts.import_earnings --file tests\fixtures\earnings_events_sample.csv
+```
+
+### 14.3 commit 적재
+
+```powershell
+.\.venv\bin\python.exe -m scripts.import_earnings --file tests\fixtures\earnings_events_sample.csv --commit
+```
+
+DB URL override:
+
+```powershell
+.\.venv\bin\python.exe -m scripts.import_earnings --file earnings.csv --db-url sqlite:///./trial.db --commit
+```
+
+### 14.4 surprise 계산 정책
+
+- CSV 에 `surprise_type` 이 있으면 해당 값을 우선 사용
+- `surprise_type` 이 없고 `operating_income_actual` / `operating_income_consensus` 가 있으면 자동 계산
+- `surprise_pct = (actual - consensus) / abs(consensus) * 100`
+- `surprise_pct >= 5`: `BEAT`
+- `-5 < surprise_pct < 5`: `MEET`
+- `surprise_pct <= -5`: `MISS`
+- consensus 가 0 또는 empty 이면 `UNKNOWN`
+
+### 14.5 validation 정책
+
+- `event_date`: ISO `YYYY-MM-DD`
+- `fiscal_year`: integer
+- `fiscal_quarter`: `1~4` 또는 empty
+- `memo`: 500자 초과 시 truncate 후 `truncated_notes` 증가
+- `revenue_actual`, `revenue_consensus`: 음수 불허
+- `operating_income`, `net_income`, `eps` 계열 actual/consensus: 적자 기업을 위해 음수 허용
+- `body`, `content`, `full_text`, `paragraph`, `raw_text`, `html_body`, `본문`,
+  `원문`, `전문`, `source_file_path`, PDF/Excel BLOB 계열 컬럼은 파일 단위로 거부

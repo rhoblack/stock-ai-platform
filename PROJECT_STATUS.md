@@ -9,7 +9,7 @@
 
 ## 0. v0.6 시작 선언 — Fundamental & Earnings Intelligence
 
-**v0.6 cycle 진입 (Phase A PR2 완료).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
+**v0.6 cycle 진입 (Phase B 완료).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
 origin/main 동기화 완료). v0.1 backend + v0.2 frontend + v0.3 분석·운영 +
 v0.4 Analyst & Theme Intelligence + v0.5 News·공시·테마 랭킹 모두 마감 위에
 **재무 / 실적 데이터 라인 + 어닝 인텔리전스 기초** 5 phase 를 진행한다. v0.1 의
@@ -37,7 +37,7 @@ API 구현체는 v0.7+ 로 이연 (FakeProvider 만 제공). 추천 산식 본 w
 | Phase | 작업 | 상태 | 산출 태그 (예정) |
 |---|---|---|---|
 | A | Fundamental data layer (`FundamentalProviderInterface` ABC + `FundamentalSnapshot` 24번째 테이블 + Repository + `scripts/import_fundamentals.py` argparse CLI + 8 지표 검증) | ✅ PR1+PR2 완료 / PR3 또는 Phase B 대기 | `v0.6-fundamental-data-layer` |
-| B | Earnings event layer + 어닝 캘린더 (`EarningsProviderInterface` ABC + `EarningsEvent` 25번째 테이블 + Repository + `scripts/import_earnings.py` + BEAT/MEET/MISS 분류 룰) | ⏳ | `v0.6-earnings-event-pipeline` |
+| B | Earnings event layer + 어닝 캘린더 (`EarningsProviderInterface` ABC + `EarningsEvent` 25번째 테이블 + Repository + `scripts/import_earnings.py` + BEAT/MEET/MISS 분류 룰) | ✅ 완료 | `v0.6-earnings-event-pipeline` |
 | C | `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + RecommendationEngine·HoldingCheckEngine 통합 + decision evidence 기록 | ⏳ | `v0.6-fundamental-score` |
 | D | 백엔드 read-only API 3종 (`/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`) + `RecommendationItemSchema` / `HoldingCheckSchema` evidence 필드 + 프런트 StockDetail 카드 + Today 다가오는 어닝 + Recommendations/Holdings evidence 통합 | ⏳ | `v0.6-frontend-fundamentals` |
 | E | `RELEASE_NOTES_v0.6.md` + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE 마감 + tag `v0.6-final` | ⏳ | `v0.6-final` |
@@ -144,6 +144,33 @@ DB 마이그레이션 = `CREATE TABLE fundamental_snapshots ...; CREATE TABLE ea
   Decimal, 음수 허용/불허 정책, CLI `run_import` 검증.
 - 안전 범위: DART / KIS / Telegram 호출 0건, scheduler job 0건, API 라우터 0건,
   frontend 변경 0건, 자동매매/주문 코드 0건.
+
+### v0.6 Phase B 결과 (요약) — Earnings event layer + CSV import
+
+> `earnings_events` 25번째 테이블과 수동 CSV import 기반을 추가했다. Phase B 에서도
+> DART API provider / scheduler job / API 라우터 / frontend 는 추가하지 않았다.
+
+- `app/db/models.py` — `EarningsEvent` 신규. Unique key 는
+  `(symbol, event_date, fiscal_year, fiscal_quarter, event_type)`, 인덱스는
+  `symbol`, `event_date`, `surprise_type`.
+- `app/data/repositories/earnings_events.py` — `create`,
+  `upsert_by_symbol_event`, `get_latest_by_symbol`, `list_recent_by_symbol`,
+  `list_upcoming`, `list_by_surprise_type`.
+- `app/data/dtos.py` / `app/data/interfaces.py` — `EarningsEventDTO` 와
+  `EarningsProviderInterface.fetch_earnings_events(...)` 추가. 실 구현체는 없음.
+- `tests/mocks/fake_earnings_provider.py` — BEAT / MEET / MISS / upcoming UNKNOWN
+  결정론 샘플. 외부 API 호출 0건.
+- `app/data/importers/earnings.py` / `scripts/import_earnings.py` — 기본 dry-run,
+  `--commit` 저장, `--file`, `--encoding`, `--db-url` 지원.
+- surprise 계산: CSV `surprise_type` 우선. 없으면
+  `operating_income_actual` / `operating_income_consensus` 로
+  `(actual - consensus) / abs(consensus) * 100` 계산. `>=5` BEAT, `<=-5` MISS,
+  그 사이는 MEET, consensus 0/NULL 은 UNKNOWN.
+- `tests/fixtures/earnings_events_sample.csv`,
+  `tests/integration/test_earnings_repository.py`,
+  `tests/integration/test_earnings_import.py` 추가.
+- 안전 범위: DART / KIS / Telegram 호출 0건, scheduler job 0건, API 라우터 0건,
+  frontend 변경 0건, 자동매매/주문 코드 0건, 원문/본문/BLOB 저장 0건.
 
 ### v0.6 누적 태그 (예정)
 

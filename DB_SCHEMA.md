@@ -533,6 +533,47 @@ dry-run 이며 `--commit` 을 붙인 경우에만 저장한다. 필수 컬럼은
 > **운영 환경 마이그레이션**: v0.6 Phase A PR1 은 신규 `CREATE TABLE
 > fundamental_snapshots ...` 1개만 추가한다. 기존 테이블 destructive 변경 0건.
 
+## 25. earnings_events
+
+v0.6 Phase B 에서 추가한 실적 이벤트 / 어닝 캘린더 기반 테이블. 수동 CSV 로만
+적재하며, 이번 Phase 에서는 DART API provider / scheduler / API / frontend 를 추가하지
+않는다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | 내부 ID |
+| symbol | 종목코드. indexed |
+| company_name | 회사명. nullable |
+| event_date | 실적 이벤트 기준일 / 발표 예정일. indexed |
+| fiscal_year | 회계연도 |
+| fiscal_quarter | 회계분기. nullable |
+| event_type | PRELIMINARY / FINAL / GUIDANCE / CONSENSUS / OTHER |
+| revenue_actual, revenue_consensus | 매출 실제 / 컨센서스 |
+| operating_income_actual, operating_income_consensus | 영업이익 실제 / 컨센서스 |
+| net_income_actual, net_income_consensus | 순이익 실제 / 컨센서스 |
+| eps_actual, eps_consensus | EPS 실제 / 컨센서스 |
+| surprise_type | BEAT / MEET / MISS / UNKNOWN. indexed |
+| surprise_pct | `(actual - consensus) / abs(consensus) * 100` |
+| source | 데이터 출처 태그 |
+| memo | 운영자 메모. 500자 제한 |
+| created_at, updated_at | 생성 / 갱신 시각 |
+
+**Unique**: `(symbol, event_date, fiscal_year, fiscal_quarter, event_type)`.
+**Index**: `symbol`, `event_date`, `surprise_type`.
+
+**CSV import 정책 (v0.6 Phase B)**: `scripts/import_earnings.py` 는 기본 dry-run 이며
+`--commit` 을 붙인 경우에만 저장한다. `surprise_type` 이 CSV 에 있으면 우선 사용하고,
+없으면 `operating_income_actual` / `operating_income_consensus` 로 자동 계산한다.
+`surprise_pct >= 5` 는 BEAT, `-5 < surprise_pct < 5` 는 MEET,
+`surprise_pct <= -5` 는 MISS, consensus 가 0 또는 NULL 이면 UNKNOWN.
+
+**저작권 / 보안 정책**: 실적 발표 원문 전문, 본문 paragraph, PDF / Excel BLOB,
+body / content / full_text / raw_text / html_body / source_file_path 계열 컬럼은 저장하지
+않는다. 정규화된 수치 지표, 이벤트 메타데이터, 짧은 memo 만 저장한다.
+
+> **운영 환경 마이그레이션**: v0.6 Phase B 는 신규 `CREATE TABLE earnings_events ...`
+> 1개만 추가한다. 기존 테이블 destructive 변경 0건.
+
 > **운영 환경 마이그레이션**: v0.4 Phase A 는 신규 `CREATE TABLE` 6개 — 기존
 > 데이터는 손대지 않는다 (destructive 0건). Alembic 미사용 환경은
 > `Base.metadata.create_all` 또는 동등한 SQL 6 줄을 한 번 실행하면 된다.
