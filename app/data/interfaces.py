@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime
 from typing import Any
 
-from app.data.dtos import DisclosureItemDTO, NewsItemDTO
+from app.data.dtos import DisclosureItemDTO, FundamentalSnapshotDTO, NewsItemDTO
 
 
 class DataProviderInterface(ABC):
@@ -94,3 +94,21 @@ class DisclosureProviderInterface(ABC):
     ) -> list[DisclosureItemDTO]:
         raise NotImplementedError
 
+
+class FundamentalProviderInterface(ABC):
+    """v0.6 typed fundamental provider contract.
+
+    This is an interface only in Phase A PR2. Real DART adapters are out of
+    scope; tests use a deterministic fake provider. Implementations must return
+    normalized metrics only and must not expose original financial statement
+    bodies, paragraphs, raw HTML, PDF/Excel blobs, or local file paths.
+    """
+
+    @abstractmethod
+    def fetch_fundamentals(
+        self,
+        symbols: list[str],
+        fiscal_year: int,
+        fiscal_quarter: int | None = None,
+    ) -> list[FundamentalSnapshotDTO]:
+        raise NotImplementedError

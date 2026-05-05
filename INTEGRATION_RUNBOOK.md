@@ -606,3 +606,61 @@ sentiment 제외. 본문 / `source_file_path` / 운영자 로컬 경로 0건.
   화면은 "아직 테마 데이터가 없습니다" placeholder
 - frontend 4 게이트: backend pytest **481** / vitest **68** / build / e2e **11**
   (`npm run e2e` — Playwright 1.x chromium)
+## 13. Fundamental CSV 수동 import (v0.6 Phase A PR2)
+
+`fundamental_snapshots` 는 운영자가 준비한 CSV 로만 수동 적재한다. 기본은 dry-run 이며,
+`--commit` 을 붙인 경우에만 DB 에 저장된다. DART/KIS API 호출, scheduler job, API 라우터,
+프론트 화면은 이 단계에 없다.
+
+### 13.1 CSV 필수 컬럼
+
+```text
+symbol,snapshot_date,fiscal_year,source
+```
+
+선택 숫자 컬럼:
+
+```text
+fiscal_quarter,revenue,operating_income,net_income,total_assets,total_liabilities,
+total_equity,eps,bps,per,pbr,roe,debt_ratio,dividend_yield,
+revenue_growth_yoy,operating_income_growth_yoy
+```
+
+`body`, `content`, `full_text`, `paragraph`, `raw_text`, `html_body`, `본문`,
+`원문`, `전문`, `source_file_path`, PDF/Excel BLOB 계열 컬럼은 파일 단위로 거부된다.
+
+### 13.2 dry-run 검증
+
+```powershell
+.\.venv\bin\python.exe -m scripts.import_fundamentals --file tests\fixtures\fundamentals_sample.csv
+```
+
+출력 요약:
+
+```text
+total_rows / inserted / updated / unchanged / skipped_duplicates / validation_errors / truncated_notes
+```
+
+### 13.3 commit 적재
+
+```powershell
+.\.venv\bin\python.exe -m scripts.import_fundamentals --file tests\fixtures\fundamentals_sample.csv --commit
+```
+
+DB URL 을 따로 지정할 때:
+
+```powershell
+.\.venv\bin\python.exe -m scripts.import_fundamentals --file fundamentals.csv --db-url sqlite:///./trial.db --commit
+```
+
+동일한 `(symbol, snapshot_date, fiscal_year, fiscal_quarter)` 를 다시 적재하면 값이 같을 때
+`unchanged`, 값이 다를 때 `updated` 로 집계된다.
+
+### 13.4 validation 정책
+
+- `snapshot_date`: ISO `YYYY-MM-DD`
+- `fiscal_year`: integer
+- `fiscal_quarter`: `1~4` 또는 empty
+- `NaN`, `-`, empty, `None`, `null`, `N/A`: optional 숫자에서 `None`
+- `revenue`, `total_assets`, `total_liabilities`, `total_equity`: 음수 불허
+- `operating_income`, `net_income`, `eps`, `roe`, 성장률 계열: 음수 허용

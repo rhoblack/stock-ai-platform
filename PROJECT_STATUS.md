@@ -9,7 +9,7 @@
 
 ## 0. v0.6 시작 선언 — Fundamental & Earnings Intelligence
 
-**v0.6 cycle 진입 (Phase A PR1 완료).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
+**v0.6 cycle 진입 (Phase A PR2 완료).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
 origin/main 동기화 완료). v0.1 backend + v0.2 frontend + v0.3 분석·운영 +
 v0.4 Analyst & Theme Intelligence + v0.5 News·공시·테마 랭킹 모두 마감 위에
 **재무 / 실적 데이터 라인 + 어닝 인텔리전스 기초** 5 phase 를 진행한다. v0.1 의
@@ -36,7 +36,7 @@ API 구현체는 v0.7+ 로 이연 (FakeProvider 만 제공). 추천 산식 본 w
 
 | Phase | 작업 | 상태 | 산출 태그 (예정) |
 |---|---|---|---|
-| A | Fundamental data layer (`FundamentalProviderInterface` ABC + `FundamentalSnapshot` 24번째 테이블 + Repository + `scripts/import_fundamentals.py` argparse CLI + 8 지표 검증) | ✅ PR1 완료 / PR2 대기 | `v0.6-fundamental-data-layer` |
+| A | Fundamental data layer (`FundamentalProviderInterface` ABC + `FundamentalSnapshot` 24번째 테이블 + Repository + `scripts/import_fundamentals.py` argparse CLI + 8 지표 검증) | ✅ PR1+PR2 완료 / PR3 또는 Phase B 대기 | `v0.6-fundamental-data-layer` |
 | B | Earnings event layer + 어닝 캘린더 (`EarningsProviderInterface` ABC + `EarningsEvent` 25번째 테이블 + Repository + `scripts/import_earnings.py` + BEAT/MEET/MISS 분류 룰) | ⏳ | `v0.6-earnings-event-pipeline` |
 | C | `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + RecommendationEngine·HoldingCheckEngine 통합 + decision evidence 기록 | ⏳ | `v0.6-fundamental-score` |
 | D | 백엔드 read-only API 3종 (`/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`) + `RecommendationItemSchema` / `HoldingCheckSchema` evidence 필드 + 프런트 StockDetail 카드 + Today 다가오는 어닝 + Recommendations/Holdings evidence 통합 | ⏳ | `v0.6-frontend-fundamentals` |
@@ -119,6 +119,31 @@ DB 마이그레이션 = `CREATE TABLE fundamental_snapshots ...; CREATE TABLE ea
 - `DB_SCHEMA.md` / `TASKS.md` — Phase A PR1 범위와 `fundamental_snapshots` 정책 갱신.
 - 안전 범위: DART / KIS / Telegram 호출 0건, POST 라우터 0건, 자동매매/주문 코드 0건,
   재무제표 PDF/Excel BLOB 및 본문 paragraph 저장 0건.
+
+### v0.6 Phase A PR2 결과 (요약) — Fundamental CSV import pipeline
+
+> Phase A 의 두 번째 PR. PR1 의 `fundamental_snapshots` 테이블과 Repository 위에
+> 운영자 수동 CSV import 경로를 추가했다. 기본은 dry-run 이며 `--commit` 을 붙인
+> 경우에만 저장한다.
+
+- `app/data/dtos.py` — `FundamentalSnapshotDTO` 신규. 정규화된 수치 지표와 `source`
+  만 포함하고 body / content / full_text / paragraph / raw_text / html_body /
+  source_file_path / 본문 / 원문 / 전문 필드 0건.
+- `app/data/interfaces.py` — `FundamentalProviderInterface` ABC 신규
+  (`fetch_fundamentals(symbols, fiscal_year, fiscal_quarter=None)`). 실 DART 구현체는
+  추가하지 않았다.
+- `tests/mocks/fake_fundamental_provider.py` — 외부 API 호출 없는 결정론적 3-row
+  FakeProvider.
+- `app/data/importers/fundamentals.py` — CSV header validation + row validation +
+  `FundamentalSnapshotRepository.upsert_by_symbol_period` 기반 import. 재import 시 값이
+  같으면 `unchanged`, 값이 다르면 `updated` 로 집계.
+- `scripts/import_fundamentals.py` — argparse CLI. `--file` 필수, `--encoding`
+  기본 `utf-8-sig`, `--db-url` override, `--commit` 없는 기본 dry-run.
+- `tests/fixtures/fundamentals_sample.csv` / `tests/integration/test_fundamental_import.py`
+  — dry-run, commit, reimport 멱등, forbidden column, 필수 컬럼, 날짜/연도/분기,
+  Decimal, 음수 허용/불허 정책, CLI `run_import` 검증.
+- 안전 범위: DART / KIS / Telegram 호출 0건, scheduler job 0건, API 라우터 0건,
+  frontend 변경 0건, 자동매매/주문 코드 0건.
 
 ### v0.6 누적 태그 (예정)
 

@@ -524,6 +524,12 @@ v0.6 Phase A PR1 에서 추가한 재무 지표 스냅샷 테이블. 수동 CSV 
 body / content / full_text / raw_text / source_file_path 계열 컬럼은 저장하지 않는다.
 정규화된 수치 지표와 출처 태그만 저장한다.
 
+**CSV import 정책 (v0.6 Phase A PR2)**: `scripts/import_fundamentals.py` 는 기본
+dry-run 이며 `--commit` 을 붙인 경우에만 저장한다. 필수 컬럼은 `symbol`,
+`snapshot_date`, `fiscal_year`, `source`; `fiscal_quarter` 와 수치 metric 은 선택값.
+동일 unique key 재import 시 값이 같으면 `unchanged`, 값이 다르면 `updated` 로 집계한다.
+`source_file_path` / 본문 / BLOB 컬럼은 파일 단위로 거부한다.
+
 > **운영 환경 마이그레이션**: v0.6 Phase A PR1 은 신규 `CREATE TABLE
 > fundamental_snapshots ...` 1개만 추가한다. 기존 테이블 destructive 변경 0건.
 

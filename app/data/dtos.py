@@ -86,3 +86,34 @@ class DisclosureItemDTO:
     category: str | None = None
     summary: str | None = None
 
+
+# ---------------------------------------------------------------------------
+# v0.6 Phase A -- Fundamental CSV/provider payload
+#
+# FundamentalSnapshotDTO carries normalized financial metrics only. Do not add
+# body/content/full_text/paragraph/raw_text/html_body or Korean equivalents.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FundamentalSnapshotDTO:
+    symbol: str
+    snapshot_date: date
+    fiscal_year: int
+    fiscal_quarter: int | None
+    revenue: Decimal | None = None
+    operating_income: Decimal | None = None
+    net_income: Decimal | None = None
+    total_assets: Decimal | None = None
+    total_liabilities: Decimal | None = None
+    total_equity: Decimal | None = None
+    eps: Decimal | None = None
+    bps: Decimal | None = None
+    per: Decimal | None = None
+    pbr: Decimal | None = None
+    roe: Decimal | None = None
+    debt_ratio: Decimal | None = None
+    dividend_yield: Decimal | None = None
+    revenue_growth_yoy: Decimal | None = None
+    operating_income_growth_yoy: Decimal | None = None
+    source: str | None = None
