@@ -220,6 +220,66 @@ paper 서버와 contract 가 어긋남. 인증 / 일봉은 정상 동작.
 참조한다. 운영 검증 도중 발급된 KIS 액세스 토큰도 디스크 / 로그에 남지 않음
 (`LOG_TO_FILE=false`).
 
+### 후속 검증 — 시총 픽스 적용 후 (3회 시도)
+
+`fetch_market_cap_rankings` 의 query 에 `FID_COND_SCR_DIV_CODE="20174"` 를
+추가하는 픽스 (`eb8452a`) 적용 후 `collect_market_close_data` 잡을 동일한
+검증 환경 (`KIS_USE_PAPER=true` / 검증용 DB / `MARKET_CAP_LIMIT=5`) 에서 3회
+재실행. lookback 은 1·2회는 2일, 3회차는 7일.
+
+**시총 상위 endpoint — 3/3 SUCCESS**
+
+- 3회 모두 `market_cap_status=SUCCESS`, KOSPI 시총 상위 5건 정상 응답.
+- `stocks` (5 신규 → 이후 0 신규, idempotent), `market_cap_rankings` (3회
+  모두 5건, snapshot replace 정상), `stock_universe_members` (5 신규 → 0)
+  저장 정상. KIS 시총 상위 endpoint contract 결함은 완전 해소.
+
+**일봉 endpoint — signature 정상 / 종목별 paper 서버 한계 노출**
+
+| 종목 | 1차 (lookback=2) | 2차 (lookback=2) | 3차 (lookback=7) | 누적 |
+|---|---|---|---|---|
+| 005930 (삼성전자) | ❌ | ✅ | ✅ (3 rows) | 2/3 |
+| 005935 (삼성전자우) | ✅ | ❌ | ✅ (3 rows) | 2/3 |
+| 402340 (SK스퀘어) | ✅ | ❌ | ❌ | 1/3 |
+| 000660 (SK하이닉스) | ❌ | ❌ | ❌ | 0/3 |
+| 373220 (LGES) | ❌ | ❌ | ❌ | 0/3 |
+
+- 005930 / 005935 가 안정 SUCCESS 한 사실로 일봉 endpoint signature 자체는
+  정상으로 판단. 직전 단건 검증 (`fetch_daily_prices(005930, 7일)` 4 rows)
+  과 일관됨.
+- 000660 / 373220 은 lookback / 호출 시점 무관하게 항시 `KIS HTTP 500`
+  반환 → KIS 모의투자 서버의 종목별 시뮬레이션 데이터 또는 캐시 미적재
+  문제로 추정. 코드 contract 결함으로 보지 않음.
+- 402340 은 randomize 패턴 (run 마다 결과 변동) — 동일 paper 서버
+  transient 5xx 패턴.
+
+**잡 동작 정상 분기**
+
+- 3회 모두 `status=PARTIAL`, `error_message="N daily price collections failed"`,
+  종목별 실패는 `result_summary.failures` 항목 단위로 격리 기록.
+- `job_runs` 행은 RUNNING → PARTIAL 전환 + `finished_at` / `result_summary` /
+  `error_message` 정상 채워짐.
+- 성공 종목의 `daily_prices` upsert + `market_cap_rankings` snapshot replace
+  는 PARTIAL 상황에서도 의도대로 commit 됨 → DB 무결성 유지.
+
+**회귀 게이트**
+
+- 시총 픽스 직후 `pytest`: **296 passed in 5.87s** (회귀 0건).
+- 본 후속 검증은 코드 변경을 동반하지 않음.
+
+**판단 / 다음 단계**
+
+- v0.1 백엔드 코드는 인수 (accepted) 상태 유지. KIS contract 픽스 1건이
+  추가되었지만 영향 범위는 단일 endpoint 의 query 파라미터 한 줄로 좁고
+  paper 서버에서 실측 검증됨.
+- 본격 운영 검증 (전 종목 일봉 SUCCESS 확인) 은 KIS 실서버
+  (`KIS_USE_PAPER=false`) 또는 paper 서버의 종목별 시뮬레이션 데이터가
+  안정화된 시점에 다시 수행. v0.1 잡의 PARTIAL 격리 동작이 검증되었으므로
+  실서버 진입 시 일부 종목 실패가 나오더라도 전체 흐름이 멈추지 않음.
+- 다음 검증 cycle 에서는 `calculate_technical_indicators` → `send_recommendation_report`
+  (DRY_RUN) → 보유 점검 → 성과 업데이트 순서로 진입 가능 (시총·일봉
+  데이터 일부라도 적재된 상태).
+
 ---
 
 ## 3. 변경된 주요 모듈
