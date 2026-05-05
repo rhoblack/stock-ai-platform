@@ -375,6 +375,7 @@ class HoldingCheckEngine:
 
         # v0.5 Phase C — extract evidence dicts for snapshot + decision_log
         news_evidence = (components.metadata or {}).get("news_evidence")
+        earnings_evidence = (components.metadata or {}).get("earnings_evidence")
         disclosure_risk_evidence = (
             disclosure_result.evidence if disclosure_result is not None else None
         )
@@ -394,6 +395,7 @@ class HoldingCheckEngine:
                     "component_score_metadata": components.metadata,
                     "risk_summary": _serialize_risk_summary(assessment),
                     "news_evidence": news_evidence,
+                    "earnings_evidence": earnings_evidence,
                     "disclosure_risk_evidence": disclosure_risk_evidence,
                 },
             ),
@@ -438,6 +440,7 @@ class HoldingCheckEngine:
             "avg_buy_price": _decimal_to_str(holding.avg_buy_price),
             "grade": grade,
             "news_evidence": news_evidence,
+            "earnings_evidence": earnings_evidence,
             "disclosure_risk_evidence": disclosure_risk_evidence,
         }
 

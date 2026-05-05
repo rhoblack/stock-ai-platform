@@ -25,17 +25,28 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from app.data.repositories.earnings_events import EarningsEventRepository
+from app.data.repositories.fundamental_snapshots import FundamentalSnapshotRepository
 from app.data.repositories.news_items import NewsItemRepository
-from app.db.models import Holding, NewsItem, Stock, StockIndicator
+from app.db.models import (
+    EarningsEvent,
+    FundamentalSnapshot,
+    Holding,
+    NewsItem,
+    Stock,
+    StockIndicator,
+)
 
 
 NEUTRAL_SCORE = Decimal("50")
 LOW_RULE_SCORE = Decimal("45")
 HIGH_RULE_SCORE = Decimal("55")
+_SCORE_MIN = Decimal("0")
+_SCORE_MAX = Decimal("100")
 
 
 @dataclass(frozen=True)
@@ -375,6 +386,207 @@ def _safe_disclosure_evidence(news: NewsItem) -> dict[str, Any]:
     }
 
 
+def _clip_score(value: Decimal) -> Decimal:
+    return max(min(value, _SCORE_MAX), _SCORE_MIN)
+
+
+def _decimal_evidence(value: Decimal | None) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _safe_fundamental_evidence(snapshot: FundamentalSnapshot | None) -> dict[str, Any]:
+    if snapshot is None:
+        return {"reason": "no_fundamental_snapshot"}
+    return {
+        "snapshot_date": snapshot.snapshot_date.isoformat(),
+        "fiscal_year": snapshot.fiscal_year,
+        "fiscal_quarter": snapshot.fiscal_quarter,
+        "per": _decimal_evidence(snapshot.per),
+        "pbr": _decimal_evidence(snapshot.pbr),
+        "roe": _decimal_evidence(snapshot.roe),
+        "debt_ratio": _decimal_evidence(snapshot.debt_ratio),
+        "revenue_growth_yoy": _decimal_evidence(snapshot.revenue_growth_yoy),
+        "operating_income_growth_yoy": _decimal_evidence(snapshot.operating_income_growth_yoy),
+        "dividend_yield": _decimal_evidence(snapshot.dividend_yield),
+    }
+
+
+def _score_fundamental_snapshot(snapshot: FundamentalSnapshot | None) -> tuple[Decimal, dict[str, Any]]:
+    evidence = _safe_fundamental_evidence(snapshot)
+    if snapshot is None:
+        return NEUTRAL_SCORE, evidence
+    score = NEUTRAL_SCORE
+    if snapshot.roe is not None:
+        score += min(max(snapshot.roe, Decimal("-10")), Decimal("25")) * Decimal("0.6")
+    if snapshot.per is not None:
+        if snapshot.per <= Decimal("8"):
+            score += Decimal("8")
+        elif snapshot.per <= Decimal("15"):
+            score += Decimal("4")
+        elif snapshot.per <= Decimal("25"):
+            score += Decimal("0")
+        elif snapshot.per <= Decimal("40"):
+            score -= Decimal("6")
+        else:
+            score -= Decimal("12")
+    if snapshot.pbr is not None:
+        if snapshot.pbr <= Decimal("1.0"):
+            score += Decimal("4")
+        elif snapshot.pbr >= Decimal("4.0"):
+            score -= Decimal("8")
+        elif snapshot.pbr >= Decimal("2.5"):
+            score -= Decimal("4")
+    if snapshot.revenue_growth_yoy is not None:
+        score += min(max(snapshot.revenue_growth_yoy, Decimal("-20")), Decimal("30")) * Decimal("0.25")
+    if snapshot.operating_income_growth_yoy is not None:
+        score += min(max(snapshot.operating_income_growth_yoy, Decimal("-30")), Decimal("50")) * Decimal("0.25")
+    if snapshot.debt_ratio is not None:
+        if snapshot.debt_ratio >= Decimal("200"):
+            score -= Decimal("15")
+        elif snapshot.debt_ratio >= Decimal("100"):
+            score -= Decimal("8")
+        elif snapshot.debt_ratio <= Decimal("50"):
+            score += Decimal("3")
+    if snapshot.dividend_yield is not None and snapshot.dividend_yield > 0:
+        score += min(snapshot.dividend_yield, Decimal("5")) * Decimal("0.8")
+    return _clip_score(score), evidence
+
+
+class RealFundamentalScoreProducer(ScoreProducerInterface):
+    """Repository-backed replacement for recommendation fundamental_score only."""
+
+    def __init__(
+        self,
+        fundamental_repository: FundamentalSnapshotRepository,
+        *,
+        fallback: ScoreProducerInterface | None = None,
+    ) -> None:
+        self._repo = fundamental_repository
+        self._fallback = fallback or DummyScoreProducer()
+
+    def score_recommendation(
+        self,
+        *,
+        stock: Stock,
+        indicator: StockIndicator,
+    ) -> RecommendationComponentScores:
+        base = self._fallback.score_recommendation(stock=stock, indicator=indicator)
+        snapshot = self._repo.get_latest_by_symbol(stock.symbol)
+        score, evidence = _score_fundamental_snapshot(snapshot)
+        return RecommendationComponentScores(
+            news_score=base.news_score,
+            supply_score=base.supply_score,
+            fundamental_score=score,
+            ai_score=base.ai_score,
+            metadata={
+                **(base.metadata or {}),
+                "fundamental_producer": "RealFundamentalScoreProducer",
+                "fundamental_evidence": evidence,
+            },
+        )
+
+    def score_holding(
+        self,
+        *,
+        holding: Holding,
+        indicator: StockIndicator,
+    ) -> HoldingComponentScores:
+        return self._fallback.score_holding(holding=holding, indicator=indicator)
+
+
+def _safe_earnings_evidence(event: EarningsEvent | None) -> dict[str, Any]:
+    if event is None:
+        return {"reason": "no_earnings_event"}
+    return {
+        "latest_event_date": event.event_date.isoformat(),
+        "fiscal_year": event.fiscal_year,
+        "fiscal_quarter": event.fiscal_quarter,
+        "event_type": event.event_type,
+        "surprise_type": event.surprise_type,
+        "surprise_pct": _decimal_evidence(event.surprise_pct),
+        "operating_income_actual": _decimal_evidence(event.operating_income_actual),
+        "operating_income_consensus": _decimal_evidence(event.operating_income_consensus),
+    }
+
+
+def _recency_multiplier(event_date: date, as_of: date) -> Decimal:
+    age_days = (as_of - event_date).days
+    if age_days < 0:
+        return Decimal("0.5")
+    if age_days <= 30:
+        return Decimal("1.0")
+    if age_days <= 90:
+        return Decimal("0.6")
+    return Decimal("0.3")
+
+
+def _score_earnings_event(
+    event: EarningsEvent | None,
+    *,
+    as_of: date,
+) -> tuple[Decimal, dict[str, Any]]:
+    evidence = _safe_earnings_evidence(event)
+    if event is None:
+        return NEUTRAL_SCORE, evidence
+    if event.surprise_type == "BEAT":
+        base_delta = Decimal("10")
+    elif event.surprise_type == "MISS":
+        base_delta = Decimal("-10")
+    else:
+        base_delta = Decimal("0")
+    surprise_delta = Decimal("0")
+    if event.surprise_pct is not None:
+        surprise_delta = max(min(event.surprise_pct * Decimal("0.5"), Decimal("10")), Decimal("-10"))
+    multiplier = _recency_multiplier(event.event_date, as_of)
+    return _clip_score(NEUTRAL_SCORE + (base_delta + surprise_delta) * multiplier), evidence
+
+
+class RealEarningsScoreProducer(ScoreProducerInterface):
+    """Repository-backed replacement for holding earnings_score only."""
+
+    def __init__(
+        self,
+        earnings_repository: EarningsEventRepository,
+        *,
+        fallback: ScoreProducerInterface | None = None,
+        as_of: date | None = None,
+    ) -> None:
+        self._repo = earnings_repository
+        self._fallback = fallback or DummyScoreProducer()
+        self._as_of = as_of
+
+    def _today(self) -> date:
+        return self._as_of or datetime.now(UTC).date()
+
+    def score_recommendation(
+        self,
+        *,
+        stock: Stock,
+        indicator: StockIndicator,
+    ) -> RecommendationComponentScores:
+        return self._fallback.score_recommendation(stock=stock, indicator=indicator)
+
+    def score_holding(
+        self,
+        *,
+        holding: Holding,
+        indicator: StockIndicator,
+    ) -> HoldingComponentScores:
+        base = self._fallback.score_holding(holding=holding, indicator=indicator)
+        event = self._repo.get_latest_by_symbol(holding.symbol)
+        score, evidence = _score_earnings_event(event, as_of=self._today())
+        return HoldingComponentScores(
+            news_score=base.news_score,
+            earnings_score=score,
+            ai_score=base.ai_score,
+            metadata={
+                **(base.metadata or {}),
+                "earnings_producer": "RealEarningsScoreProducer",
+                "earnings_evidence": evidence,
+            },
+        )
+
+
 class DisclosureRiskProducer:
     """Inspect last 14 days of RISK_DISCLOSURE news_items for a symbol.
 
@@ -474,6 +686,8 @@ __all__ = [
     "LOW_RULE_SCORE",
     "NEUTRAL_SCORE",
     "RISK_DISCLOSURE_FLAG",
+    "RealEarningsScoreProducer",
+    "RealFundamentalScoreProducer",
     "RealNewsScoreProducer",
     "RecommendationComponentScores",
     "ScoreProducerInterface",

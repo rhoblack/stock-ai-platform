@@ -7,10 +7,12 @@ from app.data.repositories import (
     DailyPriceRepository,
     DataSnapshotRepository,
     DecisionLogRepository,
+    EarningsEventRepository,
     HoldingCheckRepository,
     HoldingRepository,
     StockIndicatorRepository,
 )
+from app.analysis.score_producers import RealEarningsScoreProducer
 from app.db import Base
 from app.db.models import Holding
 from app.db.session import create_db_engine, create_session_factory
@@ -648,3 +650,70 @@ def test_holding_engine_existing_risk_flags_still_work_alongside_disclosure(sess
     # MA20_BREAKDOWN(8) + STOP_LOSS(15) + RISK_DISCLOSURE(3) = 26
     check = HoldingCheckRepository(session).list_by_symbol("005930")[0]
     assert check.risk_score == Decimal("26.0000")
+
+
+def test_real_earnings_score_integrates_with_snapshot_and_decision_log(session):
+    _seed_holding(session, symbol="005930", avg_buy_price=Decimal("100"))
+    _seed_price(session, symbol="005930", price_date=date(2026, 5, 4), close=Decimal("110"))
+    _seed_indicator(session, symbol="005930", indicator_date=date(2026, 5, 4), technical_score=Decimal("70"))
+    EarningsEventRepository(session).upsert_by_symbol_event(
+        symbol="005930",
+        event_date=date(2026, 5, 1),
+        fiscal_year=2026,
+        fiscal_quarter=1,
+        event_type="FINAL",
+        operating_income_actual=Decimal("110"),
+        operating_income_consensus=Decimal("100"),
+        surprise_type="BEAT",
+        surprise_pct=Decimal("10"),
+        source="TEST",
+    )
+    engine = HoldingCheckEngine(
+        scoring_engine=ScoringEngine(),
+        risk_engine=RiskEngine(),
+        holding_repository=HoldingRepository(session),
+        daily_price_repository=DailyPriceRepository(session),
+        indicator_repository=StockIndicatorRepository(session),
+        snapshot_repository=DataSnapshotRepository(session),
+        holding_check_repository=HoldingCheckRepository(session),
+        decision_log_repository=DecisionLogRepository(session),
+        score_producer=RealEarningsScoreProducer(
+            EarningsEventRepository(session),
+            as_of=date(2026, 5, 4),
+        ),
+    )
+
+    engine.run(check_date=date(2026, 5, 4), check_type=CHECK_TYPE_PRE_MARKET)
+    session.commit()
+
+    check = HoldingCheckRepository(session).list_by_symbol("005930")[0]
+    assert check.earnings_score > Decimal("50")
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    evidence = log.rule_result_json["earnings_evidence"]
+    assert evidence["latest_event_date"] == "2026-05-01"
+    assert "source" not in evidence
+    assert "source_file_path" not in evidence
+    snapshot = DataSnapshotRepository(session).get(check.snapshot_id)
+    assert snapshot.market_context_json["earnings_evidence"] == evidence
+
+
+def test_scoring_engine_holding_weights_unchanged():
+    from app.decision.scoring_engine import HoldingScoreInputs
+
+    scoring = ScoringEngine()
+    result = scoring.score_holding(
+        HoldingScoreInputs(
+            technical_score=Decimal("100"),
+            news_score=Decimal("100"),
+            earnings_score=Decimal("100"),
+            ai_score=Decimal("100"),
+            risk_penalty=Decimal("0"),
+        ),
+    )
+    assert result.weighted_components == {
+        "technical": Decimal("35.0000"),
+        "news": Decimal("20.0000"),
+        "earnings": Decimal("20.0000"),
+        "ai": Decimal("15.0000"),
+        "profit_management": Decimal("0.0000"),
+    }

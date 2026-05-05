@@ -8,6 +8,7 @@ from app.data.repositories import (
     DailyPriceRepository,
     DataSnapshotRepository,
     DecisionLogRepository,
+    FundamentalSnapshotRepository,
     ReportConsensusSnapshotRepository,
     ReportScoreLogRepository,
     ReportSignalEventRepository,
@@ -20,6 +21,7 @@ from app.data.repositories import (
     StockUniverseRepository,
     ThemeStockMappingRepository,
 )
+from app.analysis.score_producers import RealFundamentalScoreProducer
 from app.db import Base
 from app.db.models import Stock, StockIndicator, StockUniverse, StockUniverseMember
 from app.db.session import create_db_engine, create_session_factory
@@ -914,3 +916,77 @@ def test_engine_dummy_only_does_not_emit_evidence(session):
     assert log.rule_result_json.get("disclosure_risk_evidence") is None
     # No RISK_DISCLOSURE flag, existing risk flags work as before
     assert "RISK_DISCLOSURE" not in log.risk_result_json["alerts"]
+
+
+def test_real_fundamental_score_integrates_with_snapshot_and_decision_log(session):
+    universe = _seed_universe(session)
+    _seed_stock_with_indicator(
+        session,
+        universe=universe,
+        symbol="005930",
+        name="Samsung",
+        technical_score=Decimal("70"),
+    )
+    FundamentalSnapshotRepository(session).upsert_by_symbol_period(
+        symbol="005930",
+        snapshot_date=date(2026, 5, 1),
+        fiscal_year=2025,
+        fiscal_quarter=4,
+        per=Decimal("10"),
+        pbr=Decimal("1.0"),
+        roe=Decimal("18"),
+        debt_ratio=Decimal("40"),
+        revenue_growth_yoy=Decimal("15"),
+        operating_income_growth_yoy=Decimal("20"),
+        dividend_yield=Decimal("2"),
+        source="TEST",
+    )
+    engine = RecommendationEngine(
+        scoring_engine=ScoringEngine(),
+        risk_engine=RiskEngine(),
+        universe_repository=StockUniverseRepository(session),
+        member_repository=StockUniverseMemberRepository(session),
+        stock_repository=StockRepository(session),
+        indicator_repository=StockIndicatorRepository(session),
+        snapshot_repository=DataSnapshotRepository(session),
+        run_repository=RecommendationRunRepository(session),
+        recommendation_repository=RecommendationRepository(session),
+        decision_log_repository=DecisionLogRepository(session),
+        score_producer=RealFundamentalScoreProducer(FundamentalSnapshotRepository(session)),
+    )
+
+    result = engine.generate(run_date=date(2026, 5, 4), top_n=1)
+    session.commit()
+
+    rec = RecommendationRepository(session).list_by_run_id(result.run_id)[0]
+    assert rec.fundamental_score > Decimal("50")
+    log = DecisionLogRepository(session).list_by_symbol("005930")[0]
+    evidence = log.rule_result_json["fundamental_evidence"]
+    assert evidence["snapshot_date"] == "2026-05-01"
+    assert "source" not in evidence
+    assert "source_file_path" not in evidence
+    snapshot = DataSnapshotRepository(session).get(rec.snapshot_id)
+    assert snapshot.market_context_json["fundamental_evidence"] == evidence
+
+
+def test_scoring_engine_recommendation_weights_unchanged():
+    from app.decision.scoring_engine import NewRecommendationScoreInputs
+
+    scoring = ScoringEngine()
+    result = scoring.score_new_recommendation(
+        NewRecommendationScoreInputs(
+            technical_score=Decimal("100"),
+            news_score=Decimal("100"),
+            supply_score=Decimal("100"),
+            fundamental_score=Decimal("100"),
+            ai_score=Decimal("100"),
+            risk_penalty=Decimal("0"),
+        ),
+    )
+    assert result.weighted_components == {
+        "technical": Decimal("35.0000"),
+        "news": Decimal("25.0000"),
+        "supply": Decimal("15.0000"),
+        "fundamental": Decimal("15.0000"),
+        "ai": Decimal("10.0000"),
+    }

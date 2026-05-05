@@ -445,6 +445,9 @@ class RecommendationEngine:
         news_evidence = (
             (candidate.components.metadata or {}).get("news_evidence")
         )
+        fundamental_evidence = (
+            (candidate.components.metadata or {}).get("fundamental_evidence")
+        )
         disclosure_risk_evidence = candidate.disclosure_risk_evidence
 
         snapshot = self._snapshot_repository.add(
@@ -464,6 +467,7 @@ class RecommendationEngine:
                     "risk_summary": _serialize_risk_summary(candidate.risk),
                     "report_evidence": report_evidence,
                     "news_evidence": news_evidence,
+                    "fundamental_evidence": fundamental_evidence,
                     "disclosure_risk_evidence": disclosure_risk_evidence,
                 },
             ),
@@ -524,6 +528,7 @@ class RecommendationEngine:
                     "score_producer": candidate.components.metadata,
                     "report_evidence": report_evidence,
                     "news_evidence": news_evidence,
+                    "fundamental_evidence": fundamental_evidence,
                     "disclosure_risk_evidence": disclosure_risk_evidence,
                 },
                 ai_result_json=None,

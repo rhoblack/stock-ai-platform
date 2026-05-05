@@ -7,9 +7,9 @@
 
 ---
 
-## 0. v0.6 시작 선언 — Fundamental & Earnings Intelligence
+## 0. v0.6 진행 선언 — Fundamental & Earnings Intelligence
 
-**v0.6 cycle 진입 (Phase B 완료).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
+**v0.6 cycle 진행 중 (Phase C 완료).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
 origin/main 동기화 완료). v0.1 backend + v0.2 frontend + v0.3 분석·운영 +
 v0.4 Analyst & Theme Intelligence + v0.5 News·공시·테마 랭킹 모두 마감 위에
 **재무 / 실적 데이터 라인 + 어닝 인텔리전스 기초** 5 phase 를 진행한다. v0.1 의
@@ -21,7 +21,7 @@ OFF 정책 모두 그대로 유지한다.
 
 운영자 수동 CSV / DART subset 1단계로 **재무 지표 시계열 (`fundamental_snapshots`)
 + 실적 이벤트 (`earnings_events`)** 데이터를 도입하고, `DummyScoreProducer` 5
-컴포넌트 중 두 번째 큰 weight 인 `fundamental_score` (recommendation 25%) 와
+컴포넌트 중 추천 본 weight 15% 인 `fundamental_score` 와
 HoldingCheckEngine 의 `earnings_score` 를 **첫 real 화** 한다 (`RealFundamentalScoreProducer`
 + `RealEarningsScoreProducer`). v0.4 의 Analyst Report CSV import 패턴을 그대로
 재사용 (forbidden body column 13종 거부 / summary 500자 truncate /
@@ -38,7 +38,7 @@ API 구현체는 v0.7+ 로 이연 (FakeProvider 만 제공). 추천 산식 본 w
 |---|---|---|---|
 | A | Fundamental data layer (`FundamentalProviderInterface` ABC + `FundamentalSnapshot` 24번째 테이블 + Repository + `scripts/import_fundamentals.py` argparse CLI + 8 지표 검증) | ✅ PR1+PR2 완료 / PR3 또는 Phase B 대기 | `v0.6-fundamental-data-layer` |
 | B | Earnings event layer + 어닝 캘린더 (`EarningsProviderInterface` ABC + `EarningsEvent` 25번째 테이블 + Repository + `scripts/import_earnings.py` + BEAT/MEET/MISS 분류 룰) | ✅ 완료 | `v0.6-earnings-event-pipeline` |
-| C | `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + RecommendationEngine·HoldingCheckEngine 통합 + decision evidence 기록 | ⏳ | `v0.6-fundamental-score` |
+| C | `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + RecommendationEngine·HoldingCheckEngine 통합 + decision evidence 기록 | ✅ 완료 | `v0.6-fundamental-score` |
 | D | 백엔드 read-only API 3종 (`/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`) + `RecommendationItemSchema` / `HoldingCheckSchema` evidence 필드 + 프런트 StockDetail 카드 + Today 다가오는 어닝 + Recommendations/Holdings evidence 통합 | ⏳ | `v0.6-frontend-fundamentals` |
 | E | `RELEASE_NOTES_v0.6.md` + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE 마감 + tag `v0.6-final` | ⏳ | `v0.6-final` |
 
@@ -89,7 +89,7 @@ API 구현체는 v0.7+ 로 이연 (FakeProvider 만 제공). 추천 산식 본 w
 | B | `app/data/importers/earnings.py` / `repositories/earnings_events.py` (신규) | Earnings provider ABC + DTO + importer + Repository |
 | B | `scripts/import_earnings.py` (신규) | argparse CLI |
 | C | `app/analysis/score_producers.py` | `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` 추가 |
-| C | `app/decision/recommendation_engine.py` / `holding_check_engine.py` | constructor 옵션 producer 주입 + evidence 기록 |
+| C | `app/decision/recommendation_engine.py` / `holding_check_engine.py` | 기존 `score_producer` composition 주입 유지 + evidence 기록 |
 | D | `app/api/routes.py` | GET 라우터 3개 추가 (read-only) |
 | D | `app/api/schemas.py` | `RecommendationItemSchema` / `HoldingCheckSchema` evidence 필드 + 5 신규 schema |
 | D | `frontend/src/pages/StockDetail/` | Fundamental·Earnings 카드 추가 |
@@ -171,6 +171,31 @@ DB 마이그레이션 = `CREATE TABLE fundamental_snapshots ...; CREATE TABLE ea
   `tests/integration/test_earnings_import.py` 추가.
 - 안전 범위: DART / KIS / Telegram 호출 0건, scheduler job 0건, API 라우터 0건,
   frontend 변경 0건, 자동매매/주문 코드 0건, 원문/본문/BLOB 저장 0건.
+
+### v0.6 Phase C 결과 (요약) — Fundamental / Earnings score real 화
+
+> Phase A/B 의 수동 CSV 기반 데이터 위에 점수 producer 만 추가했다. API 라우터,
+> scheduler job, 프런트 화면, 자동매매/주문 코드는 추가하지 않았다.
+
+- `app/analysis/score_producers.py` — `RealFundamentalScoreProducer` 신규.
+  기존 `ScoreProducerInterface` composition 패턴을 유지해 news/supply/earnings/ai 는
+  fallback 에 맡기고, 추천용 `fundamental_score` 만
+  `FundamentalSnapshotRepository.get_latest_by_symbol` 기반으로 교체한다.
+- `RealEarningsScoreProducer` 신규. 보유점검용 `earnings_score` 만
+  `EarningsEventRepository.get_latest_by_symbol` 기반으로 교체하고, 나머지 컴포넌트는
+  fallback producer 를 그대로 사용한다.
+- `app/decision/recommendation_engine.py` — `DataSnapshot.market_context_json` 과
+  `DecisionLog.rule_result_json` 에 `fundamental_evidence` 를 기록한다.
+- `app/decision/holding_check_engine.py` — 같은 방식으로 `earnings_evidence` 를 기록한다.
+- `fundamental_evidence` safe fields: `snapshot_date`, `fiscal_year`,
+  `fiscal_quarter`, `per`, `pbr`, `roe`, `debt_ratio`, `revenue_growth_yoy`,
+  `operating_income_growth_yoy`, `dividend_yield`.
+- `earnings_evidence` safe fields: `latest_event_date`, `fiscal_year`,
+  `fiscal_quarter`, `event_type`, `surprise_type`, `surprise_pct`,
+  `operating_income_actual`, `operating_income_consensus`.
+- 안전 범위: ScoringEngine 본 weight 변경 0건, DART / KIS / Telegram 호출 0건,
+  API 라우터 0건, frontend 변경 0건, 자동매매/주문 코드 0건, 원문/본문/BLOB/파일 경로
+  evidence 노출 0건.
 
 ### v0.6 누적 태그 (예정)
 

@@ -229,6 +229,21 @@ v0.5 cycle 의 News + Disclosure + 점수 실제화 테스트 카운트:
 - collect_news / collect_disclosures default OFF — disabled spy provider 의 `calls == []` 명시 검증 (외부 호출 0건 가드)
 - ScoringEngine 본 weight (technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%) 산식 변경 0건 — Phase C 가 news_score 만 50 → real 로 교체, 기존 추천 / 보유 회귀 테스트 그대로 통과
 
+## 6.10 v0.6 Phase C — Fundamental / Earnings score producer 테스트
+
+v0.6 Phase C 는 CSV 로 적재된 정량 데이터만 사용한다. DART / KIS / Telegram /
+LLM / 주문 API 는 어떤 테스트에서도 호출하지 않는다.
+
+- `tests/unit/test_real_fundamental_earnings_score_producers.py` 신규 — 데이터 없음 50 fallback, 좋은 재무 가산, 나쁜 재무 감산, debt ratio 감점, growth 가산, 0~100 clamp, BEAT/MISS/MEET/UNKNOWN, surprise_pct cap, old event 영향 감소, upcoming UNKNOWN 중립, evidence whitelist 를 검증한다.
+- `tests/integration/test_recommendation_engine.py` 보강 — `RealFundamentalScoreProducer` 가 추천 `fundamental_score` 에 반영되고, `decision_logs.rule_result_json["fundamental_evidence"]` 와 `data_snapshots.market_context_json["fundamental_evidence"]` 에 동일 safe evidence 가 저장되는지 확인한다.
+- `tests/integration/test_holding_check_engine.py` 보강 — `RealEarningsScoreProducer` 가 보유점검 `earnings_score` 에 반영되고, `decision_logs.rule_result_json["earnings_evidence"]` 와 `data_snapshots.market_context_json["earnings_evidence"]` 에 동일 safe evidence 가 저장되는지 확인한다.
+
+핵심 안전 가드:
+- `fundamental_evidence` 는 `snapshot_date`, `fiscal_year`, `fiscal_quarter`, `per`, `pbr`, `roe`, `debt_ratio`, `revenue_growth_yoy`, `operating_income_growth_yoy`, `dividend_yield` 만 허용한다.
+- `earnings_evidence` 는 `latest_event_date`, `fiscal_year`, `fiscal_quarter`, `event_type`, `surprise_type`, `surprise_pct`, `operating_income_actual`, `operating_income_consensus` 만 허용한다.
+- `source`, `source_file_path`, `memo`, `summary`, `body`, `content`, `full_text`, `paragraph`, `raw_text`, `html_body`, `본문`, `원문`, `전문` 계열은 evidence 에 포함하지 않는다.
+- ScoringEngine 본 weight 변경 0건 — recommendation 35/25/15/15/10, holding 35/20/20/15/10 회귀 테스트로 고정한다.
+
 ## 7. 금지 사항
 
 테스트에서 절대 금지:
