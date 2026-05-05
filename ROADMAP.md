@@ -16,6 +16,7 @@
 | v0.3 Analysis & Ops | GitHub Actions CI / 캔들·ATR / KRX 휴장 캘린더 / StockDetail 일봉 차트 | ✅ 마감 | `v0.3-final` |
 | v0.4 Analyst & Theme Intelligence | 증권사 리포트 + 테마 매핑 + 변화 시그널 + 리포트 점수 통합 + StockDetail 4 카드 | ✅ 마감 | `v0.4-final` |
 | v0.5 News, Disclosure & Theme Ranking | News/공시 데이터 라인 + DummyScoreProducer.news_score 첫 real 화 + `/themes` 9번째 화면 | ✅ 마감 | `v0.5-final` |
+| v0.6 Fundamental & Earnings Intelligence | 재무 / 실적 데이터 라인 (CSV import 1단계) + `fundamental_score` (15%) + `earnings_score` (HoldingCheck) 첫 real 화 + StockDetail Fundamental·Earnings 카드 + Today 다가오는 어닝 | 🟡 Phase A 진입 대기 | `v0.6-fundamental-data-layer` (Phase A 예정) |
 
 ---
 
@@ -148,51 +149,97 @@ v0.4 의 테마 데이터가 첫 surfacing (`/themes` 화면) 되었다. 마감 
 
 ---
 
-## v0.6+ 후보
+## v0.6 — Fundamental & Earnings Intelligence (🟡 Phase A 진입 대기)
 
-v0.5 마감 후 진입 가능 후보. 현재는 모두 미착수 — 명시적 진입 요청 전까지 손대지 않는다.
+기준선: `v0.5-final` (HEAD `9ccf0f8`). 481 / 68 / build / 11 baseline 위에 5 phase
+진행 — Dummy 5 컴포넌트 중 `fundamental_score` (recommendation 25%) + HoldingCheckEngine
+의 `earnings_score` 가 처음으로 real 화되며, 운영자 수동 CSV / DART subset 1단계로
+`fundamental_snapshots` (24번째 테이블) + `earnings_events` (25번째 테이블) 데이터가
+도입된다. 추천·보유 본 weight 산식은 변경하지 않는다 — placeholder 50 → real 로
+교체될 뿐.
 
-### 6.1 데이터 / 분석 실제화
+| Phase | 작업 | 상태 | 태그 (예정) |
+|---|---|---|---|
+| A | Fundamental data layer — `FundamentalProviderInterface` + `FundamentalSnapshot` ORM (24번째 테이블, 8 지표) + `scripts/import_fundamentals.py` argparse CLI (default dry-run) | ⏳ 진입 대기 | `v0.6-fundamental-data-layer` |
+| B | Earnings event layer + 어닝 캘린더 — `EarningsProviderInterface` + `EarningsEvent` ORM (25번째 테이블) + BEAT/MEET/MISS 분류 + `scripts/import_earnings.py` | ⏳ | `v0.6-earnings-event-pipeline` |
+| C | `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + RecommendationEngine·HoldingCheckEngine 통합 (Dummy → Real, 본 weight 변경 0건) + decision evidence | ⏳ | `v0.6-fundamental-score` |
+| D | 백엔드 read-only API 3종 (`/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`) + `RecommendationItemSchema`·`HoldingCheckSchema` evidence 필드 + 프런트 StockDetail Fundamental·Earnings 카드 + Today 다가오는 어닝 + Recommendations·Holdings evidence 통합 | ⏳ | `v0.6-frontend-fundamentals` |
+| E | `RELEASE_NOTES_v0.6.md` + 마감 선언 + 4 게이트 재확인 | ⏳ | `v0.6-final` |
 
-- **실 재무 / 실적 점수** — `FundamentalSnapshot` / `EarningsSnapshot` 테이블 신규 + DART 재무제표 파싱. PER/PBR/EPS/ROE/매출 성장률/영업이익 성장률/실적 컨센서스. `DummyScoreProducer.fundamental_score` / `earnings_score` 실제화.
-- **News/Disclosure 출처 확장** — v0.5 에서 1~2 source 로 시작한 것을 다중 RSS / DART subset / 외부 API 로 확장.
+**v0.6 핵심 정책 (cycle-wide)**:
+
+- 자동매매 / 실 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO 0건 — v0.1~v0.5 와 동일
+- POST / PUT / DELETE 라우터 0건 (read-only API 만)
+- DART API 자동 호출 0건 — 1단계는 운영자 CSV 만 (v0.4 Analyst Report import 패턴 그대로). ABC + Fake provider 만 두고 실 API 는 v0.7+ 후보
+- 자동 fetch default OFF (`Settings.fundamental_collection_enabled` / `earnings_collection_enabled` = false). 운영자 명시 enable + 실 provider 주입 시에만 동작
+- 재무제표 PDF / Excel BLOB DB 저장 0건 — CSV 정량 지표 + 짧은 메모 (≤500자) 만
+- 본문 paragraph 저장 0건 (forbidden body column 13종 거부 가드)
+- 추천 산식 본 weight 변경 0건 — `fundamental_score` 가 50 → real 로 교체되지만 weight 15% 그대로
+- HoldingCheckEngine 본 weight 변경 0건 — `earnings_score` 가 50 → real 로 교체되지만 weight 그대로
+- 관심종목 / Watchlist / 인증 = **v0.7 후보** (POST 도입 + 인증 묶음)
+- Strategy / Backtest / MockBroker = **v0.8+ 후보**
+- LLM 자동 재무·어닝 분석 = **v0.7+ 후보** (룰 기반 검증 후)
+
+상세 계획: [`PLANS.md`](./PLANS.md) `PLAN-0006`
+
+---
+
+## v0.7+ 후보
+
+v0.6 마감 후 진입 가능 후보. 현재는 모두 미착수 — 명시적 진입 요청 전까지 손대지 않는다.
+
+### 7.1 데이터 / 분석 실제화
+
+- **실 DART API 구현체** — v0.6 의 `FundamentalProviderInterface` / `EarningsProviderInterface` ABC 위에 `DartFundamentalProvider` / `DartEarningsProvider` 추가. 라이선스 / 스로틀링 / 정책 검토 동반.
+- **실 RSS / News API 구현체** — v0.5 의 `NewsProviderInterface` 위에 `RssNewsProvider` / `NaverNewsProvider` 등. 라이선스 검토 동반.
+- **재무 score 산식 고도화** — v0.6 의 절댓값 기반 산식을 시장 percentile / 섹터 평균 기반으로 확장. 시장 환경 (금리 변화) 민감도 완화.
+- **News/Disclosure 출처 확장** — 다중 RSS / DART subset / 외부 API.
 - **KRX 휴장일 자동 fetch** — 정적 JSON 의 수동 갱신 (매년) 을 자동 fetch 로 대체.
 - **추천 성과의 N=20 외 다른 기간 토글** — 현재는 1/3/5/20일 고정.
 
-### 6.2 인증 / 관심종목
+### 7.2 인증 / 관심종목
 
 - **인증 / 권한** — 사내망 외 노출 시 단일 토큰 / API key 헤더부터. POST 라우터 도입 전제.
 - **즐겨찾기 / 관심 종목** — Watchlist 테이블 신규 + POST `/api/watchlist`. 인증 동반 필수.
 - **글로벌 검색** (cmd+k), 사이드바 collapse, breadcrumb, loading skeleton 통일.
+- **audit log** — POST 도입과 함께.
 
-### 6.3 운영 / UX
+### 7.3 운영 / UX
 
 - **운영 모니터링** — Sentry / Prometheus / Grafana.
 - **모바일 / 태블릿 레이아웃** — 현재는 PC 1280px+ 우선.
 - **StockDetail 캔들 차트 + 거래량 BarChart + 이동평균 오버레이** — `lightweight-charts` 마이그레이션 검토.
+- **Alembic 도입 + 마이그레이션 자동화** — 누적 ALTER 가 v0.5 `news_items.category` + v0.6 신규 테이블 2개 시점에 도입.
 
-### 6.4 백엔드 인프라
+### 7.4 백엔드 인프라
 
 - **POST 트리거** (잡 수동 실행 / 추천 즉시 생성) — 인증 동반 필수.
 - **WebSocket / SSE 실시간 잡 상태** — 현재 polling.
 - **`.github/dependabot.yml`** — v0.3 Phase A 에서 보류된 항목.
 
-### 6.5 LLM / AI 강화
+### 7.5 LLM / AI 강화
 
 - **Analyst Report LLM 자동 요약** — v0.4 Phase A 의 `extraction_method` / `extraction_confidence` 필드를 활용해 LLM 추출 결과를 안전하게 mark.
 - **News / Disclosure LLM sentiment** — v0.5 의 룰 기반 sentiment 를 LLM 보강.
+- **재무 / 어닝 LLM 분석** — v0.6 의 룰 기반 산식을 LLM 보강 (예: 실적 발표 후 Q&A 톤 분석).
 - **AI Provider 교체** — 현 `DummyScoreProducer` → 로컬 / 클라우드 LLM 통합.
+
+### 7.6 전략 / 백테스트 (v0.8+ 검토)
+
+- **`StrategyInterface` 구체화** — v0.1 ABC placeholder 위에 첫 구현체. 실 News (v0.5) + 재무 (v0.6) 데이터 후행 검증 후.
+- **과거 추천 backtest 시뮬레이터** — read-only. 수수료 / 세금 / 슬리피지 placeholder.
+- **시장 국면별 성과 분석** — Strategy 모듈 선행.
 
 ---
 
 ## Future Backlog — 자동매매 / 백테스트 / 가상매매
 
 ⚠ **모두 별도 보안 / 컴플라이언스 / 자본 한도 / 비상정지 / 일일 손실 제한 사이클이
-선행되어야 진입 가능.** v0.5~v0.6 의 모든 후보는 자동매매 부재 정책을 유지한다.
+선행되어야 진입 가능.** v0.5 ~ v0.7 의 모든 후보는 자동매매 부재 정책을 유지한다.
 
 | 단계 | 범위 | 진입 전제 |
 |---|---|---|
-| Strategy & Signal | StrategyInterface 활성화, SIGNAL 모드 | 실 News (v0.5) + 재무 데이터 (v0.6) 후행 |
+| Strategy & Signal | StrategyInterface 활성화, SIGNAL 모드 | 실 News (v0.5 ✅) + 재무 / 어닝 데이터 (v0.6) + 인증 (v0.7) 후행 검증 |
 | Backtest 엔진 | walk-forward 검증, Grid Search 튜닝, 시장 국면별 성과 분석 | Strategy 모듈 선행 |
 | MockBroker / ReplayBroker / SimulationBroker | 가상 계좌 / 가상 주문·체결 / 가상 시나리오 / 스트레스 테스트 | BrokerInterface 구현 진입 |
 | 전용 ML 모델 | Market Regime / Strategy Selection / Risk Prediction. 추천 성과 기반 재학습. LLM 과 전용 AI 역할 분리 | Backtest 데이터 누적 후행 |
@@ -218,8 +265,9 @@ AI 기반 개인용 주식 전략 연구 플랫폼.
 KIS data + 휴장 캘린더 + 증권사 리포트 + 테마 매핑 + 시그널 이벤트
    → 분석 / 점수 / 추천 / 보유 점검 / 컨센서스
    → 텔레그램 / 대시보드 (read-only)
-   → (v0.5) 실 News / 공시 + 테마 랭킹 화면
-   → (v0.6+) 실 재무·실적 / 인증 / Watchlist / 글로벌 검색
+   → (v0.5 ✅) 실 News / 공시 + 테마 랭킹 화면
+   → (v0.6 진행) 재무·실적 (CSV 1단계) + 어닝 캘린더 + StockDetail 통합
+   → (v0.7+) 인증 / Watchlist / 글로벌 검색 / DART 실 API / LLM 보강
    → (Future) Strategy / Backtest / 전용 AI / 가상매매 → APPROVAL → SMALL_AUTO
 ```
 

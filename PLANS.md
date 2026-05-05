@@ -1081,3 +1081,276 @@ v0.5-final                      ← Phase E 인수 / 마감 선언
 **위험 요소:**
 
 - News/Disclosure 자동 fetch flag 가 운영 환경에서 실수로 ON 되어 외부 source 호출 → `.env.example` 에 `NEWS_COLLECTION_ENABLED=false` / `DISCLOSURE_COLLECTION_ENABLED=false` 명시 + `KIS_OPS_CHECKLIST.md` 에 운영 진입 체크 항목 추가
+
+---
+
+## PLAN-0006: v0.6 Fundamental & Earnings Intelligence (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.5-final` (HEAD `9ccf0f8` 시점, origin/main 동기화 완료)
+- v0.1 ~ v0.5 모두 인수 완료. 회귀 게이트: backend pytest **481**, frontend vitest **68**, e2e **11**, build 통과
+- v0.6 은 v0.5-final 위에 **재무 데이터 라인 + 어닝 인텔리전스** 를 신규 추가한다. v0.4 의 Analyst Report CSV import 패턴을 그대로 재사용해 **운영자 수동 CSV / DART subset placeholder** 1단계로 도입하고, 추후 DART API provider 를 붙일 수 있게 `FundamentalProviderInterface` / `EarningsProviderInterface` ABC 만 미리 둔다.
+- v0.1 의 read-only / 자동매매 부재 / 비밀 마스킹 / mock·DRY_RUN 정책 + v0.4 의 저작권 정책 (본문 paragraph 미저장 / `source_file_path` 미노출) + v0.5 의 자동 fetch default OFF 정책 모두 그대로 유지한다.
+
+### 후보 비교 (v0.6 진입 시점 기준)
+
+| # | 후보 | 가치 | 난이도 | 위험 | 의존성 | v0.6 채택 |
+|---|---|---|---|---|---|---|
+| 1 | 재무 / 실적 점수 실제화 (`fundamental_score` 25%) | 매우 높음 (DummyScoreProducer 5 컴포넌트 중 두 번째 큰 weight 첫 real 화) | 중 (CSV 1단계 도입은 v0.4 패턴 재사용, DART 자동 연동은 v0.7+ 로 이연) | 낮음 (CSV 운영자 입력만, 자동 호출 0건) | `FundamentalSnapshot` 신규 테이블 1개 | ✅ 채택 (Phase A·C) |
+| 2 | 어닝 인텔리전스 (실적 발표일 + 서프라이즈 + 컨센서스 차이) | 높음 (HoldingCheckEngine 의 `earnings_score` 최초 real 화 + Today 화면 다가오는 발표) | 중 (CSV 입력 + 분류 룰) | 낮음-중 (실적 데이터 정확성은 운영자 입력 책임) | `EarningsEvent` 신규 테이블 1개 | ✅ 채택 (Phase B·C) |
+| 3 | 점수 정합성 / 통합 evidence 화면 | 중-높음 (v0.5 의 news/disclosure + v0.4 의 report/theme + v0.6 의 fundamental/earnings 통합 noise 정리) | 낮음 (read-only 화면) | 낮음 | v0.5 evidence 인프라 그대로 | ✅ 채택 (Phase D) |
+| 4 | 관심종목 / Watchlist | 중 (UX) | 중-높음 (POST 첫 도입 + 인증 묶음) | 중-높음 (read-only 정책 깨짐) | 인증 의존 | ❌ v0.7 후보 (POST + 인증 별도 cycle) |
+| 5 | 인증 / 보안 | 중 (POST 의 전제) | 중-높음 | 중 (잘못 설계 시 보안 구멍) | — | ❌ v0.7 후보 (Watchlist 와 묶어서) |
+| 6 | 전략 / 백테스트 기초 (`StrategyInterface` 구체화) | 중 (장기) | 매우 높음 | 중 | 실 News (v0.5) + 재무 (v0.6) 데이터 후행 필요 | ❌ v0.8+ 후보 |
+| 7 | 자동매매 / 실 주문 | (위험) | 매우 높음 | 매우 높음 | 모든 위 + 컴플라이언스 | ❌ Future Backlog (별도 보안 / 컴플라이언스 사이클 선행) |
+
+### 시나리오 옵션
+
+**Scenario X — Fundamental + Earnings + 정합성 (권장 ✅)**
+
+- Phase A: Fundamental data layer (CSV import + `FundamentalSnapshot` 테이블 + 8 지표 + `FundamentalProviderInterface` ABC)
+- Phase B: Earnings event layer (CSV import + `EarningsEvent` 테이블 + 어닝 캘린더 + BEAT/MEET/MISS 분류 + `EarningsProviderInterface` ABC)
+- Phase C: `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + RecommendationEngine·HoldingCheckEngine 통합
+- Phase D: 프런트 (StockDetail Fundamental·Earnings 카드 + Today 다가오는 어닝 + Recommendations/Holdings evidence 정합성 통합)
+- Phase E: 마감
+
+**Scenario Y — Fundamental deep + Backtest 기초**
+
+- Phase A·B·C: 재무·어닝 (X 와 동일)
+- Phase D: `StrategyInterface` ABC 구체화 + 과거 추천 backtest 시뮬레이터 (read-only) + 수수료/세금/슬리피지 placeholder
+- Phase E: 마감
+- 화면 통합 / 정합성 작업은 v0.7 로 미룸 — backend / 산식 위주
+
+**Scenario Z — Watchlist + 인증 + Fundamental 일부**
+
+- Phase A: 인증 (단일 사용자 토큰 + audit log + middleware)
+- Phase B: Watchlist (POST 첫 도입 + DB + UI)
+- Phase C: Fundamental import (CSV 만, score 통합 미포함)
+- Phase D: 통합 화면
+- Phase E: 마감
+- read-only 정책 깨기 + 데이터 가치 분산. 사용자 명시 ("자동매매 제외 + 재무·실적 중심") 와 정렬 안 됨
+
+**최종 추천**: **Scenario X**. 이유:
+
+- 사용자 기본 추천과 정렬 (재무·실적 점수 실제화 + 어닝 인텔리전스 기초)
+- DummyScoreProducer 5 컴포넌트 중 v0.5 에서 `news` (25%) real 화 → v0.6 에서 `fundamental` (25%) + `earnings` (HoldingCheck 만) 가 다음으로 큰 가치
+- v0.4 의 Analyst Report CSV import 패턴 (`scripts/import_analyst_reports.py` + forbidden body column 검증 + summary 500자 truncate + source_file_path 마스킹) 을 그대로 재사용 — 위험 / 학습 비용 최소
+- DART 자동 연동 부담 회피 — `FundamentalProviderInterface` / `EarningsProviderInterface` ABC 만 두고 실 API 구현은 v0.7+ 로 이연 (`FakeFundamentalProvider` / `FakeEarningsProvider` 만 제공)
+- POST 도입 회피 — read-only API 정책 v0.6 에서도 유지 (Watchlist / 인증은 v0.7+ 로 미룸)
+- Y (백테스트) 는 화면 정체 / 산식 검증 부족 / 수수료·세금 모델링 위험. Z 는 정책 변경 (POST 첫 도입) + 사용자 명시와 다름
+
+### 범위 (5 Phase)
+
+- **Phase A** — Fundamental data layer + CSV import (`FundamentalProviderInterface` ABC + `FakeFundamentalProvider` + `FundamentalSnapshot` ORM + Repository + `scripts/import_fundamentals.py` argparse CLI default dry-run + `app/data/importers/fundamentals.py` (forbidden body column 검증) + 단위/통합 테스트)
+- **Phase B** — Earnings event layer + CSV import + 어닝 캘린더 (`EarningsProviderInterface` ABC + `FakeEarningsProvider` + `EarningsEvent` ORM + Repository + `scripts/import_earnings.py` argparse CLI + `app/data/importers/earnings.py` + BEAT/MEET/MISS 분류 룰 + 단위/통합 테스트)
+- **Phase C** — `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` (composition 패턴, fallback DummyScoreProducer) + RecommendationEngine·HoldingCheckEngine 통합 + decision_logs/data_snapshots 에 `fundamental_evidence` / `earnings_evidence` 기록 + safe-fields whitelist + 단위/통합 테스트
+- **Phase D** — 백엔드 read-only API (`GET /api/stocks/{symbol}/fundamentals` + `GET /api/stocks/{symbol}/earnings` + `GET /api/calendar/earnings?since=&until=`) + `RecommendationItemSchema` / `HoldingCheckSchema` 에 `fundamental_evidence` / `earnings_evidence` nullable 필드 추가 + 프런트 StockDetail Fundamental·Earnings 카드 + Today 다가오는 어닝 카드 + Recommendations/Holdings evidence 정합성 통합 + msw/e2e fixture
+- **Phase E** — `RELEASE_NOTES_v0.6.md` 신규 + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE / API_SPEC / TESTING / DB_SCHEMA / INTEGRATION_RUNBOOK 마감 + 4 게이트 재확인 + tag `v0.6-final`
+
+### 제외 범위 (v0.6 에서 절대 하지 않을 것)
+
+- ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ POST / PUT / DELETE 라우터 — read-only API 만 (v0.1 ~ v0.5 일관 정책)
+- ❌ DART API 자동 호출 — 1단계는 운영자 CSV import 만. `FundamentalProviderInterface` / `EarningsProviderInterface` ABC 와 Fake provider 만 제공. 실 API 구현체는 v0.7+ 후보
+- ❌ 자동 fetch default ON — `Settings.fundamental_collection_enabled` / `earnings_collection_enabled` = false (운영자 명시 enable + 실 provider 주입 시에만 동작, v0.5 패턴 재사용)
+- ❌ 재무제표 원문 PDF / Excel BLOB 저장 — CSV 메타데이터 (정량 지표 + fiscal_period + source_url) 만
+- ❌ 재무제표 본문 paragraph 저장 — analyst report 처럼 짧은 운영자 메모 (≤500자) 만
+- ❌ ScoringEngine 본 weight 변경 — `fundamental_score` 가 placeholder 50 → real 로 교체되지만 weight 15% 그대로 (recommendation 산식). HoldingCheck 의 `earnings_score` 도 동일
+- ❌ 관심종목 / Watchlist / 인증 — v0.7 후보 (POST 도입 + 인증 사이클 별도)
+- ❌ Strategy / Backtest / MockBroker — v0.8+ 후보
+- ❌ LLM 자동 재무 분석 — Phase C 는 룰 기반 / percentile 기반만, LLM 보강은 v0.7+ 후보
+- ❌ HoldingCheckEngine 산식 본 weight 변경 — `earnings_score` 가 placeholder 50 → real 로 교체되지만 가중치 그대로
+- ❌ KIS API 외 외부 자격증명 추가 / 자동 호출
+
+### 데이터 모델 변경 (신규 테이블 2개)
+
+**`fundamental_snapshots` (24번째 테이블)**
+
+운영자가 직접 입력하거나 향후 DART provider 가 적재하는 정량 지표 시계열.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `id` | Integer PK | |
+| `symbol` | String(32) NOT NULL index | |
+| `snapshot_date` | Date NOT NULL index | 데이터 기준일 (예: 분기 보고서 발표일) |
+| `fiscal_year` | Integer NOT NULL | 회계연도 (2026 등) |
+| `fiscal_quarter` | Integer nullable | 1/2/3/4 또는 NULL (연간) |
+| `per` | Numeric(8,2) nullable | Price/Earnings |
+| `pbr` | Numeric(8,2) nullable | Price/Book |
+| `eps` | Numeric(12,2) nullable | 주당순이익 (KRW) |
+| `roe` | Numeric(6,2) nullable | 자기자본이익률 (%) |
+| `revenue_growth_yoy` | Numeric(6,2) nullable | 매출 성장률 YoY (%) |
+| `operating_income_growth_yoy` | Numeric(6,2) nullable | 영업이익 성장률 YoY (%) |
+| `debt_ratio` | Numeric(6,2) nullable | 부채비율 (%) |
+| `dividend_yield` | Numeric(6,2) nullable | 배당수익률 (%) |
+| `summary` | String(500) nullable | 운영자 짧은 메모 (≤500자, body/content/full_text 0건) |
+| `source` | String(32) nullable | "DART" / "MANUAL" / "FAKE" 등 |
+| `source_url` | String(500) nullable | DART 공시 URL 등 (외부 노출 가능) |
+| `source_file_path` | String(500) nullable | 운영자 로컬 파일 경로 (마스킹 후 외부 미노출) |
+| `extraction_method` | String(16) NOT NULL | "MANUAL" / "DART_API" / "FAKE" |
+| `extraction_confidence` | Numeric(4,3) nullable | |
+| `created_at` / `updated_at` | DateTime | TimestampMixin |
+
+UniqueConstraint(`symbol`, `snapshot_date`, `fiscal_year`, `fiscal_quarter`).
+
+**`earnings_events` (25번째 테이블)**
+
+실적 발표 이벤트 + 컨센서스 대비 surprise.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `id` | Integer PK | |
+| `symbol` | String(32) NOT NULL index | |
+| `event_date` | Date NOT NULL index | 실적 발표일 (또는 예정일) |
+| `event_type` | String(16) NOT NULL | "ANNOUNCEMENT" (예정) / "REPORT" (확정) |
+| `fiscal_year` | Integer NOT NULL | |
+| `fiscal_quarter` | Integer nullable | 1/2/3/4 또는 NULL (연간) |
+| `expected_eps` | Numeric(12,2) nullable | 컨센서스 EPS |
+| `actual_eps` | Numeric(12,2) nullable | 발표 EPS (REPORT 시) |
+| `eps_surprise_pct` | Numeric(6,2) nullable | (actual - expected) / |expected| * 100 |
+| `expected_revenue` | Numeric(20,0) nullable | 컨센서스 매출 (KRW) |
+| `actual_revenue` | Numeric(20,0) nullable | 발표 매출 |
+| `revenue_surprise_pct` | Numeric(6,2) nullable | |
+| `expected_operating_income` | Numeric(20,0) nullable | |
+| `actual_operating_income` | Numeric(20,0) nullable | |
+| `operating_income_surprise_pct` | Numeric(6,2) nullable | |
+| `classification` | String(16) nullable | "BEAT" / "MEET" / "MISS" — surprise_pct 임계값 룰 (예: ≥+5% BEAT / [-5%, +5%] MEET / ≤-5% MISS) |
+| `summary` | String(500) nullable | 짧은 메모 |
+| `source` | String(32) nullable | |
+| `source_url` | String(500) nullable | |
+| `source_file_path` | String(500) nullable | 마스킹 후 외부 미노출 |
+| `extraction_method` | String(16) NOT NULL | |
+| `created_at` / `updated_at` | DateTime | |
+
+UniqueConstraint(`symbol`, `fiscal_year`, `fiscal_quarter`, `event_type`).
+
+기존 테이블 변경 0건. 운영 환경 마이그레이션 = `CREATE TABLE fundamental_snapshots ...; CREATE TABLE earnings_events ...;` 두 줄, destructive 0건.
+
+### Score 산식 (Phase C 상세)
+
+**`fundamental_score` 산식** — `RealFundamentalScoreProducer`:
+
+```
+# 1) snapshot 가져오기 — symbol 의 가장 최신 fundamental_snapshots 행 (since cutoff = 365d)
+# 2) 각 지표를 percentile 기반으로 0~100 점수화 (시장 vs 종목 비교는 v0.6 에서는 단순화)
+sub_scores = {
+    "per":   score_lower_is_better(per,   neutral=15,   good_low=10,   bad_high=30),
+    "pbr":   score_lower_is_better(pbr,   neutral=1.5,  good_low=1.0,  bad_high=3.0),
+    "roe":   score_higher_is_better(roe,  neutral=8,    good_high=15,  bad_low=0),
+    "rev_g": score_higher_is_better(revenue_growth_yoy,        neutral=5, good_high=15, bad_low=-10),
+    "op_g":  score_higher_is_better(operating_income_growth_yoy, neutral=5, good_high=20, bad_low=-15),
+    "debt":  score_lower_is_better(debt_ratio,            neutral=100, good_low=50,  bad_high=200),
+    "div":   score_higher_is_better(dividend_yield,       neutral=2,   good_high=4,  bad_low=0),
+}
+fundamental_score = clip( weighted_avg(sub_scores), 0, 100 )
+
+# weight 분배 (sub_score 내부, sum=1.0):
+#   per 0.20 / pbr 0.10 / roe 0.20 / rev_g 0.15 / op_g 0.20 / debt 0.10 / div 0.05
+
+# 데이터 부족 (snapshot 없거나 모든 지표 NULL) → 50 (Dummy fallback 호환)
+```
+
+`score_lower_is_better(x, neutral, good_low, bad_high)` — neutral 보다 작으면 가산 / 크면 감산, good_low 도달 시 100, bad_high 도달 시 0 으로 선형 보간.
+
+**`earnings_score` 산식** — `RealEarningsScoreProducer` (HoldingCheckEngine 만 적용, RecommendationEngine 도 옵션):
+
+```
+# 최근 4 분기 earnings_events 의 classification 평균
+recent_4q = events.filter(event_type=REPORT).order_by(event_date desc).limit(4)
+beat_count = count(c == "BEAT")
+miss_count = count(c == "MISS")
+base = 50 + (beat_count - miss_count) * 8   # 4 BEAT → 82 / 4 MISS → 18
+
+# 다가오는 ANNOUNCEMENT (≤14d) 가 있으면 ±2 가산 (불확실성 반영)
+if any(events, event_type=ANNOUNCEMENT, days_to_event ≤ 14):
+    base -= 2  # 발표 직전 변동성 페널티
+
+earnings_score = clip(base, 0, 100)
+
+# 데이터 0 → 50
+```
+
+**추천 / 보유 통합**: `DummyScoreProducer.score_recommendation` 의 `fundamental_score = 50` placeholder 자리에 `RealFundamentalScoreProducer` 결과 대입. `score_holding` 의 `earnings_score = 50` 자리에 `RealEarningsScoreProducer` 결과 대입. 본 weight (recommendation: technical 35% + news 25% + supply 15% + **fundamental 15%** + ai 10% - risk_penalty / holding: technical / news / **earnings** / ai / risk_penalty 본 weight) 산식은 손대지 않는다. `decision_logs.rule_result_json["fundamental_evidence"]` / `["earnings_evidence"]` 추가 (snapshot id / fiscal_period / 주요 지표 3-5개 / classification 분포).
+
+### Evidence whitelist (저작권 / 안전 정책)
+
+- **`fundamental_evidence`**: `{snapshot_id, snapshot_date, fiscal_year, fiscal_quarter, per, pbr, roe, revenue_growth_yoy, operating_income_growth_yoy, source}`. summary / source_file_path / extraction_method 외 본문 필드 0건
+- **`earnings_evidence`**: `{recent_4q: [{event_date, fiscal_period, classification, eps_surprise_pct}], upcoming: [{event_date, fiscal_period, days_to_event}]}`. summary / source_file_path 외부 노출 0건
+- 단위 테스트가 evidence 의 키 집합을 명시 단언 — v0.5 Phase C 의 `news_evidence.top_news` whitelist 패턴 그대로
+- `source_file_path` 는 모든 응답 / 프런트 / e2e 에서 0건 노출 — `_assert_no_source_file_path` recursive helper 가 신규 케이스에서 검증
+
+### CSV import 정책 (Phase A·B 상세)
+
+v0.4 의 `scripts/import_analyst_reports.py` 패턴 그대로 재사용:
+
+- argparse CLI, default dry-run, `--commit` 명시 시에만 DB 적재
+- forbidden body column 13종 검증 — `body / content / full_text / paragraph_text / raw_text / 본문 / 원문 / 전문 / disclosure_text / report_text / news_body / article_body / pdf_text` 가 헤더에 포함되면 즉시 거부
+- `summary` 500자 초과 시 truncate count 만 보고 (persist 시 truncate)
+- `source_file_path` 는 마스킹 helper (`mask_sensitive_value`) 통과 후 응답에 노출 — 실 path 는 DB 에만 저장
+- 단위 테스트가 forbidden column 거부 / dry-run / commit / 멱등 / 재실행 시 0 중복 / summary truncate 모두 검증
+
+### 프런트 노출 (Phase D 상세)
+
+- **신규 카드 — StockDetail "Fundamental Snapshot"**: 최근 4 분기 시계열. PER / PBR / ROE / 매출 성장률 / 영업이익 성장률 / 부채비율 / 배당수익률 + sub_scores + 종합 fundamental_score
+- **신규 카드 — StockDetail "Earnings History"**: 최근 8 분기 + 다가오는 ANNOUNCEMENT D-Day. classification (BEAT/MEET/MISS) badge + eps_surprise_pct + revenue_surprise_pct
+- **Today 화면 — "다가오는 어닝 발표 (D-7 이내)"**: 보유 종목 + 추천 종목 union 의 ANNOUNCEMENT 가운데 days_to_event ≤ 7 인 것 표시. 클릭 시 종목 상세
+- **Recommendations 테이블 — `fundamental evidence` + `earnings evidence` 두 컬럼 추가** (v0.5 Phase D 의 `news evidence` / `disclosure risk` 패턴 그대로)
+- **Holdings 테이블 — `earnings evidence` 컬럼 추가** (v0.5 Phase D 에서 이연됐던 holding_check evidence 노출 작업 포함)
+- **사이드바 변경 0건** — 9 메뉴 그대로 (`테마 (β)` 다음에 새 메뉴 추가하지 않음, 기존 화면 카드 보강만)
+- **기존 화면 변경 최소화** — Recommendations / Holdings / StockDetail 카드만 보강. Today / RecommendationHistory / Themes / MarketCapTop / Jobs / Settings 손대지 않음
+
+### v0.6 누적 태그 (예정)
+
+```
+v0.5-final                       ← v0.6 시작점 (HEAD 9ccf0f8)
+v0.6-fundamental-data-layer      ← Phase A 인수 (FundamentalSnapshot + import CLI)
+v0.6-earnings-event-pipeline     ← Phase B 인수 (EarningsEvent + 어닝 캘린더 import)
+v0.6-fundamental-score           ← Phase C 인수 (RealFundamentalScoreProducer + RealEarningsScoreProducer)
+v0.6-frontend-fundamentals       ← Phase D 인수 (StockDetail 카드 + Today 다가오는 어닝)
+v0.6-final                       ← Phase E 마감 (RELEASE_NOTES_v0.6.md + 4 게이트)
+```
+
+### v0.7+ 후보 (Backlog 등재용)
+
+| 후보 | 분류 | v0.6 채택 안 한 이유 |
+|---|---|---|
+| 인증 / 권한 / 단일 사용자 토큰 + audit log | UX / 보안 | POST 도입 전제 + 별도 보안 cycle 필요 |
+| 관심종목 / Watchlist (POST 라우터 첫 도입) | UX | 인증 동반 필수 |
+| Strategy / Backtest 기초 (`StrategyInterface` ABC + 과거 추천 backtest 시뮬레이터) | 분석 / 자동매매 전 단계 | 실 News (v0.5) + 재무 (v0.6) 데이터 후행 검증 후 |
+| 실 DART API 구현체 (`DartFundamentalProvider` / `DartEarningsProvider`) | 데이터 / 분석 실제화 | v0.6 은 ABC + Fake + CSV 만, 실 API 는 라이선스/정책/스로틀링 검토 필요 |
+| 실 RSS / News API 구현체 | 데이터 라인 | v0.5 ABC 위에 추가, 라이선스 검토 |
+| LLM 기반 재무 / 어닝 / 뉴스 자동 분석 | AI 강화 | 룰 기반 검증 후 |
+| 운영 모니터링 (Sentry / Prometheus / Grafana) | 운영 | v0.6 까지 read-only + 단일 운영자 → 모니터링 확장 후행 |
+| 모바일 / 태블릿 레이아웃 | UX | PC 1280px+ 우선 |
+| Alembic 도입 + 마이그레이션 자동화 | 인프라 | 누적 ALTER 가 v0.5 `news_items.category` + v0.6 신규 테이블 2개 → 4건 누적 시점에 도입 |
+| `lightweight-charts` 마이그레이션 | UX | Recharts 한계 도달 시 |
+| WebSocket / SSE 실시간 잡 상태 | 운영 | 인증 후행 |
+| `.github/dependabot.yml` | 인프라 | v0.3 Phase A 보류 항목 |
+
+### 단계별 산출물 / 게이트 (예상)
+
+| Phase | 신규 파일 | 변경 파일 | 게이트 | 누적 태그 |
+|---|---|---|---|---|
+| A | `app/data/dtos.py` (FundamentalSnapshotDTO) / `app/data/interfaces.py` (FundamentalProviderInterface) / `app/data/importers/fundamentals.py` / `scripts/import_fundamentals.py` / `app/data/repositories/fundamental_snapshots.py` / `tests/integration/test_fundamental_import.py` / `tests/integration/test_fundamental_repository.py` / `tests/mocks/fake_fundamental_provider.py` | `app/db/models.py` (+1 테이블) / `app/data/repositories/__init__.py` / `app/data/collectors/__init__.py` / `DB_SCHEMA.md` (§9 신규) | backend pytest **481 → ~510** | `v0.6-fundamental-data-layer` |
+| B | `app/data/dtos.py` (+EarningsEventDTO) / `app/data/interfaces.py` (+EarningsProviderInterface) / `app/data/importers/earnings.py` / `scripts/import_earnings.py` / `app/data/repositories/earnings_events.py` / `tests/integration/test_earnings_import.py` / `tests/integration/test_earnings_repository.py` / `tests/mocks/fake_earnings_provider.py` | `app/db/models.py` (+1 테이블) / `DB_SCHEMA.md` (§10 신규) / `INTEGRATION_RUNBOOK.md` (§13 신규 — 어닝 import 운영 절차) | backend pytest **~510 → ~545** | `v0.6-earnings-event-pipeline` |
+| C | `app/analysis/score_producers.py` (+RealFundamentalScoreProducer + RealEarningsScoreProducer) / `tests/unit/test_real_fundamental_score_producer.py` / `tests/unit/test_real_earnings_score_producer.py` | `app/decision/recommendation_engine.py` (constructor + evidence) / `app/decision/holding_check_engine.py` / `tests/integration/test_recommendation_engine.py` / `tests/integration/test_holding_check_engine.py` | backend pytest **~545 → ~580**, ScoringEngine 본 weight 변경 0건 | `v0.6-fundamental-score` |
+| D | `frontend/src/pages/StockDetail/FundamentalsCard.tsx` / `EarningsCard.tsx` / `frontend/src/hooks/useStockFundamentals.ts` / `useStockEarnings.ts` / `useEarningsCalendar.ts` / `frontend/src/tests/Fundamentals.test.tsx` | `app/api/routes.py` (+3 GET) / `app/api/schemas.py` (+5 schema) / `frontend/src/api/types.ts` / `frontend/src/pages/Recommendations/RecommendationsTable.tsx` / `Holdings*` / `frontend/src/pages/TodayReport/index.tsx` / `frontend/e2e/fixtures/apiMocks.ts` / `frontend/e2e/dashboard.spec.ts` | backend pytest **~580 → ~595**, vitest **68 → ~78**, e2e **11 → 13** | `v0.6-frontend-fundamentals` |
+| E | `RELEASE_NOTES_v0.6.md` | `README.md` / `PROJECT_STATUS.md` / `TASKS.md` / `ROADMAP.md` / `ARCHITECTURE.md` / `API_SPEC.md` / `TESTING.md` / `DB_SCHEMA.md` / `INTEGRATION_RUNBOOK.md` | 4 게이트 재확인, 회귀 0건 | `v0.6-final` |
+
+### 위험 요소
+
+- **DART CSV 포맷 다양성** — 운영자가 직접 CSV 만들 때 컬럼명 / 단위 (백만원 vs 억원) / 비율 표기 (% 포함 여부) 가 들쭉날쭉 → Phase A·B importer 가 명확한 `expected_columns` 화이트리스트 + 단위 변환 helper + 검증 실패 시 dry-run 리포트로 조기 감지
+- **fundamental_score 산식 의존성** — percentile 기반이 아닌 절댓값 기반이라 시장 환경 (예: 금리 변화) 에 민감 → v0.6 은 단순 산식으로 시작하고 v0.7 에서 시장 percentile / 섹터 평균 도입 검토. PLAN 에 명시
+- **earnings 데이터 정확성** — 운영자 수동 입력 오류 가능성 → importer 가 expected_eps / actual_eps null 둘 중 하나만 있어도 허용, surprise_pct 계산은 NULL safe. 분류는 운영자 입력 우선
+- **HoldingCheckEngine 본 weight 변경 위험** — `earnings_score` 가 50 → real 로 교체되면 기존 회귀 테스트가 깨질 수 있음 → Phase C 시작 시 본 weight 변경 0건 명시 + 기존 회귀 테스트 모두 그대로 통과하는지 우선 검증
+
+**완료 기준 (cycle-wide):**
+
+- 모든 phase 통과 / 4 게이트 그린 (backend pytest ~595 / vitest ~78 / e2e 13 / build)
+- `RELEASE_NOTES_v0.6.md` 작성 완료
+- 5 누적 태그 부여 + push
+- 자동매매 / POST 라우터 / DART 자동 호출 / 본 weight 변경 0건 가드 모두 통과
+- `source_file_path` 외부 노출 0건 (helper 검증)
+- forbidden body column 13종 거부 가드 통과 (CSV importer)
+
