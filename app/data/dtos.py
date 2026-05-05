@@ -41,3 +41,26 @@ class KisMarketCapRanking:
     trading_value: Decimal | None = None
     is_analysis_target: bool = True
 
+
+# ---------------------------------------------------------------------------
+# v0.5 — News collection (Phase A)
+#
+# NewsItemDTO is the typed payload every NewsProviderInterface returns. It
+# carries metadata only — original article body / paragraph / full text MUST
+# NOT be added to this dataclass. The integration test in
+# ``tests/integration/test_news_collector.py`` enforces this guard.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class NewsItemDTO:
+    title: str
+    url: str
+    provider: str
+    published_at: datetime
+    symbol: str | None = None
+    source: str | None = None
+    category: str | None = None
+    sentiment_label: str | None = None
+    summary: str | None = None
+

@@ -26,13 +26,35 @@ ai 10% - risk_penalty) 는 변경하지 않는다 — `news_score` 가 placehold
 
 | Phase | 작업 | 상태 | 산출 태그 (예정) |
 |---|---|---|---|
-| A | News data layer (`NewsProviderInterface` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 19:00 KST) | ⏳ 진입 대기 | `v0.5-news-collector` |
+| A | News data layer (`NewsProviderInterface` + `NewsCollector` + `news_items.category` 컬럼 + `collect_news` 잡 19:00 KST) | 🟡 PR1 인수 (data layer skeleton, pytest 382 → 401) / PR2 대기 (scheduler integration) | `v0.5-news-collector` |
 | B | Disclosure subset + 분류 5종 + `collect_disclosures` 잡 (20:00 KST) | ⏳ | `v0.5-disclosure-pipeline` |
 | C | `RealNewsScoreProducer` + `DisclosureRiskProducer` + `ScoreProducerInterface` ABC 추출 + RecommendationEngine 통합 | ⏳ | `v0.5-news-score` |
 | D | 백엔드 `GET /api/themes/ranking` + `GET /api/themes/{theme_id}` + 프런트 `/themes` 9번째 화면 + StockDetail 영향 강화 | ⏳ | `v0.5-frontend-themes` |
 | E | `RELEASE_NOTES_v0.5.md` + README / PROJECT_STATUS / TASKS / ARCHITECTURE 마감 + tag `v0.5-final` | ⏳ | `v0.5-final` |
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0005`, 체크리스트는 [`TASKS.md`](./TASKS.md) `v0.5 — News, Disclosure & Theme Ranking` 섹션 참조.
+
+### Phase A PR1 결과 (요약) — Data layer skeleton
+
+> Phase A 는 **PR1 (data layer skeleton)** + **PR2 (scheduler integration)** 두
+> PR 로 분리한다. PR1 인수 시점 = backend pytest **382 → 401 passed (+19)**,
+> 회귀 0건. PR2 인수 후 태그 `v0.5-news-collector` 부여.
+
+- `app/data/interfaces.py` — `NewsProviderInterface` ABC 신규 (`fetch_recent_news(*, symbols, since, limit) -> list[NewsItemDTO]`). 기존 `DataProviderInterface.fetch_news` 의 raw-dict placeholder 와는 별개.
+- `app/data/dtos.py` — `NewsItemDTO` dataclass 신규 (9 필드: title / url / provider / published_at / symbol / source / category / sentiment_label / summary). **본문 paragraph / body / content / full_text / raw_text / paragraph_text / 본문 / 원문 / 전문 등 13종 forbidden 필드 0건** (테스트가 명시적 단언).
+- `app/data/collectors/news_collector.py` 신규 — `NewsCollector` + `NewsCollectorResult` (fetched / inserted / skipped_duplicates / truncated_summaries). url-keyed 멱등, 재실행 시 0 중복. summary 500자 초과 시 truncate count 만 보고하고 persist 는 다음 phase 의 schema 확장에서 검토.
+- `app/db/models.py` — `NewsItem.category: String(32) nullable, index=True` ALTER ADD COLUMN. 6 enum 값 (NEWS / EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER). destructive 0건.
+- `app/data/repositories/news_items.py` — 기존 `list_by_time_range` 외 4 신규 메서드 (`get_by_url`, `upsert_by_url` 멱등, `list_recent_by_symbol` JSON contains via Python filter, `list_recent_by_category`).
+- `tests/mocks/fake_news_provider.py` 신규 — `FakeNewsProvider` 결정론적 3-row 샘플 (NEWS / EARNINGS_REPORT / RISK_DISCLOSURE 카테고리 각 1건). `since` / `symbols` / `limit` 필터 지원.
+- `tests/integration/test_news_collector.py` 신규 — **19 케이스**:
+  - copyright/scope guards (4건): DTO 본문 필드 0 / DTO 정확히 9 fields / ORM 본문 컬럼 0 / category 컬럼 존재
+  - FakeNewsProvider (3건): determinism / symbols·since 필터 / interface 구현
+  - NewsCollector flow (6건): 첫 run 3건 insert / 재실행 멱등 0 insert / category persist / related_symbols + sentiment persist / source fallback to provider / summary truncate count / empty provider 처리
+  - Repository (5건): upsert_by_url returns inserted flag / empty url reject / list_recent_by_symbol JSON contains + since 필터 / list_recent_by_category 정렬·필터
+- 회귀: backend pytest **382 → 401 passed (+19)**. frontend / e2e / build 변경 0건. KIS / Telegram / scheduler / API 라우터 / 프런트 0건 변경 (정책 준수).
+- `DB_SCHEMA.md` §8 `news_items` 갱신 — `category` 컬럼 + 저작권 정책 한 단락.
+
+**Phase A PR2 (scheduler integration) 진입 시 첫 작업**: `app/config/settings.py` 에 `news_collection_enabled: bool = False` 추가 → `app/scheduler/jobs.py` 에 `collect_news` 잡 + flag 분기 (false → NO_DATA, true → NewsCollector 실행) → `app/scheduler/scheduler.py` 에 19:00 KST 등록 → `tests/integration/test_scheduler_jobs.py` registry 7→8 jobs + flag 분기 케이스 ~3건.
 
 ### 후보 비교 / 선택 사유 (요약)
 

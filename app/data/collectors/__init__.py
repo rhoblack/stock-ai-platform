@@ -16,6 +16,10 @@ from app.data.collectors.market_cap_ranking_collector import (
     MarketCapRankingCollector,
     MarketCapRankingCollectorResult,
 )
+from app.data.collectors.news_collector import (
+    NewsCollector,
+    NewsCollectorResult,
+)
 
 __all__ = [
     "DailyPriceCollector",
@@ -28,4 +32,6 @@ __all__ = [
     "KisTimeoutError",
     "MarketCapRankingCollector",
     "MarketCapRankingCollectorResult",
+    "NewsCollector",
+    "NewsCollectorResult",
 ]

@@ -200,6 +200,9 @@ class NewsItem(Base):
     sentiment: Mapped[str | None] = mapped_column(String(32), nullable=True)
     importance: Mapped[str | None] = mapped_column(String(32), nullable=True)
     theme: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # v0.5 Phase A — disclosure / news classification
+    # (NEWS / EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER)
+    category: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     __table_args__ = (

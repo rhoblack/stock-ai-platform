@@ -419,22 +419,33 @@ StockDetail 의 "관련 테마" 카드도 `impact_path` icon + reason 으로 가
 - ❌ 추천 산식 본 weight 변경 — `news_score` 가 50 → real 로 교체되지만 weight 25% 그대로
 - ❌ LLM 자동 sentiment 분석 — Phase C 는 룰 기반만, LLM 보강은 v0.6+ 후보
 
-### Phase A — News data layer + collector skeleton
+### Phase A — News data layer + collector skeleton (PR1 ✅ / PR2 진입 대기)
 
-- [ ] `app/data/interfaces.py` — `NewsProviderInterface` ABC (`fetch_news(start_time, end_time, symbols=None) -> list[NewsItemDTO]`)
-- [ ] `app/data/dtos.py` — `NewsItemDTO` dataclass
-- [ ] `app/data/collectors/news_collector.py` (신규) — `NewsCollector` (provider → normalize → upsert)
-- [ ] `app/data/collectors/__init__.py` — export 갱신
-- [ ] `app/db/models.py` — `NewsItem.category: String(32) nullable` ALTER ADD COLUMN
-- [ ] `app/data/repositories/news_items.py` — `upsert_by_url` / `list_recent_by_symbol` / `list_by_category_and_date`
-- [ ] `app/scheduler/jobs.py` — `collect_news` 잡 (8번째, 19:00 KST). NEWS_COLLECTION_ENABLED=false 시 NO_DATA + SUCCESS
+> Phase A 는 두 PR 로 분리한다. **PR1 = data layer skeleton** (interface + DTO +
+> collector + repository + 모델 컬럼 + 통합 테스트). **PR2 = scheduler integration**
+> (`collect_news` 잡 + Settings flag + scheduler 등록). PR1 인수 시 backend pytest
+> **382 → 401 passed (+19)**, 회귀 0건. 태그 PR2 까지 완료 후 `v0.5-news-collector`.
+
+**PR1 — Data layer skeleton ✅ 인수**
+
+- [x] `app/data/interfaces.py` — `NewsProviderInterface` ABC (`fetch_recent_news(*, symbols, since, limit) -> list[NewsItemDTO]`)
+- [x] `app/data/dtos.py` — `NewsItemDTO` dataclass (9 fields, no body/content/full_text/paragraph_text)
+- [x] `app/data/collectors/news_collector.py` (신규) — `NewsCollector` + `NewsCollectorResult` (fetched / inserted / skipped_duplicates / truncated_summaries). 멱등 + summary 500자 truncate 카운트
+- [x] `app/data/collectors/__init__.py` — `NewsCollector` / `NewsCollectorResult` export
+- [x] `app/db/models.py` — `NewsItem.category: String(32) nullable, index=True` ALTER ADD COLUMN
+- [x] `app/data/repositories/news_items.py` — `get_by_url` / `upsert_by_url` (멱등, returns `(item, inserted)`) / `list_recent_by_symbol` (JSON contains via Python filter) / `list_recent_by_category`
+- [x] `tests/mocks/fake_news_provider.py` (신규) — `FakeNewsProvider` 결정론적 3-row 샘플 (NEWS / EARNINGS_REPORT / RISK_DISCLOSURE 카테고리 각 1건)
+- [x] `tests/integration/test_news_collector.py` 신규 (**19 케이스**: 본문 컬럼 0 가드 (DTO + ORM 양쪽) / category 컬럼 추가 가드 / 9 fields exactness / FakeNewsProvider determinism + symbol·since 필터 + interface 구현 / collector 첫 run 3건 insert / 재실행 멱등 / category persist / related_symbols + sentiment persist / source fallback to provider / summary truncate count / empty provider / repository upsert_by_url 멱등 + empty url reject / list_recent_by_symbol JSON contains + since 필터 / list_recent_by_category 정렬)
+- [x] backend pytest **382 → 401 passed (+19)**, 회귀 0건
+- [x] `DB_SCHEMA.md` §8 `news_items.category` 컬럼 + 저작권 정책 한 단락 추가
+
+**PR2 — Scheduler integration (다음 PR)**
+
+- [ ] `app/scheduler/jobs.py` — `collect_news` 잡 (8번째, 19:00 KST). NEWS_COLLECTION_ENABLED=false 시 NO_DATA + SUCCESS, true 시 NewsCollector 실행
 - [ ] `app/scheduler/scheduler.py` — `JOB_NAME_COLLECT_NEWS` + DEFAULT_SCHEDULE 등록
 - [ ] `app/config/settings.py` — `news_collection_enabled: bool = False` (default OFF)
-- [ ] `tests/mocks/fake_news_provider.py` (신규)
-- [ ] `tests/integration/test_news_collector.py` 신규 (~5 케이스: happy / 멱등 / disabled NO_DATA / unknown symbol / sentiment 정규화)
-- [ ] `tests/integration/test_scheduler_jobs.py` registry 7 → 8 jobs
-- [ ] `DB_SCHEMA.md` §9 `news_items.category` 컬럼 추가
-- 완료 기준: backend pytest 382 → ~390 passed, 회귀 0건. 태그 `v0.5-news-collector`.
+- [ ] `tests/integration/test_scheduler_jobs.py` registry 7 → 8 jobs + flag disabled NO_DATA / enabled SUCCESS 분기 ~3 케이스
+- 완료 기준 (PR2): backend pytest 401 → ~404 passed, 회귀 0건. 태그 `v0.5-news-collector`.
 
 ### Phase B — Disclosure subset + 분류 + 종목 매핑
 

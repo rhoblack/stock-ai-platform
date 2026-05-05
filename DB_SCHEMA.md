@@ -135,23 +135,33 @@ HOLDINGS
 
 ## 8. news_items
 
-뉴스 데이터.
+뉴스 / 공시 메타데이터. v0.1 부터 테이블은 존재하지만 v0.5 Phase A 까지 비어
+있었으며, v0.5 Phase A 첫 PR 에서 `category` 컬럼 ALTER ADD + `NewsCollector`
+로 처음 채워지기 시작한다.
 
 | 컬럼 | 설명 |
 |---|---|
 | id | 뉴스 ID |
 | published_at | 발행 시각 |
 | available_at | 시스템 사용 가능 시각 |
-| source | 출처 |
-| title | 제목 |
-| url | 링크 |
-| related_symbols | 관련 종목 |
-| sentiment | 긍정/중립/부정 |
+| source | 출처 (publisher 이름; collector 가 DTO source 또는 provider 이름으로 채움) |
+| title | 제목 (≤ 500자) |
+| url | 링크 (최대 1000자, nullable) |
+| related_symbols | 관련 종목 (JSON 배열) |
+| sentiment | POSITIVE / NEUTRAL / NEGATIVE / UNKNOWN |
 | importance | 중요도 |
-| theme | 테마 |
+| theme | 자유 텍스트 테마 라벨 |
+| category | **(v0.5 Phase A 신규)** NEWS / EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER. nullable, indexed |
 | created_at | 생성일 |
 
-뉴스 원문 전체 저장은 주의한다.
+**Unique**: `(source, url)`. **Index**: `published_at` / `source` / `theme` /
+`category` / `(published_at, source)`.
+
+**저작권 정책 (v0.5 일관)**: 뉴스 / 공시 본문 paragraph / full_text / raw_html 은
+**저장하지 않는다**. `title` (제목, fair-use 한도) 와 `url` (외부 발행처 링크)
+만 저장하며, 짧은 운영자 요약은 향후 phase 에서 별도 컬럼으로 추가 검토.
+NewsCollector 는 `summary` 길이가 500자를 초과하면 truncate count 로 보고하지만
+DTO summary 자체는 v0.5 Phase A 첫 PR 에서 persist 하지 않는다.
 
 ## 9. market_regimes
 
