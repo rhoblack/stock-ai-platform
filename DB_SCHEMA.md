@@ -151,7 +151,7 @@ HOLDINGS
 | sentiment | POSITIVE / NEUTRAL / NEGATIVE / UNKNOWN |
 | importance | 중요도 |
 | theme | 자유 텍스트 테마 라벨 |
-| category | **(v0.5 Phase A 신규)** NEWS / EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER. nullable, indexed |
+| category | **(v0.5 Phase A 신규)** NEWS / EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER. nullable, indexed. v0.5 Phase B 의 `DisclosureCollector` 가 keyword 분류 (priority RISK > EARNINGS > OWNERSHIP > GOVERNANCE > OTHER) 결과를 본 컬럼에 채운다 — 뉴스 / 공시 모두 동일 테이블에 통합 저장. |
 | created_at | 생성일 |
 
 **Unique**: `(source, url)`. **Index**: `published_at` / `source` / `theme` /

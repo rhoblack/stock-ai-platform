@@ -102,6 +102,14 @@ class Settings:
         default_factory=lambda: _as_bool(os.getenv("NEWS_COLLECTION_ENABLED"), False),
     )
 
+    # v0.5 Phase B — Disclosure collection opt-in.
+    # 외부 DART / KRX 호출은 default OFF. .env 의 DISCLOSURE_COLLECTION_ENABLED=true
+    # 명시 시에만 collect_disclosures 잡이 DisclosureCollector 를 실행. 그 외엔
+    # SKIPPED 로 즉시 종료 (외부 호출 0건).
+    disclosure_collection_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("DISCLOSURE_COLLECTION_ENABLED"), False),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

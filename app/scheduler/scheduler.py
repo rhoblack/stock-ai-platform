@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.scheduler.jobs import (
     JOB_FUNCTIONS,
     JOB_NAME_CALCULATE_INDICATORS,
+    JOB_NAME_COLLECT_DISCLOSURES,
     JOB_NAME_COLLECT_MARKET_CLOSE,
     JOB_NAME_COLLECT_NEWS,
     JOB_NAME_POST_MARKET_HOLDING_CHECK,
@@ -37,13 +38,15 @@ from app.scheduler.jobs import (
 # report and before 08:30 pre-market holding check) so the morning report can
 # eventually consume yesterday's analyst-report consensus when v0.4 Phase C
 # wires `report_score` into the recommendation engine.
-# 19:00 KST collect_news (v0.5 Phase A PR2) — default OFF via
-# news_collection_enabled flag; SKIPPED by default to keep the daily timeline
-# free of external calls until an operator opts in.
+# 19:00 KST collect_news (v0.5 Phase A PR2) and 20:00 KST collect_disclosures
+# (v0.5 Phase B) — both default OFF via *_collection_enabled flags; SKIPPED
+# by default to keep the daily timeline free of external calls until an
+# operator opts in.
 DEFAULT_SCHEDULE: dict[str, tuple[int, int]] = {
     JOB_NAME_COLLECT_MARKET_CLOSE: (18, 0),
     JOB_NAME_CALCULATE_INDICATORS: (18, 30),
     JOB_NAME_COLLECT_NEWS: (19, 0),
+    JOB_NAME_COLLECT_DISCLOSURES: (20, 0),
     JOB_NAME_SEND_RECOMMENDATION_REPORT: (6, 0),
     JOB_NAME_UPDATE_REPORT_CONSENSUS: (6, 30),
     JOB_NAME_PRE_MARKET_HOLDING_CHECK: (8, 30),

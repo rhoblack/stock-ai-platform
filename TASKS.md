@@ -451,20 +451,24 @@ StockDetail 의 "관련 테마" 카드도 `impact_path` icon + reason 으로 가
 - [x] backend pytest **401 → 406 passed (+5)**, 회귀 0건. frontend vitest 60 / build / e2e 9 변경 없음
 - 완료 기준 (PR2): backend pytest 401 → 406 passed (+5), 회귀 0건. Phase A 누적 PR1+PR2 마감 → 태그 `v0.5-news-collector`.
 
-### Phase B — Disclosure subset + 분류 + 종목 매핑
+### Phase B — Disclosure subset + 분류 + 종목 매핑 ✅ 인수
 
-- [ ] `app/data/interfaces.py` — `DisclosureProviderInterface` ABC
-- [ ] `app/data/dtos.py` — `DisclosureItemDTO` dataclass
-- [ ] `app/data/collectors/disclosure_collector.py` (신규) — `DisclosureCollector` + 분류 룰 (keyword → category 5종)
-- [ ] 분류 카테고리: EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE / GOVERNANCE / OTHER (NEWS 와 별개)
-- [ ] `app/scheduler/jobs.py` — `collect_disclosures` 잡 (9번째, 20:00 KST)
-- [ ] `app/scheduler/scheduler.py` — `JOB_NAME_COLLECT_DISCLOSURES` 등록
-- [ ] `app/config/settings.py` — `disclosure_collection_enabled: bool = False`
-- [ ] `tests/mocks/fake_disclosure_provider.py` (신규)
-- [ ] `tests/integration/test_disclosure_collector.py` 신규 (~6 케이스: 분류 정확도 / 멱등 / disabled NO_DATA / 한글 keyword / 종목 매핑 / unknown category fallback)
-- [ ] `tests/integration/test_scheduler_jobs.py` registry 8 → 9 jobs
-- [ ] `INTEGRATION_RUNBOOK.md` §10 신규 — News / Disclosure 운영 절차 (default OFF / .env enable / 수동 트리거)
-- 완료 기준: backend pytest ~390 → ~398 passed, 회귀 0건. 태그 `v0.5-disclosure-pipeline`.
+- [x] `app/data/interfaces.py` — `DisclosureProviderInterface` ABC (`fetch_recent_disclosures(*, symbols, since, limit) -> list[DisclosureItemDTO]`)
+- [x] `app/data/dtos.py` — `DisclosureItemDTO` dataclass (9 fields: title / url / provider / published_at / symbol / company_name / disclosure_type / category / summary). 본문 paragraph / body / content / full_text / raw_text / paragraph_text / 본문 / 원문 / 전문 등 13종 forbidden 필드 0건 (테스트 명시 단언)
+- [x] `app/data/collectors/disclosure_collector.py` (신규) — `classify_disclosure(title, disclosure_type, summary)` 순수 함수 + `DisclosureCollector` + `DisclosureCollectorResult`
+- [x] 분류 카테고리 5종 + priority order: RISK_DISCLOSURE > EARNINGS_REPORT > OWNERSHIP_CHANGE > GOVERNANCE > OTHER. 한글 keyword (소송 / 횡령 / 배임 / 거래정지 / 감사의견 / 회생 / 파산 / 실적 / 잠정 / 영업이익 / 당기순이익 / 최대주주 / 지분 / 보유주식 / 이사회 / 사외이사 / 감사위원회 / 주주총회) + 영문 keyword 동시 지원
+- [x] `app/scheduler/jobs.py` — `JOB_NAME_COLLECT_DISCLOSURES` 상수 + `_resolve_disclosure_provider(session)` helper + `collect_disclosures(session)` 함수. **3-way branch**: disabled → SKIPPED + reason="disclosure_collection_disabled" / enabled+no_provider → SKIPPED + reason="no_provider_configured" / enabled+provider → DisclosureCollector 실행 + counters + classified_counts. JOB_FUNCTIONS registry **8 → 9 jobs**
+- [x] `app/scheduler/scheduler.py` — `JOB_NAME_COLLECT_DISCLOSURES` import + DEFAULT_SCHEDULE 20:00 KST 등록
+- [x] `app/config/settings.py` — `disclosure_collection_enabled: bool = False` (default OFF, `DISCLOSURE_COLLECTION_ENABLED` env var 매핑)
+- [x] `app/data/collectors/__init__.py` — `DisclosureCollector` / `DisclosureCollectorResult` / `classify_disclosure` / 5 CATEGORY_* 상수 export
+- [x] `tests/mocks/fake_disclosure_provider.py` (신규) — `FakeDisclosureProvider` 결정론적 4-row 샘플 (EARNINGS / OWNERSHIP / RISK / GOVERNANCE 각 1건). symbols / since / limit 필터 지원
+- [x] `tests/integration/test_disclosure_collector.py` 신규 — **24 케이스** (DTO 본문 필드 0 가드 / DTO 정확히 9 fields / classify Korean 12 케이스 (parametrized) / classify priority RISK > EARNINGS / classify priority RISK > GOVERNANCE / classify uses disclosure_type / classify uses summary / classify OTHER fallback / FakeProvider determinism / symbols·since 필터 / interface 구현 / collector 4건 insert + classified_counts / 멱등 재실행 4 skipped_duplicates / category 컬럼 persist / summary 500자 truncate / empty provider / related_symbols persist)
+- [x] `tests/integration/test_scheduler_jobs.py` 갱신 — `..._eight_jobs` → `..._nine_jobs` registry + `test_default_schedule_includes_collect_disclosures_at_2000_kst` + `collect_disclosures` 분기 4건 (disabled / enabled+no_provider / enabled+FakeProvider 4 inserted + classified_counts / 멱등)
+- [x] `tests/unit/test_project_structure.py::test_settings_defaults` — `disclosure_collection_enabled is False` 단언 추가
+- [x] `INTEGRATION_RUNBOOK.md` §11 신규 — collect_disclosures 5 단락 (기본 동작 / opt-in / 분류 룰 표 / 수동 트리거 / 운영 점검 / 롤백). §10 News 와 동일 패턴
+- [x] `DB_SCHEMA.md` §8 `news_items.category` 설명 보강 — 뉴스/공시 통합 저장 + DisclosureCollector keyword priority 명시
+- [x] backend pytest **406 → 440 passed (+34)**, 회귀 0건. frontend vitest 60 / build / e2e 9 변경 없음
+- 완료 기준: backend pytest 406 → 440 passed (+34), 회귀 0건. 태그 `v0.5-disclosure-pipeline`.
 
 ### Phase C — `RealNewsScoreProducer` + `DisclosureRiskProducer` + ScoreProducerInterface ABC
 

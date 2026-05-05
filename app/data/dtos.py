@@ -64,3 +64,25 @@ class NewsItemDTO:
     sentiment_label: str | None = None
     summary: str | None = None
 
+
+# ---------------------------------------------------------------------------
+# v0.5 Phase B — Disclosure collection
+#
+# DisclosureItemDTO 는 DART / KRX 스타일 공시 메타데이터의 typed payload 다.
+# NewsItemDTO 와 마찬가지로 본문 paragraph / full_text / raw_html 등은
+# 절대 추가하지 않는다 — 통합 테스트가 ``dataclass.fields`` 로 가드한다.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DisclosureItemDTO:
+    title: str
+    url: str
+    provider: str
+    published_at: datetime
+    symbol: str | None = None
+    company_name: str | None = None
+    disclosure_type: str | None = None
+    category: str | None = None
+    summary: str | None = None
+

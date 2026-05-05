@@ -17,6 +17,9 @@ def test_settings_defaults():
     # v0.5 Phase A PR2 — 뉴스 자동 수집은 default OFF. 운영자가 .env 에
     # NEWS_COLLECTION_ENABLED=true 를 명시 설정한 경우에만 enable.
     assert settings.news_collection_enabled is False
+    # v0.5 Phase B — 공시 자동 수집도 default OFF. DISCLOSURE_COLLECTION_ENABLED=true
+    # 명시 설정 시에만 enable.
+    assert settings.disclosure_collection_enabled is False
 
 
 def test_interfaces_importable():

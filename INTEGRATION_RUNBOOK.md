@@ -468,3 +468,86 @@ print(outcome.status, outcome.result_summary)
 `.env` 에서 `NEWS_COLLECTION_ENABLED` 라인을 제거하거나 `false` 로 변경 후
 backend 재기동. 다음 19:00 KST 잡부터 SKIPPED 로 자동 전환. 기존 적재된
 `news_items` 행은 그대로 유지 (운영자가 수동으로 정리).
+
+---
+
+## 11. 공시 수집 (v0.5 Phase B)
+
+`collect_disclosures` 잡 (9번째, 20:00 KST) 은 §10 `collect_news` 와 동일한
+default-OFF 패턴. DART / KRX 외부 호출 0건이 default. 운영자가 명시적으로
+`DISCLOSURE_COLLECTION_ENABLED=true` opt-in 한 경우에만 `DisclosureCollector` 가
+provider 를 호출한다. 분류 결과는 `news_items.category` (Phase A 컬럼) 에
+저장되며 NEWS / EARNINGS_REPORT / OWNERSHIP_CHANGE / RISK_DISCLOSURE /
+GOVERNANCE / OTHER 6 enum 중 하나.
+
+### 11.1 기본 동작 (default — 외부 호출 0건)
+
+`.env` 에 `DISCLOSURE_COLLECTION_ENABLED` 가 없거나 false:
+
+- 20:00 KST 잡이 즉시 SKIPPED 로 종료
+- `JobRun.result_summary = { phase: "v0.5-B", data_status: "SKIPPED", reason: "disclosure_collection_disabled", ... }`
+- 외부 provider 생성 / 호출 0건
+
+### 11.2 활성화 (운영자 opt-in)
+
+```
+DISCLOSURE_COLLECTION_ENABLED=true
+```
+
+- 실 DART / KRX provider 미주입 (v0.5 Phase B 시점 default — 실 구현체 부재):
+  → SKIPPED + `reason: "no_provider_configured"`. 외부 호출 0건.
+- 실 provider 주입 (v0.6+ 후보) 또는 테스트의 FakeDisclosureProvider:
+  → DisclosureCollector 실행 + `result_summary.data_status: "SUCCESS"` + counters
+  + `classified_counts` (5 enum 별 inserted 수).
+
+### 11.3 분류 룰 (priority order)
+
+| 우선순위 | 카테고리 | 한글 keyword (대표) | 영문 keyword |
+|---|---|---|---|
+| 1 | RISK_DISCLOSURE | 소송 / 횡령 / 배임 / 거래정지 / 감사의견 / 회생 / 파산 | lawsuit / litigation / fraud / embezzlement |
+| 2 | EARNINGS_REPORT | 실적 / 잠정 / 영업이익 / 당기순이익 | earnings / guidance |
+| 3 | OWNERSHIP_CHANGE | 최대주주 / 지분 / 보유주식 / 주식 등의 대량보유 | ownership |
+| 4 | GOVERNANCE | 이사회 / 사외이사 / 감사위원회 / 주주총회 / 정관 변경 | governance / board |
+| 5 | OTHER (fallback) | — | — |
+
+매칭 대상: `(title, disclosure_type, summary)` join 후 lowercase. 한글은 lower
+변환에 영향받지 않음. RISK 가 우선 — 실적 발표와 소송이 동시에 등장하면
+RISK_DISCLOSURE 로 분류.
+
+### 11.4 수동 트리거 (테스트 / 디버깅)
+
+```powershell
+.\.venv\bin\python.exe -c "
+from sqlalchemy.orm import sessionmaker
+from app.db.session import create_db_engine
+from app.scheduler.jobs import run_job, collect_disclosures, JOB_NAME_COLLECT_DISCLOSURES
+from app.config.settings import Settings
+from tests.mocks.fake_disclosure_provider import FakeDisclosureProvider
+
+engine = create_db_engine()
+factory = sessionmaker(engine, future=True)
+
+def fn(session):
+    s = Settings()
+    object.__setattr__(s, 'disclosure_collection_enabled', True)
+    session.info['settings'] = s
+    session.info['disclosure_provider'] = FakeDisclosureProvider()  # 결정론 4-row 샘플
+    return collect_disclosures(session)
+
+outcome = run_job(session_factory=factory, job_name=JOB_NAME_COLLECT_DISCLOSURES, fn=fn)
+print(outcome.status, outcome.result_summary)
+"
+```
+
+### 11.5 운영 점검
+
+- `job_runs` 에서 `job_name='collect_disclosures'` 행 확인
+- `news_items` 에서 `category IN ('EARNINGS_REPORT', 'OWNERSHIP_CHANGE', 'RISK_DISCLOSURE', 'GOVERNANCE')` 행이 적재되었는지 확인
+- 분류 정확도가 의심되면 `app/data/collectors/disclosure_collector.py` 의 4 keyword set 을 운영 데이터 기반으로 보강 (LLM 분류는 v0.6+ 후보)
+- RISK_DISCLOSURE 행은 v0.5 Phase C 의 `DisclosureRiskProducer` 가 RiskEngine 보강에 사용할 예정 (현재 Phase B 에서는 데이터 적재만)
+
+### 11.6 비활성화 / 롤백
+
+`.env` 에서 `DISCLOSURE_COLLECTION_ENABLED` 제거 또는 `false` 변경 후 backend
+재기동. 다음 20:00 KST 잡부터 SKIPPED 자동 전환. 기존 적재된 `news_items` 행은
+그대로 유지.

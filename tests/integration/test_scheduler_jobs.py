@@ -34,6 +34,7 @@ from app.db.session import create_session_factory
 from app.scheduler.jobs import (
     JOB_FUNCTIONS,
     JOB_NAME_CALCULATE_INDICATORS,
+    JOB_NAME_COLLECT_DISCLOSURES,
     JOB_NAME_COLLECT_MARKET_CLOSE,
     JOB_NAME_COLLECT_NEWS,
     JOB_NAME_POST_MARKET_HOLDING_CHECK,
@@ -46,6 +47,7 @@ from app.scheduler.jobs import (
     JOB_STATUS_SUCCESS,
     JobResult,
     calculate_technical_indicators,
+    collect_disclosures,
     collect_market_close_data,
     collect_news,
     run_job,
@@ -1297,8 +1299,8 @@ def test_update_recommendation_results_via_run_job_records_partial_summary(
 
 # ---------- registry sanity ----------
 
-def test_job_functions_registry_covers_all_eight_jobs():
-    """v0.5 Phase A PR2 에서 collect_news 가 추가되어 8개."""
+def test_job_functions_registry_covers_all_nine_jobs():
+    """v0.5 Phase B 에서 collect_disclosures 가 추가되어 9개."""
     assert set(JOB_FUNCTIONS) == {
         JOB_NAME_COLLECT_MARKET_CLOSE,
         JOB_NAME_CALCULATE_INDICATORS,
@@ -1308,6 +1310,7 @@ def test_job_functions_registry_covers_all_eight_jobs():
         JOB_NAME_UPDATE_RECOMMENDATION_RESULTS,
         JOB_NAME_UPDATE_REPORT_CONSENSUS,
         JOB_NAME_COLLECT_NEWS,
+        JOB_NAME_COLLECT_DISCLOSURES,
     }
 
 
@@ -1513,3 +1516,111 @@ def test_send_recommendation_report_via_run_job_links_notification_log_to_job(
         assert log.related_job_id == outcome.job_run_id
     finally:
         session.close()
+
+
+# ---------- collect_disclosures (v0.5 Phase B) ----------
+
+def _settings_with_disclosure_flag(*, enabled: bool):
+    from app.config.settings import Settings
+
+    s = Settings()
+    object.__setattr__(s, "disclosure_collection_enabled", enabled)
+    return s
+
+
+def test_default_schedule_includes_collect_disclosures_at_2000_kst():
+    """v0.5 Phase B — collect_disclosures 가 20:00 KST 슬롯에 등록되어 있어야 한다."""
+    from app.scheduler.scheduler import DEFAULT_SCHEDULE
+
+    assert JOB_NAME_COLLECT_DISCLOSURES in DEFAULT_SCHEDULE
+    assert DEFAULT_SCHEDULE[JOB_NAME_COLLECT_DISCLOSURES] == (20, 0)
+
+
+def test_collect_disclosures_disabled_returns_skipped_without_invoking_provider(session_factory):
+    """default (DISCLOSURE_COLLECTION_ENABLED=false) → SKIPPED, provider 호출 0건."""
+    from tests.mocks.fake_disclosure_provider import FakeDisclosureProvider
+
+    spy_provider = FakeDisclosureProvider()
+
+    def fn(session):
+        session.info["settings"] = _settings_with_disclosure_flag(enabled=False)
+        # Disabled 분기에서는 provider 가 주입되어 있어도 호출 0건이어야 한다.
+        session.info["disclosure_provider"] = spy_provider
+        return collect_disclosures(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_COLLECT_DISCLOSURES,
+        fn=fn,
+    )
+
+    assert outcome.status == JOB_STATUS_SUCCESS
+    assert outcome.result_summary["data_status"] == "SKIPPED"
+    assert outcome.result_summary["reason"] == "disclosure_collection_disabled"
+    assert outcome.result_summary["fetched"] == 0
+    # Provider must NOT have been called when the feature is disabled.
+    assert spy_provider.calls == []
+
+
+def test_collect_disclosures_enabled_without_provider_returns_skipped(session_factory):
+    """enabled=true 이지만 provider 미주입 → SKIPPED + reason=no_provider_configured."""
+
+    def fn(session):
+        session.info["settings"] = _settings_with_disclosure_flag(enabled=True)
+        return collect_disclosures(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_COLLECT_DISCLOSURES,
+        fn=fn,
+    )
+
+    assert outcome.status == JOB_STATUS_SUCCESS
+    assert outcome.result_summary["data_status"] == "SKIPPED"
+    assert outcome.result_summary["reason"] == "no_provider_configured"
+
+
+def test_collect_disclosures_enabled_with_fake_provider_inserts_four_rows(session_factory):
+    """enabled=true + FakeDisclosureProvider → SUCCESS + counters + classified_counts."""
+    from tests.mocks.fake_disclosure_provider import FakeDisclosureProvider
+
+    def fn(session):
+        session.info["settings"] = _settings_with_disclosure_flag(enabled=True)
+        session.info["disclosure_provider"] = FakeDisclosureProvider()
+        return collect_disclosures(session)
+
+    outcome = run_job(
+        session_factory=session_factory,
+        job_name=JOB_NAME_COLLECT_DISCLOSURES,
+        fn=fn,
+    )
+
+    assert outcome.status == JOB_STATUS_SUCCESS
+    summary = outcome.result_summary
+    assert summary["data_status"] == "SUCCESS"
+    # FakeDisclosureProvider default sample 은 4 row (one per non-OTHER category)
+    assert summary["fetched"] == 4
+    assert summary["inserted"] == 4
+    assert summary["classified_counts"]["RISK_DISCLOSURE"] == 1
+    assert summary["classified_counts"]["EARNINGS_REPORT"] == 1
+    assert summary["classified_counts"]["OWNERSHIP_CHANGE"] == 1
+    assert summary["classified_counts"]["GOVERNANCE"] == 1
+
+
+def test_collect_disclosures_enabled_re_run_is_idempotent(session_factory):
+    """동일 데이터 두 번 fetch → 두 번째는 skipped_duplicates=4, inserted=0."""
+    from tests.mocks.fake_disclosure_provider import FakeDisclosureProvider
+
+    provider = FakeDisclosureProvider()
+
+    def fn(session):
+        session.info["settings"] = _settings_with_disclosure_flag(enabled=True)
+        session.info["disclosure_provider"] = provider
+        return collect_disclosures(session)
+
+    run_job(session_factory=session_factory, job_name=JOB_NAME_COLLECT_DISCLOSURES, fn=fn)
+    second = run_job(session_factory=session_factory, job_name=JOB_NAME_COLLECT_DISCLOSURES, fn=fn)
+
+    assert second.result_summary["fetched"] == 4
+    assert second.result_summary["inserted"] == 0
+    assert second.result_summary["skipped_duplicates"] == 4

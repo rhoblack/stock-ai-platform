@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime
 from typing import Any
 
-from app.data.dtos import NewsItemDTO
+from app.data.dtos import DisclosureItemDTO, NewsItemDTO
 
 
 class DataProviderInterface(ABC):
@@ -70,5 +70,27 @@ class NewsProviderInterface(ABC):
         since: datetime | None = None,
         limit: int = 50,
     ) -> list[NewsItemDTO]:
+        raise NotImplementedError
+
+
+class DisclosureProviderInterface(ABC):
+    """v0.5 Phase B — typed disclosure provider contract.
+
+    Implementations (FakeDisclosureProvider in tests, real DART / KRX adapters
+    in v0.6+) return :class:`DisclosureItemDTO` lists carrying *metadata only*.
+    Original disclosure body / paragraph text MUST NEVER appear in either the
+    DTO or the underlying provider's return value — see PROJECT_STATUS.md
+    §0 v0.5 정책. Auto-fetching is opt-in via
+    ``Settings.disclosure_collection_enabled`` (default False).
+    """
+
+    @abstractmethod
+    def fetch_recent_disclosures(
+        self,
+        *,
+        symbols: list[str] | None = None,
+        since: datetime | None = None,
+        limit: int = 50,
+    ) -> list[DisclosureItemDTO]:
         raise NotImplementedError
 

@@ -94,6 +94,7 @@ JOB_NAME_POST_MARKET_HOLDING_CHECK = "run_post_market_holding_check"
 JOB_NAME_UPDATE_RECOMMENDATION_RESULTS = "update_recommendation_results"
 JOB_NAME_UPDATE_REPORT_CONSENSUS = "update_report_consensus_snapshots"
 JOB_NAME_COLLECT_NEWS = "collect_news"
+JOB_NAME_COLLECT_DISCLOSURES = "collect_disclosures"
 
 
 @dataclass(frozen=True)
@@ -1060,6 +1061,80 @@ def collect_news(session: Session) -> JobResult:
     )
 
 
+# ---------- 20:00 collect_disclosures (v0.5 Phase B) ----------
+
+
+def _resolve_disclosure_provider(session: Session):
+    """Return the injected ``disclosure_provider`` if any, else ``None``.
+
+    Same injection pattern as :func:`_resolve_news_provider`. v0.5 Phase B 시점
+    에는 실 DART / KRX provider 구현체가 없으므로 운영 default 동작은
+    ``enabled=true + provider 미주입 → SKIPPED``.
+    """
+    return session.info.get("disclosure_provider")
+
+
+def collect_disclosures(session: Session) -> JobResult:
+    """Collect recent disclosure metadata when ``disclosure_collection_enabled`` is true.
+
+    JobResult.status mapping (mirrors :func:`collect_news`):
+      * DISCLOSURE_COLLECTION_ENABLED=false (default) → SUCCESS,
+        data_status=SKIPPED, reason="disclosure_collection_disabled".
+      * enabled=true 이지만 provider 미주입 → SUCCESS, data_status=SKIPPED,
+        reason="no_provider_configured".
+      * enabled=true + provider 주입 → ``DisclosureCollector.collect_recent``
+        실행 후 SUCCESS + counters + classified_counts.
+    """
+    from app.data.collectors import DisclosureCollector
+    from app.data.repositories.news_items import NewsItemRepository
+
+    settings = _resolve_settings(session)
+    if not settings.disclosure_collection_enabled:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.5-B",
+                "data_status": "SKIPPED",
+                "reason": "disclosure_collection_disabled",
+                "fetched": 0,
+                "inserted": 0,
+                "skipped_duplicates": 0,
+                "truncated_summaries": 0,
+            },
+        )
+
+    provider = _resolve_disclosure_provider(session)
+    if provider is None:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.5-B",
+                "data_status": "SKIPPED",
+                "reason": "no_provider_configured",
+                "fetched": 0,
+                "inserted": 0,
+                "skipped_duplicates": 0,
+                "truncated_summaries": 0,
+            },
+        )
+
+    collector = DisclosureCollector(provider, NewsItemRepository(session))
+    result = collector.collect_recent(limit=50)
+
+    return JobResult(
+        status=JOB_STATUS_SUCCESS,
+        summary={
+            "phase": "v0.5-B",
+            "data_status": "SUCCESS",
+            "fetched": result.fetched,
+            "inserted": result.inserted,
+            "skipped_duplicates": result.skipped_duplicates,
+            "truncated_summaries": result.truncated_summaries,
+            "classified_counts": dict(result.classified_counts),
+        },
+    )
+
+
 # ---------- registry for the scheduler module ----------
 
 JOB_FUNCTIONS: dict[str, JobFn] = {
@@ -1071,4 +1146,5 @@ JOB_FUNCTIONS: dict[str, JobFn] = {
     JOB_NAME_UPDATE_RECOMMENDATION_RESULTS: update_recommendation_results,
     JOB_NAME_UPDATE_REPORT_CONSENSUS: update_report_consensus_snapshots,
     JOB_NAME_COLLECT_NEWS: collect_news,
+    JOB_NAME_COLLECT_DISCLOSURES: collect_disclosures,
 }
