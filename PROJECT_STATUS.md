@@ -90,7 +90,7 @@
 - `RELEASE_NOTES_v0.4.md` 신규 작성. Phase A~D 산출물, 테스트 결과, 저작권·보안 정책, 제외 범위, 알려진 한계, v0.5 후보를 정리했다.
 - `README.md`, `PROJECT_STATUS.md`, `TASKS.md` 를 v0.4 마감 상태로 갱신했다.
 - `API_SPEC.md` / `DB_SCHEMA.md` 기준으로 `source_file_path` 미노출 정책과 analyst report read-only API 설명을 재확인했다.
-- 회귀 게이트 재확인은 시도했으나 현재 sandbox 권한 문제로 완료하지 못했다. 직전 Phase D 게이트는 backend pytest **382 passed**, frontend vitest **60 passed**, frontend build **passed**, Playwright e2e **9 passed** 상태다.
+- 회귀 게이트 4종 재확인 완료 — backend pytest **382 passed**, frontend vitest **60 passed**, frontend build **passed**, Playwright e2e **9 passed**. Phase D 시점 baseline 과 동일 (회귀 0건).
 - 기능 코드 / 백엔드 라우터 / 프런트 화면 / DB 모델 변경 0건.
 
 ### v0.5 후보

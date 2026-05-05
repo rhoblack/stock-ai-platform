@@ -6,7 +6,9 @@ v0.4는 증권사 애널리스트 리포트와 테마/시그널 데이터를 추
 저장, 계산, 표시하는 사이클이다. v0.1 이후 유지해 온 read-only 원칙은 그대로
 유지했다. 자동매매, 실주문, POST 트리거, 실제 외부 수집은 포함하지 않는다.
 
-최종 태그 예정: `v0.4-final`
+- 최종 태그 예정: `v0.4-final`
+- 인수 일자: 2026-05-05 (Asia/Seoul)
+- 직전 누적 태그: `v0.4-frontend-reports` (Phase D)
 
 ## Phase A — DB 모델 6종 + Repository
 
@@ -62,13 +64,18 @@ CSV import와 컨센서스 갱신은 모두 로컬/운영자 주도 흐름이다
 
 ## 테스트 결과
 
+Phase D 인수 시점 + Phase E 마감 직전 재확인 모두 동일한 4 게이트 baseline:
+
 - backend pytest: **382 passed**
 - frontend vitest: **60 passed**
-- frontend build: **통과**
-- Playwright e2e: **9 passed**
+- frontend build: **통과** (`tsc --noEmit && vite build`)
+- Playwright e2e: **9 passed** (chromium + page.route mock)
 
-테스트는 mock/fixture 기반이다. KIS API 실제 호출, 텔레그램 실제 발송, 주문 실행은
-없다.
+Phase E 재확인 일자: 2026-05-05 (Asia/Seoul). Phase D → Phase E 사이 코드/테스트
+변경 0건이라 회귀 없이 동일 게이트 그대로 통과.
+
+테스트는 모두 mock/fixture 기반이다. KIS API 실제 호출, 텔레그램 실제 발송, 주문
+실행은 없다.
 
 ## 저작권·보안 정책
 
