@@ -159,17 +159,95 @@ v0.1 백엔드 코드는 마감 상태 (tag `v0.1-backend-accepted`). 코드 변
 
 ## Backlog (v0.2 이후)
 
-v0.1 범위 외. 명시적 요청 없는 한 손대지 않는다.
+v0.1 범위 외. v0.3 cycle 진입 시점에 일부는 v0.3 phase 로 승격되었다 (아래 v0.3 섹션 참조).
 
-- [ ] 캔들 패턴 (망치형/장악형 등) + ATR 변동성 컴포넌트 → `technical_score` 산식 보강
-  (Phase 4 후속 신규 분석 기능 — v0.1 마감 시점에 v0.2 이동 결정)
-- [ ] React / Next.js PC 대시보드 프론트엔드
+- [x] **v0.2 PC 대시보드 프론트엔드** — `v0.2-frontend-final` 마감 ✅ (Vite + React, 8 화면)
+- [→ v0.3 Phase B] 캔들 패턴 + ATR 변동성 컴포넌트 → `technical_score` 산식 보강
 - [ ] Strategy 모듈 (장기/중기/단기 관리, SIGNAL / PAPER 모드)
 - [ ] Backtest 엔진 (walk-forward 검증, 그리드 서치 튜닝)
 - [ ] MockBroker / ReplayBroker / SimulationBroker, 가상 증권사 서버
 - [ ] 전용 ML 모델 (Market Regime / Strategy Selection / Risk Prediction)
-- [ ] 실 News / Supply / Fundamental / Earnings 파이프라인 (현 v0.1은 `DummyScoreProducer` placeholder)
+- [ ] 실 News / Supply / Fundamental / Earnings 파이프라인 (현재 `DummyScoreProducer` placeholder)
 - [ ] APPROVAL / SMALL_AUTO / FULL_AUTO 모드 (실거래 — `BrokerInterface` placeholder만 유지)
+- [ ] 인증 / 권한 (단일 사용자 / 사내망 외 노출 시)
+- [ ] 운영 모니터링 (Sentry / Prometheus / Grafana)
+- [ ] 즐겨찾기 / 관심 종목 (POST 라우터 도입 필요)
+- [ ] 글로벌 검색 (cmd+k)
+- [ ] 모바일 / 태블릿 레이아웃
+
+## v0.3 — 분석 보강 + 운영 정착
+
+기준선: `v0.2-frontend-final`. 자세한 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0003` 참조.
+
+**v0.3 에서 절대 하지 않을 것**
+
+- ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ POST 트리거 UI (수동 잡 실행 / 추천 즉시 생성 / 보유 추가·삭제 폼)
+- ❌ 실 News / Supply / Fundamental / Earnings 외부 파이프라인 (placeholder 유지, 캔들/ATR 만 추가)
+- ❌ 즐겨찾기 / 관심 종목 (POST 필요)
+- ❌ 인증 / 권한
+- ❌ Sentry / Prometheus / 운영 모니터링
+- ❌ Strategy / Backtest / MockBroker / SimulationBroker
+- ❌ 모바일 / 태블릿 레이아웃
+
+### Phase A — GitHub Actions CI
+
+- [ ] `.github/workflows/ci.yml` 작성 (backend pytest + frontend vitest+build + e2e)
+- [ ] backend job: python 3.12 + `pip install -e ".[dev]"` + `pytest -q`
+- [ ] frontend job: node 20 + `npm ci` + `npm run lint && test && build`
+- [ ] e2e job: `playwright install chromium` + `npm run e2e` + `playwright-report/` artifact
+- [ ] PR 1건 의도적 실패 → CI 빨강 확인 1회
+- [ ] (선택) `.github/dependabot.yml` 추가
+- 완료 기준: main / PR 양쪽 모두 3 체크 그린, 회귀 0건. 태그 `v0.3-phase-a-ci`.
+
+### Phase B — 캔들 패턴 + ATR 변동성 컴포넌트
+
+- [ ] `app/analysis/technical_analyzer.py` — `compute_atr14`, `detect_candle_patterns(망치형/도지/장악형/슈팅스타)` 구현
+- [ ] `IndicatorSnapshot` (또는 부속) 에 `atr14`, `candle_patterns` 추가
+- [ ] `technical_score` 합산식 보강 (가중치 ±5 점 이내, 0~100 clamp 유지)
+- [ ] `app/db/models.py` `StockIndicator` 컬럼 추가: `atr14`, `candle_patterns` (JSON)
+- [ ] `app/data/repositories/stock_indicators.py` `upsert` 시그니처 갱신
+- [ ] `app/analysis/indicator_service.py` 신규 필드 채움
+- [ ] `app/api/schemas.py` `StockIndicatorSchema` 에 두 필드 추가
+- [ ] `tests/unit/test_technical_analyzer.py` ATR / 캔들 패턴 단위 테스트 (~6 신규)
+- [ ] `tests/integration/test_indicator_service.py` 신규 컬럼 통합 검증
+- [ ] backend `pytest -q` 296 → 296 + N 통과
+- [ ] mock seed 적재 후 `/api/stocks/005930` 응답에 `atr14` / `candle_patterns` 노출
+- 완료 기준: 등급 분포 S~C 까지 분포 (이전 D~C 대비 개선). 태그 `v0.3-backend-analysis`.
+
+### Phase C — 한국거래소 휴장일 캘린더
+
+- [ ] `frontend/src/data/krxHolidays.ts` 정적 JSON (2026~2027 +) — 출처 / 갱신 절차 주석
+- [ ] `frontend/src/lib/marketCalendar.ts` — `isMarketClosed` / `nextOpenDay` / `previousOpenDay`
+- [ ] `frontend/src/components/common/MarketStatusBanner.tsx`
+- [ ] Today / Jobs / Holdings 헤더에 Banner 통합
+- [ ] `frontend/src/tests/marketCalendar.test.tsx` (신규) — 6~8 케이스
+- [ ] `frontend/src/tests/MarketStatusBanner.test.tsx` (신규)
+- [ ] e2e: 평일 가정 fixture, Banner 노출 검증 1건 추가 (6 → 7)
+- 완료 기준: 휴장/평일/주말 분기 정확. vitest 36 → ~40, e2e 6 → 7. 태그 `v0.3-frontend-calendar`.
+
+### Phase D — StockDetail 일봉 차트
+
+- [ ] `app/api/routes.py` — `GET /api/stocks/{symbol}/prices?days=120` (max 500) 신규
+- [ ] `app/api/schemas.py` — `StockPriceSeriesResponse` 추가
+- [ ] `tests/integration/test_api_routes.py` — happy / empty / 404 3건
+- [ ] `frontend/src/api/types.ts` — `StockPriceSeriesResponse` 추가
+- [ ] `frontend/src/hooks/useStockPriceSeries.ts` (신규)
+- [ ] `frontend/src/pages/StockDetail/PriceChart.tsx` (신규, Recharts 재사용)
+- [ ] `frontend/src/pages/StockDetail/index.tsx` 차트 카드 + empty placeholder
+- [ ] `frontend/src/tests/StockDetail.test.tsx` 차트 happy / empty 보강
+- [ ] `frontend/src/tests/mswServer.ts` + `frontend/e2e/fixtures/apiMocks.ts` handler 추가
+- 완료 기준: backend pytest +3, frontend vitest ~+2, e2e ~+1. 차트가 종목 상세 화면에 노출. 태그 `v0.3-frontend-stock-chart`.
+
+### Phase E — v0.3 릴리스 문서 / 마감
+
+- [ ] `RELEASE_NOTES_v0.3.md` 신규 (산출물 / 검증 / 제외 / 한계 / v0.4 후보 / 가이드 / 보안)
+- [ ] `README.md` 상단 마감 배너 갱신 + 누적 태그 라인
+- [ ] `PROJECT_STATUS.md` §0 v0.3 마감, 기존 §0 → §0-1, §0-2
+- [ ] `TASKS.md` v0.3 phase 모두 [x]
+- [ ] backend pytest + frontend vitest + e2e + build 4 게이트 그린
+- [ ] tag `v0.3-final` + push
+- 완료 기준: 모든 게이트 그린, tag publish, GitHub Release 본문에 RELEASE_NOTES 붙여넣기 (UI 작업).
 
 ## 완료 기준
 
