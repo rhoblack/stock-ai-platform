@@ -833,7 +833,40 @@ AVOID 는 `*_count` 에는 잡히지만 수익률 통계에서 제외된다 (`BU
 계산에서 제외되고 `summary_json.missing_result_count_per_horizon[h]` 에 카운트만
 가산 — 전체 run 은 실패하지 않는다.
 
-### 16.6 안전 가드
+### 16.6 비용 모델 + 시장 국면별 (v0.7 Phase C)
+
+CLI 출력에 다음 필드가 추가된다:
+
+```
+  cost_model_version            : constant-v1
+  total_cost (fraction)         : 0.00330
+  cost_adjusted_avg_return_5d   : 2.6700
+  regime_breakdown              :
+    - UPTREND_EARLY  buy=12  win_rate_5d=0.6667  avg_return_5d=2.5000  cost_adj=2.1700
+    - DOWNTREND      buy=4   win_rate_5d=0.2500  avg_return_5d=-0.8000 cost_adj=-1.1300
+    - UNCLASSIFIED   buy=2   win_rate_5d=0.5000  avg_return_5d=1.0000  cost_adj=0.6700
+```
+
+- **`CostModel`** (placeholder constant 만): `buy_fee 0.015%` + `sell_fee 0.015%` +
+  `sell_tax 0.20%` + `slippage 0.10%` = **`total_cost 0.33%`**. BUY 신호의
+  `return_5d` 에서 자동 차감되어 `cost_adjusted_return_5d` 컬럼 + summary 평균
+  필드에 반영. PASS / AVOID 는 `cost_adjusted_return_5d=NULL` (수수료 차감 없음).
+  실 broker fee schedule fetch 는 v0.8+ 후보.
+- **`assign_regime(session, signal_date, market="KOSPI")`** — `MarketRegime.date
+  <= signal_date` 가운데 가장 최근 row 의 `regime` 반환. 매칭 실패 시 NULL →
+  display 단계에서 `UNCLASSIFIED` bucket 으로 폴딩. DB 컬럼은 NULL 그대로 저장
+  되므로 regime 데이터 후행 적재 후 backtest 재실행 시 자연스럽게 재분류.
+- **`BacktestResultRepository.aggregate_by_regime(run_id)`** — `{regime: count}`
+  GROUP BY 결과. NULL regime 은 `UNCLASSIFIED` 로 폴딩.
+- **운영 DB ALTER**: 기존 Phase B 단계에 적재된 운영 DB 가 있다면 다음 SQL
+  세 줄 실행 (destructive 0건):
+  ```sql
+  ALTER TABLE backtest_results ADD COLUMN cost_adjusted_return_5d NUMERIC(12, 4);
+  ALTER TABLE backtest_results ADD COLUMN regime VARCHAR(32);
+  CREATE INDEX ix_backtest_results_regime ON backtest_results (regime);
+  ```
+
+### 16.7 안전 가드
 
 - `BacktestEngine` / 전략 / CLI 어디에도 `requests` / `httpx` / `aiohttp` /
   `urllib` / KIS / DART / Telegram / `BrokerInterface` import 0건. 외부 호출

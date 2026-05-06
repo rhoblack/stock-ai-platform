@@ -119,3 +119,28 @@ class BacktestResultRepository(BaseRepository[BacktestResult]):
             .limit(limit)
         )
         return list(self.session.execute(statement).scalars().all())
+
+    def aggregate_by_regime(
+        self,
+        backtest_run_id: int,
+        *,
+        unclassified_label: str = "UNCLASSIFIED",
+    ) -> dict[str, int]:
+        """Return ``{regime_or_unclassified: count}`` for one run.
+
+        ``regime`` is NULL for signals whose run_date had no MarketRegime row
+        in the at-or-before window. We fold those into ``unclassified_label``
+        so callers see one consistent bucket key.
+        """
+
+        statement = (
+            select(BacktestResult.regime, func.count(BacktestResult.id))
+            .where(BacktestResult.backtest_run_id == backtest_run_id)
+            .group_by(BacktestResult.regime)
+        )
+        rows = self.session.execute(statement).all()
+        out: dict[str, int] = {}
+        for regime, count in rows:
+            key = regime if regime else unclassified_label
+            out[key] = out.get(key, 0) + count
+        return out

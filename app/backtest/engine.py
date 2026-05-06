@@ -37,6 +37,13 @@ from typing import Any
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from app.backtest.cost_model import CostModel
+from app.backtest.regime_split import (
+    DEFAULT_MARKET,
+    UNCLASSIFIED_BUCKET,
+    assign_regime,
+    display_bucket,
+)
 from app.data.repositories.backtest_results import BacktestResultRepository
 from app.data.repositories.backtest_runs import (
     BacktestRunRepository,
@@ -67,6 +74,26 @@ _HORIZONS: tuple[int, ...] = (1, 3, 5, 20)
 
 
 @dataclass(frozen=True)
+class RegimeBreakdownEntry:
+    """Per-regime BUY metrics surfaced in ``BacktestRunSummary.regime_breakdown``."""
+
+    regime: str
+    buy_count: int
+    win_rate_5d: Decimal | None
+    avg_return_5d: Decimal | None
+    cost_adjusted_avg_return_5d: Decimal | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "regime": self.regime,
+            "buy_count": self.buy_count,
+            "win_rate_5d": _decimal_str(self.win_rate_5d),
+            "avg_return_5d": _decimal_str(self.avg_return_5d),
+            "cost_adjusted_avg_return_5d": _decimal_str(self.cost_adjusted_avg_return_5d),
+        }
+
+
+@dataclass(frozen=True)
 class BacktestRunSummary:
     """Plain summary returned from ``BacktestEngine.run`` (no ORM dependency)."""
 
@@ -91,6 +118,10 @@ class BacktestRunSummary:
     avg_return_5d: Decimal | None
     avg_return_20d: Decimal | None
     max_drawdown: Decimal | None
+    cost_model_version: str
+    total_cost: Decimal
+    cost_adjusted_avg_return_5d: Decimal | None
+    regime_breakdown: list[RegimeBreakdownEntry] = field(default_factory=list)
     missing_result_count_per_horizon: dict[int, int] = field(default_factory=dict)
     notes: str = BUY_ONLY_METRICS_NOTE
 
@@ -117,6 +148,10 @@ class BacktestRunSummary:
             "avg_return_5d": _decimal_str(self.avg_return_5d),
             "avg_return_20d": _decimal_str(self.avg_return_20d),
             "max_drawdown": _decimal_str(self.max_drawdown),
+            "cost_model_version": self.cost_model_version,
+            "total_cost": _decimal_str(self.total_cost),
+            "cost_adjusted_avg_return_5d": _decimal_str(self.cost_adjusted_avg_return_5d),
+            "regime_breakdown": [entry.as_dict() for entry in self.regime_breakdown],
             "missing_result_count_per_horizon": dict(
                 self.missing_result_count_per_horizon,
             ),
@@ -199,10 +234,18 @@ def build_score_snapshot(
 class BacktestEngine:
     """Replay a strategy across past recommendations + horizon returns."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        cost_model: CostModel | None = None,
+        regime_market: str = DEFAULT_MARKET,
+    ) -> None:
         self.session = session
         self._run_repo = BacktestRunRepository(session)
         self._result_repo = BacktestResultRepository(session)
+        self._cost_model = cost_model or CostModel()
+        self._regime_market = regime_market
 
     def run(
         self,
@@ -225,6 +268,20 @@ class BacktestEngine:
             score_snapshot = build_score_snapshot(rec, snapshot)
             signal = strategy.evaluate(score_snapshot)
             horizons = self._fetch_horizon_returns(rec.id)
+            return_5d = horizons.get(5, _HorizonReturn()).close
+            # Cost adjustment is BUY-only — PASS / AVOID rows leave the column
+            # NULL so the persisted data does not imply we ever paid fees on
+            # them.
+            cost_adjusted_return_5d = (
+                self._cost_model.apply(return_5d)
+                if signal.action == STRATEGY_ACTION_BUY
+                else None
+            )
+            regime = assign_regime(
+                self.session,
+                run.run_date,
+                market=self._regime_market,
+            )
             evaluated.append(
                 _EvaluatedRow(
                     recommendation=rec,
@@ -236,15 +293,19 @@ class BacktestEngine:
                     evidence=signal.evidence,
                     return_1d=horizons.get(1, _HorizonReturn()).close,
                     return_3d=horizons.get(3, _HorizonReturn()).close,
-                    return_5d=horizons.get(5, _HorizonReturn()).close,
+                    return_5d=return_5d,
                     return_20d=horizons.get(20, _HorizonReturn()).close,
                     max_drawdown=_min_max_drawdown(horizons),
                     result_status=horizons.get(5, _HorizonReturn()).status,
                     recommendation_result_id=horizons.get(5, _HorizonReturn()).result_id,
+                    cost_adjusted_return_5d=cost_adjusted_return_5d,
+                    regime=regime,
                 ),
             )
 
         stats = _aggregate(evaluated)
+
+        regime_breakdown = _build_regime_breakdown(evaluated, self._cost_model)
 
         backtest_run_id: int | None = None
         if not dry_run:
@@ -258,6 +319,8 @@ class BacktestEngine:
                 config_json={
                     "limit": limit,
                     "horizons": list(_HORIZONS),
+                    "cost_model_version": self._cost_model.version,
+                    "regime_market": self._regime_market,
                 },
             )
             self._persist_results(run_record.id, evaluated)
@@ -278,6 +341,12 @@ class BacktestEngine:
                 max_drawdown=stats.max_drawdown,
                 summary_json={
                     "missing_result_count_per_horizon": dict(stats.missing_per_horizon),
+                    "cost_model_version": self._cost_model.version,
+                    "total_cost": str(self._cost_model.total_cost),
+                    "cost_adjusted_avg_return_5d": _decimal_str(
+                        stats.cost_adjusted_avg_return_5d,
+                    ),
+                    "regime_breakdown": [entry.as_dict() for entry in regime_breakdown],
                     "notes": BUY_ONLY_METRICS_NOTE,
                 },
             )
@@ -305,6 +374,10 @@ class BacktestEngine:
             avg_return_5d=stats.avg_return[5],
             avg_return_20d=stats.avg_return[20],
             max_drawdown=stats.max_drawdown,
+            cost_model_version=self._cost_model.version,
+            total_cost=self._cost_model.total_cost,
+            cost_adjusted_avg_return_5d=stats.cost_adjusted_avg_return_5d,
+            regime_breakdown=regime_breakdown,
             missing_result_count_per_horizon=dict(stats.missing_per_horizon),
         )
 
@@ -377,6 +450,8 @@ class BacktestEngine:
                 return_20d=row.return_20d,
                 max_drawdown=row.max_drawdown,
                 result_status=row.result_status,
+                cost_adjusted_return_5d=row.cost_adjusted_return_5d,
+                regime=row.regime,
                 evidence_json=row.evidence,
             )
             for row in evaluated
@@ -413,6 +488,8 @@ class _EvaluatedRow:
     max_drawdown: Decimal | None
     result_status: str | None
     recommendation_result_id: int | None
+    cost_adjusted_return_5d: Decimal | None
+    regime: str | None
 
 
 @dataclass(frozen=True)
@@ -424,6 +501,7 @@ class _AggregateStats:
     win_rate: dict[int, Decimal | None]
     avg_return: dict[int, Decimal | None]
     max_drawdown: Decimal | None
+    cost_adjusted_avg_return_5d: Decimal | None
     missing_per_horizon: dict[int, int]
 
 
@@ -457,6 +535,17 @@ def _aggregate(rows: list[_EvaluatedRow]) -> _AggregateStats:
     drawdowns = [r.max_drawdown for r in buy_rows if r.max_drawdown is not None]
     aggregate_drawdown = min(drawdowns) if drawdowns else None
 
+    cost_adjusted_values = [
+        r.cost_adjusted_return_5d for r in buy_rows if r.cost_adjusted_return_5d is not None
+    ]
+    cost_adjusted_avg_return_5d = (
+        (sum(cost_adjusted_values) / Decimal(len(cost_adjusted_values))).quantize(
+            Decimal("0.0001"),
+        )
+        if cost_adjusted_values
+        else None
+    )
+
     return _AggregateStats(
         signal_count=signal_count,
         buy_count=buy_count,
@@ -465,8 +554,64 @@ def _aggregate(rows: list[_EvaluatedRow]) -> _AggregateStats:
         win_rate=win_rate,
         avg_return=avg_return,
         max_drawdown=aggregate_drawdown,
+        cost_adjusted_avg_return_5d=cost_adjusted_avg_return_5d,
         missing_per_horizon=missing_per_horizon,
     )
+
+
+def _build_regime_breakdown(
+    rows: list[_EvaluatedRow],
+    cost_model: CostModel,
+) -> list[RegimeBreakdownEntry]:
+    """Group BUY rows by regime bucket → per-bucket win_rate / avg_return.
+
+    NULL ``regime`` values fold into :data:`UNCLASSIFIED_BUCKET`. Buckets are
+    returned sorted by ``buy_count desc`` then bucket name asc so the engine
+    output is deterministic across runs.
+    """
+
+    buy_rows = [r for r in rows if r.signal_action == STRATEGY_ACTION_BUY]
+    by_bucket: dict[str, list[_EvaluatedRow]] = {}
+    for row in buy_rows:
+        bucket = display_bucket(row.regime)
+        by_bucket.setdefault(bucket, []).append(row)
+
+    entries: list[RegimeBreakdownEntry] = []
+    for bucket, rows_in_bucket in by_bucket.items():
+        five_day_returns = [r.return_5d for r in rows_in_bucket if r.return_5d is not None]
+        cost_returns = [
+            r.cost_adjusted_return_5d
+            for r in rows_in_bucket
+            if r.cost_adjusted_return_5d is not None
+        ]
+        if five_day_returns:
+            wins = sum(1 for v in five_day_returns if v > 0)
+            win_rate_5d = (Decimal(wins) / Decimal(len(five_day_returns))).quantize(
+                Decimal("0.0001"),
+            )
+            avg_return_5d = (
+                sum(five_day_returns) / Decimal(len(five_day_returns))
+            ).quantize(Decimal("0.0001"))
+        else:
+            win_rate_5d = None
+            avg_return_5d = None
+        cost_adjusted = (
+            (sum(cost_returns) / Decimal(len(cost_returns))).quantize(Decimal("0.0001"))
+            if cost_returns
+            else None
+        )
+        entries.append(
+            RegimeBreakdownEntry(
+                regime=bucket,
+                buy_count=len(rows_in_bucket),
+                win_rate_5d=win_rate_5d,
+                avg_return_5d=avg_return_5d,
+                cost_adjusted_avg_return_5d=cost_adjusted,
+            ),
+        )
+
+    entries.sort(key=lambda e: (-e.buy_count, e.regime))
+    return entries
 
 
 def _horizon_value(row: _EvaluatedRow, horizon: int) -> Decimal | None:
@@ -499,5 +644,6 @@ __all__ = [
     "BUY_ONLY_METRICS_NOTE",
     "BacktestEngine",
     "BacktestRunSummary",
+    "RegimeBreakdownEntry",
     "build_score_snapshot",
 ]

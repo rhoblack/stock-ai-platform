@@ -10,14 +10,29 @@ Phase C — they are intentionally absent here so Phase B stays a thin
 strategy-vs-history evaluator.
 """
 
+from app.backtest.cost_model import COST_MODEL_VERSION, CostModel
 from app.backtest.engine import (
+    BUY_ONLY_METRICS_NOTE,
     BacktestEngine,
     BacktestRunSummary,
-    BUY_ONLY_METRICS_NOTE,
+    RegimeBreakdownEntry,
+)
+from app.backtest.regime_split import (
+    DEFAULT_MARKET,
+    UNCLASSIFIED_BUCKET,
+    assign_regime,
+    display_bucket,
 )
 
 __all__ = [
     "BUY_ONLY_METRICS_NOTE",
     "BacktestEngine",
     "BacktestRunSummary",
+    "COST_MODEL_VERSION",
+    "CostModel",
+    "DEFAULT_MARKET",
+    "RegimeBreakdownEntry",
+    "UNCLASSIFIED_BUCKET",
+    "assign_regime",
+    "display_bucket",
 ]

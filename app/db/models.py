@@ -829,6 +829,16 @@ class BacktestResult(Base):
     return_20d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     max_drawdown: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     result_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # v0.7 Phase C — cost model + market regime breakdown.
+    # cost_adjusted_return_5d is populated for BUY signals only (PASS / AVOID
+    # leave it NULL by design). regime is the at-or-before MarketRegime label
+    # for the recommendation_run.run_date; NULL when no regime data covers the
+    # date (engine summary buckets these under "UNCLASSIFIED").
+    cost_adjusted_return_5d: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True,
+    )
+    regime: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

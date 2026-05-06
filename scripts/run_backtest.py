@@ -148,6 +148,20 @@ def _print_summary(summary: BacktestRunSummary, *, commit: bool) -> None:
             f"win_rate={_fmt(wr)}  avg_return={_fmt(ar)}",
         )
     print(f"  max_drawdown                  : {_fmt(summary.max_drawdown)}")
+    print(f"  cost_model_version            : {summary.cost_model_version}")
+    print(f"  total_cost (fraction)         : {_fmt(summary.total_cost)}")
+    print(
+        f"  cost_adjusted_avg_return_5d   : {_fmt(summary.cost_adjusted_avg_return_5d)}",
+    )
+    if summary.regime_breakdown:
+        print("  regime_breakdown              :")
+        for entry in summary.regime_breakdown:
+            print(
+                f"    - {entry.regime:<14}  buy={entry.buy_count:<3}  "
+                f"win_rate_5d={_fmt(entry.win_rate_5d)}  "
+                f"avg_return_5d={_fmt(entry.avg_return_5d)}  "
+                f"cost_adj={_fmt(entry.cost_adjusted_avg_return_5d)}",
+            )
     if summary.missing_result_count_per_horizon:
         for horizon, count in sorted(summary.missing_result_count_per_horizon.items()):
             print(f"  missing_result_count[{horizon}d]      : {count}")

@@ -9,7 +9,7 @@
 
 ## 0. v0.7 진행 선언 — Strategy & Backtest Foundation
 
-**v0.7 cycle 진행 중 (Phase B 완료).** 기준선 `v0.6-final`
+**v0.7 cycle 진행 중 (Phase C 완료).** 기준선 `v0.6-final`
 (HEAD `e729d60` 시점, origin/main 동기화 완료, 5 누적 태그
 `v0.6-fundamental-data-layer` → `v0.6-earnings-event-pipeline` →
 `v0.6-fundamental-score` → `v0.6-frontend-fundamentals` → `v0.6-final` 모두
@@ -36,7 +36,7 @@ v0.7 에서도 추가하지 않는다.
 |---|---|---|---|
 | A | Strategy interface + 룰 기반 전략 정의 (`StrategyInterface` ABC + `TopGradeStrategy` / `HighScoreStrategy` / `MultiSignalStrategy` + 단위 테스트) | ✅ 완료 | `v0.7-strategy-interface` |
 | B | Backtest engine + 신규 테이블 2개 (`BacktestRun` 26번째 + `BacktestResult` 27번째) + `scripts/run_backtest.py` argparse CLI (default dry-run) + 통합 테스트 | ✅ 완료 | `v0.7-backtest-engine` |
-| C | 비용 모델 (`CostModel` placeholder 0.45% 차감) + 시장 국면별 분리 (`MarketRegimeRepository` 활용) + cost_adjusted_return 컬럼 | ⏳ | `v0.7-backtest-cost-regime` |
+| C | 비용 모델 (`CostModel` placeholder 0.33% 차감) + 시장 국면별 분리 (`MarketRegime` at-or-before 매칭) + cost_adjusted_return_5d / regime 컬럼 | ✅ 완료 | `v0.7-backtest-cost-regime` |
 | D | 백엔드 read-only API 3종 (`/api/strategies` + `/api/backtest/runs` + `/api/backtest/runs/{run_id}`) + 프런트 10번째 화면 `/backtest` + Sidebar `백테스트 (β)` 메뉴 | ⏳ | `v0.7-frontend-backtest` |
 | E | `RELEASE_NOTES_v0.7.md` + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE 마감 + tag `v0.7-final` | ⏳ | `v0.7-final` |
 
@@ -227,6 +227,74 @@ DB 마이그레이션 = `CREATE TABLE backtest_runs ...; CREATE TABLE backtest_r
   `aiohttp` / `urllib` / KIS 클라이언트 / DART 클라이언트 / Telegram /
   `BrokerInterface` import 0건 (grep 검증). `backtest_results` 에 broker / 주문 /
   계좌 / 가격 / 수량 컬럼 부재.
+
+### v0.7 Phase C 결과 (요약) — CostModel + 시장 국면별 분리
+
+> Phase C 는 backend 분석 layer 보강만. API 라우터 / 프런트 / scheduler /
+> Telegram / 외부 호출 / 자동매매 0건. CostModel 은 placeholder constant 만 —
+> 실 broker fee schedule fetch 는 v0.8+ 후보.
+
+- `app/backtest/cost_model.py` 신규 — `CostModel` (frozen dataclass):
+  `buy_fee=0.00015` + `sell_fee=0.00015` + `sell_tax=0.0020` + `slippage=0.0010`
+  → `total_cost = 0.0033 (0.33%)`. `apply(raw_return: Decimal | None) -> Decimal | None`
+  은 `recommendation_results.close_return` 의 % 단위에 맞춰 `total_cost × 100` 을
+  뺀다 (예: 1.5% → 1.17%). `version` 필드 + `COST_MODEL_VERSION = "constant-v1"`
+  상수 노출. v0.8+ 의 실 broker schedule 도입 시 `version` 필드만 갱신하면
+  추적 가능.
+- `app/backtest/regime_split.py` 신규 — `assign_regime(session, signal_date,
+  market="KOSPI") -> str | None`. `MarketRegime.date <= signal_date` 가운데 가장
+  최근 `regime` 반환. 없으면 None. `display_bucket(regime)` helper 가
+  None 입력을 `UNCLASSIFIED_BUCKET` 으로 매핑 (DB 컬럼은 NULL 그대로 — 미래
+  regime 데이터 적재 후 재분류 가능). 외부 호출 0건.
+- `app/db/models.py` `BacktestResult` 보강 — `cost_adjusted_return_5d`
+  Numeric(12,4) nullable + `regime` String(32) nullable index. Phase B 의 신규
+  테이블 정의에 흡수되므로 단일 cycle 마이그레이션은 정합. 기존 운영 DB 가
+  Phase B 만 적재된 상태라면 `ALTER TABLE backtest_results ADD COLUMN
+  cost_adjusted_return_5d NUMERIC(12, 4); ALTER TABLE backtest_results ADD
+  COLUMN regime VARCHAR(32); CREATE INDEX ix_backtest_results_regime ON
+  backtest_results (regime);` 세 줄로 정합 (DB_SCHEMA §27 명시, destructive 0건).
+- `app/data/repositories/backtest_results.py` `aggregate_by_regime` 추가 —
+  `{regime_or_unclassified_label: count}` GROUP BY. NULL regime 자동 폴딩.
+- `app/backtest/engine.py` 보강:
+  - `BacktestEngine.__init__(session, *, cost_model=None, regime_market="KOSPI")` —
+    `CostModel` 주입 가능, default 는 `CostModel()`. 회귀를 위해 keyword-only.
+  - `run()` 안에서 신호별 BUY 인 row 만 `cost_model.apply(return_5d)` 계산 →
+    `cost_adjusted_return_5d` (PASS / AVOID 는 NULL). 모든 row 에
+    `assign_regime(session, run_date, market)` 호출 → `regime` 컬럼.
+  - `_aggregate` 에 `cost_adjusted_avg_return_5d` 추가 (BUY 신호 중 NULL 아닌
+    cost_adjusted 평균, Decimal quantize 0.0001).
+  - `_build_regime_breakdown` helper 신규 — BUY rows GROUP BY regime →
+    `RegimeBreakdownEntry(regime, buy_count, win_rate_5d, avg_return_5d,
+    cost_adjusted_avg_return_5d)`. `buy_count desc` + bucket name asc 정렬로
+    결정성 보장.
+  - `BacktestRunSummary` 에 `cost_model_version` / `total_cost` /
+    `cost_adjusted_avg_return_5d` / `regime_breakdown: list[RegimeBreakdownEntry]`
+    필드 + `as_dict()` 직렬화. `summary_json` / `config_json` 양쪽에 동일 데이터
+    persist.
+- `scripts/run_backtest.py` `_print_summary` — `cost_model_version` /
+  `total_cost (fraction)` / `cost_adjusted_avg_return_5d` 줄 추가 + (있으면)
+  `regime_breakdown` 표 (regime / buy / win_rate_5d / avg_return_5d /
+  cost_adj). 기존 `signal_count` / `*_count` / horizon win/avg/missing /
+  backtest_run_id / notes 출력 유지.
+- 테스트:
+  - `tests/unit/test_cost_model.py` 신규 — **9 케이스** (version 상수 / 0.33%
+    total_cost / apply 양수·음수·zero·None / custom rate / custom version /
+    frozen dataclass 변경 거부)
+  - `tests/integration/test_backtest_regime.py` 신규 — **12 케이스**
+    (assign_regime 4: exact match / at-or-before fallback / 사전 데이터 부재
+    None / market 필터; engine summary 8: dry-run 노출 / NULL → UNCLASSIFIED
+    bucket / commit 시 두 컬럼 영속 + summary_json carry / PASS/AVOID 의
+    cost_adjusted NULL but regime 할당 / regime_breakdown GROUP BY +
+    `buy_count desc` 정렬 / aggregate_by_regime / NULL bucket 폴딩 / custom
+    CostModel 전파)
+- 회귀: backend pytest **652 → 673 passed (+21)**. 기존 Phase B 테스트 38건 그대로
+  통과. frontend / e2e / build 변경 0건. ScoringEngine 본 weight 변경 0건.
+  라우터 / 프런트 / scheduler 0건.
+- 안전 범위: `app/backtest/` + `app/strategy/` 어디에도 외부 HTTP / KIS / DART /
+  Telegram / `BrokerInterface` import 0건 (grep 검증 유지). `BacktestResult` 에
+  broker / 주문 / 계좌 / 가격 / 수량 컬럼 부재. CostModel 은 placeholder
+  constant 만 — 실 broker fee schedule fetch / 종목별 stamp duty / tick-size
+  슬리피지 모델링은 v0.8+ 후보로 명시 (cost_model.py docstring + DB_SCHEMA).
 
 ### v0.7 누적 태그 (예정)
 
