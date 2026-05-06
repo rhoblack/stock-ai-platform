@@ -299,17 +299,30 @@ def test_login_response_does_not_leak_sensitive_fields(session):
 
 
 def test_mutating_endpoint_count_unchanged(session):
-    """Verify POST/PUT/DELETE count is still 5 (auth + watchlist only, Phase A adds none)."""
+    """Verify POST/PUT/PATCH/DELETE count matches the known set for Phase C.
+
+    v0.9 Phase C adds:
+      PATCH  /api/watchlists/{id}              (rename / set_default)
+      DELETE /api/watchlists/{id}              (delete watchlist)
+      GET    /api/watchlists/{id}/items        (paginated -- NOT mutating, skipped)
+      PATCH  /api/watchlists/{id}/items/{sym}  (memo update)
+      PUT    /api/users/me/preferences         (replace preferences)
+
+    Total mutating: auth(2) + watchlist(2+3) + preferences(1) = 8.
+    POST /api/auth/register is not present (single-user, no self-registration).
+    """
     from app.main import app as _app
 
     mutating = [
         (r.methods, r.path)
         for r in _app.routes
-        if hasattr(r, "methods") and r.methods & {"POST", "PUT", "DELETE"}
+        if hasattr(r, "methods") and r.methods & {"POST", "PUT", "PATCH", "DELETE"}
     ]
-    # Phase A must NOT add new mutating endpoints.
-    assert len(mutating) == 5, (
-        f"Expected 5 mutating endpoints (auth 3 + watchlist 2), found {len(mutating)}: {mutating}"
+    # Phase C: 9 mutating endpoints total.
+    # auth(2: login+logout) + watchlist(6: POST×2 + DELETE×2 + PATCH×2) + preferences(1: PUT)
+    assert len(mutating) == 9, (
+        f"Expected 9 mutating endpoints (auth 2 + watchlist 6 + preferences 1), "
+        f"found {len(mutating)}: {mutating}"
     )
 
 

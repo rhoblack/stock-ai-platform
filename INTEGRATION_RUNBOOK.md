@@ -1307,3 +1307,110 @@ curl -sI -H "Authorization: Bearer $BOB_TOKEN" \
 - request body 의 `user_id` 는 schema 에서 정의되지 않아 자동 drop —
   spoofing 시도 가드 (`test_request_body_user_id_is_ignored`)
 - alembic head = `0003_watchlist`, `compare_metadata` diff 0건 유지
+
+---
+
+## 20. Watchlist 고도화 + UserPreference API smoke 절차 (v0.9 Phase C)
+
+v0.9 Phase C 가 추가한 4개 Watchlist 엔드포인트 + UserPreference 2 라우터의
+운영 검증 절차. `AUTH_ENABLED=false` 기준이며, `true` 시 Bearer token 발급 후
+`Authorization: Bearer <token>` 헤더 추가.
+
+### 20.1 Alembic migration 적용
+
+```bash
+# v0.8 phase C (0003_watchlist) 까지 적용된 운영 DB 에서 실행
+alembic upgrade head
+# Expected: Running upgrade 0003_watchlist -> 0004_user_preferences
+```
+
+확인: `alembic current` 출력에 `(head)` 포함 + `user_preferences` 테이블 존재.
+
+### 20.2 Watchlist PATCH (rename)
+
+```bash
+WL_ID=<기존_watchlist_id>
+curl -s -X PATCH http://localhost:8000/api/watchlists/$WL_ID \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "운영 테스트 WL"}' | python -m json.tool
+# Expected: 200, "name": "운영 테스트 WL"
+```
+
+### 20.3 Watchlist PATCH (set_default)
+
+```bash
+curl -s -X PATCH http://localhost:8000/api/watchlists/$WL_ID \
+  -H 'Content-Type: application/json' \
+  -d '{"is_default": true}' | python -m json.tool
+# Expected: 200, "is_default": true
+```
+
+### 20.4 GET watchlist items (pagination)
+
+```bash
+curl -s "http://localhost:8000/api/watchlists/$WL_ID/items?limit=5&offset=0" \
+  | python -m json.tool
+# Expected: 200, { "total": N, "items": [...], "limit": 5, "offset": 0 }
+```
+
+### 20.5 PATCH watchlist item memo
+
+```bash
+SYMBOL=005930
+curl -s -X PATCH "http://localhost:8000/api/watchlists/$WL_ID/items/$SYMBOL" \
+  -H 'Content-Type: application/json' \
+  -d '{"memo": "운영 smoke 메모"}' | python -m json.tool
+# Expected: 200, "memo": "운영 smoke 메모"
+```
+
+### 20.6 DELETE watchlist
+
+```bash
+WL_DEL_ID=<삭제할_watchlist_id>
+curl -s -X DELETE "http://localhost:8000/api/watchlists/$WL_DEL_ID" \
+  | python -m json.tool
+# Expected: 200, { "status": "ok" }
+# verify cascade: watchlist_items 테이블에 해당 watchlist_id 행 0건
+```
+
+### 20.7 UserPreference GET / PUT
+
+```bash
+# GET (lazy create)
+curl -s http://localhost:8000/api/users/me/preferences | python -m json.tool
+# Expected: 200, { "user_id": 1, "default_watchlist_id": null, ... }
+
+# PUT
+curl -s -X PUT http://localhost:8000/api/users/me/preferences \
+  -H 'Content-Type: application/json' \
+  -d '{"default_market": "KOSPI", "default_strategy": "momentum"}' \
+  | python -m json.tool
+# Expected: 200, "default_market": "KOSPI", "default_strategy": "momentum"
+
+# PUT 비밀 키 rejection
+curl -s -X PUT http://localhost:8000/api/users/me/preferences \
+  -H 'Content-Type: application/json' \
+  -d '{"notification_preferences_json": {"password": "bad"}}' \
+  | python -m json.tool
+# Expected: 422
+```
+
+### 20.8 cross-user isolation 확인
+
+```bash
+curl -s -X PATCH http://localhost:8000/api/watchlists/99999 \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "hack"}' | python -m json.tool
+# Expected: 404 (existence 비노출)
+
+curl -s -X DELETE http://localhost:8000/api/watchlists/99999 \
+  | python -m json.tool
+# Expected: 404
+```
+
+### 20.9 Phase C 안전 가드
+
+- alembic head = `0004_user_preferences`, `compare_metadata` diff 0건 유지
+- UserPreference / watchlist 신규 라우터에 KIS / DART / Broker / 자동매매 import 0건
+- 모든 응답에 password / password_hash / secret / broker / account / quantity / order_* 0건
+- mutating endpoint 누적 9건 (auth 2 + watchlist 6 + preferences 1) — `test_mutating_endpoint_count_unchanged` 단언 유지

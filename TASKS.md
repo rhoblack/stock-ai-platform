@@ -950,23 +950,22 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] frontend vitest **117 passed** (기준선 113 + 4 신규) / build 그린
 - [ ] tag `v0.9-monitoring` + push
 
-### Phase C: Watchlist API 고도화 + UserPreference + Provider 회복성
+### Phase C: Watchlist API 고도화 + UserPreference + Provider 회복성 ✅ 완료
 
-- [ ] `app/api/watchlist_routes.py` — PUT /api/watchlists/{id} (rename) 추가
-- [ ] `app/api/watchlist_routes.py` — DELETE /api/watchlists/{id} (cascade delete) 추가
-- [ ] `app/api/watchlist_routes.py` — PUT /api/watchlists/{id}/default (기본 목록 지정) 추가
-- [ ] `app/api/watchlist_routes.py` — PUT /api/watchlists/{id}/items/{symbol} (메모 편집) 추가
-- [ ] `app/db/models.py` — `UserPreference` 32번째 ORM 테이블 추가 (broker/account/quantity/order_* 0건)
-- [ ] `app/api/user_routes.py` — GET /api/me/preferences + PUT /api/me/preferences 추가
-- [ ] `alembic/versions/0004_watchlist_enhance.py` — WatchlistItem.memo 컬럼 추가
-- [ ] `alembic/versions/0005_user_preference.py` — UserPreference 테이블 생성
-- [ ] `app/data/provider_base.py` — `ProviderStatus` enum + `@retry_with_backoff` decorator + `ProviderHealthSnapshot`
-- [ ] `/api/jobs` 응답에 `provider_health` dict 추가
-- [ ] `tests/unit/test_watchlist_api_v2.py` 신규 (~30 tests, cross-user 403 포함)
-- [ ] `tests/unit/test_user_preferences.py` 신규 (~12 tests)
-- [ ] `tests/unit/test_provider_resilience.py` 신규 (~10 tests)
-- [ ] alembic upgrade head 성공 + compare_metadata diff 0건
-- [ ] backend pytest ~910 passed / 4 게이트 그린
+- [x] `app/api/watchlist_routes.py` — PATCH /api/watchlists/{id} (rename + set_default) 추가
+- [x] `app/api/watchlist_routes.py` — DELETE /api/watchlists/{id} (cascade delete) 추가
+- [x] `app/api/watchlist_routes.py` — GET /api/watchlists/{id}/items (limit/offset/symbol_prefix) 추가
+- [x] `app/api/watchlist_routes.py` — PATCH /api/watchlists/{id}/items/{symbol} (메모 편집) 추가
+- [x] `app/db/models.py` — `UserPreference` 32번째 ORM 테이블 추가 (broker/account/quantity/order_* 0건)
+- [x] `app/api/preferences_routes.py` — GET /api/users/me/preferences + PUT /api/users/me/preferences 추가
+- [x] `alembic/versions/0004_user_preferences.py` — UserPreference 테이블 생성 (32nd)
+- [x] `app/data/repositories/user_preferences.py` — get_or_create / update / set_default_watchlist 등
+- [x] `app/data/provider_resilience.py` — ProviderCallResult / ProviderErrorKind / retry_with_backoff / CircuitBreaker 추가
+- [x] `tests/integration/test_watchlist_phase_c.py` 신규 (20 tests)
+- [x] `tests/integration/test_user_preferences.py` 신규 (17 tests)
+- [x] `tests/unit/test_provider_resilience.py` 신규 (19 tests)
+- [x] alembic upgrade head 성공 + compare_metadata diff 0건
+- [x] backend pytest **916 passed** (기준선 869 + 47 신규) / 회귀 0건
 - [ ] tag `v0.9-watchlist-api` + push
 
 ### Phase D: Frontend 관리 UI

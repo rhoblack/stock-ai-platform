@@ -1,18 +1,18 @@
 # TESTING.md
 
-> 본 문서는 **v0.9 Phase B 시점** 기준으로 갱신된다 (`v0.9-monitoring`
+> 본 문서는 **v0.9 Phase C 시점** 기준으로 갱신된다 (`v0.9-watchlist-api`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.9 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.9 Phase B 시점)
+## 1. 현재 회귀 게이트 (v0.9 Phase C 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **869 passed** (v0.9 Phase A 845 → Phase B 869; +24 신규) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **117 passed** (17 파일, jsdom + msw v2; +4 ErrorBoundary) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **916 passed** (v0.9 Phase B 869 → Phase C 916; +47 신규) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **117 passed** (17 파일, jsdom + msw v2; Phase C는 프론트 변경 없음) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
 
@@ -834,6 +834,70 @@ jsdom + React Testing Library. console.error mock으로 테스트 출력 억제.
 - frontend build 그린
 - 기존 808 테스트 모두 configure_logging 변경(handlers.clear) 영향 없이 통과
   (autouse conftest fixture가 root logger 상태를 각 test_logging_config.py 테스트에서 격리)
+
+## 6.21 v0.9 Phase C — Watchlist 고도화 + UserPreference + Provider 회복성 테스트
+
+총 **47 케이스 신규** (integration 37 + unit 10). 새 PATCH/DELETE watchlist 엔드포인트 /
+UserPreference CRUD / CircuitBreaker 흐름을 다층 검증. 프론트엔드 변경 없음.
+
+### 6.21.1 Integration — `tests/integration/test_watchlist_phase_c.py` (20 케이스)
+
+TestClient + StaticPool SQLite. AUTH_ENABLED=false dev fallback 사용.
+
+- `PATCH /api/watchlists/{id}` rename 성공 → 200 + 새 name
+- `PATCH /api/watchlists/{id}` set_default → 200 + 이전 default 자동 해제
+- `PATCH /api/watchlists/{id}` 필드 미제공 → 422
+- `PATCH /api/watchlists/{id}` 타인 watchlist → 404 (ownership 비노출)
+- `DELETE /api/watchlists/{id}` → 200 + DB 행 삭제 확인
+- default watchlist DELETE 허용
+- DELETE cascade → WatchlistItem 행 함께 삭제
+- `GET /api/watchlists/{id}/items` → total / items 반환
+- limit/offset pagination 동작
+- symbol_prefix 필터 동작
+- `PATCH /api/watchlists/{id}/items/{symbol}` memo 업데이트
+- memo null 초기화
+- 미존재 symbol → 404
+- 응답에 forbidden field (password / broker / account 등) 0건
+
+### 6.21.2 Integration — `tests/integration/test_user_preferences.py` (17 케이스)
+
+Repository 단위 + API 통합 혼합. StaticPool SQLite.
+
+- `get_or_create_for_user` — 최초 blank row 생성
+- `get_or_create_for_user` — 2회 호출 시 동일 row id
+- `update` partial fields
+- `set_default_watchlist` / clear to None
+- `update_dashboard_layout`, `update_notification_preferences`
+- `GET /api/users/me/preferences` → 200 (dev fallback)
+- `PUT /api/users/me/preferences` → 필드 업데이트
+- null 전송 시 필드 초기화
+- watchlist 소유권 검증 (존재하는 것 / 없는 것)
+- AUTH_ENABLED=true → 토큰 없으면 401 (GET / PUT 각 1건)
+- 응답에 forbidden field 0건
+- notification_preferences_json에 secret 키 포함 → 422
+
+### 6.21.3 Unit — `tests/unit/test_provider_resilience.py` (19 케이스)
+
+순수 단위 — 실제 외부 API 호출 0건 (fn은 항상 로컬 callable).
+
+- `ProviderCallResult.ok` / `.fail` factory
+- `retry_with_backoff` 1회 성공 / 3회 째 성공 / 최대 시도 소진
+- `CLIENT_ERROR` 비재시도 (결정적)
+- `TIMEOUT` / `RATE_LIMIT` 재시도
+- `CircuitBreaker` CLOSED 시작 / 정상 통과
+- threshold 초과 → OPEN
+- OPEN fast-fail (fn 미호출 확인)
+- OPEN → HALF_OPEN (timeout 경과, monkeypatch)
+- HALF_OPEN probe 성공 → CLOSED
+- HALF_OPEN probe 실패 → OPEN
+- `reset()` CLOSED 강제 전환
+
+### 6.21.4 회귀 기준
+
+- backend pytest **869 → 916 passed (+47)** — 회귀 0건
+- frontend vitest **117 passed** — 변경 없음
+- frontend build 그린
+- alembic upgrade head + compare_metadata diff 0건 (0004_user_preferences 통과)
 
 ## 7. 금지 사항
 

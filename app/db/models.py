@@ -892,6 +892,11 @@ class User(TimestampMixin, Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    preferences: Mapped["UserPreference | None"] = relationship(
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class LoginAuditLog(Base):
@@ -993,3 +998,37 @@ class WatchlistItem(TimestampMixin, Base):
             name="uq_watchlist_items_watchlist_symbol",
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.9 Phase C -- UserPreference (32nd table)
+#
+# One row per user. Stores UI/UX preferences only -- no secrets, no broker
+# fields, no order-side data. notification_preferences_json is persisted
+# as-is and NEVER connected to a live Telegram/Email sender here.
+# default_watchlist_id is a nullable FK; cleared to NULL if the referenced
+# watchlist is deleted (SET NULL on delete).
+# ---------------------------------------------------------------------------
+
+
+class UserPreference(TimestampMixin, Base):
+    __tablename__ = "user_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    default_watchlist_id: Mapped[int | None] = mapped_column(
+        ForeignKey("watchlists.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    default_market: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    default_strategy: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dashboard_layout_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    notification_preferences_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="preferences")
+    default_watchlist: Mapped["Watchlist | None"] = relationship(foreign_keys=[default_watchlist_id])

@@ -293,6 +293,32 @@ Optional Sentry             (app/monitoring/sentry.py)
 - API 500 응답: `{"detail": "internal server error", "request_id": "..."}` — stack trace 미포함
 - frontend: `ErrorBoundary.componentDidCatch` → `console.error` only, 외부 전송 없음
 
+### 3.13 Watchlist Polish + UserPreference + Provider Resilience (v0.9 Phase C)
+
+**Watchlist API 고도화 (`app/api/watchlist_routes.py`):**
+- `PATCH /api/watchlists/{id}` — name 변경 / is_default 토글
+- `DELETE /api/watchlists/{id}` — cascade delete (items 포함)
+- `GET /api/watchlists/{id}/items` — limit / offset / symbol_prefix 필터
+- `PATCH /api/watchlists/{id}/items/{symbol}` — memo 수정
+
+**UserPreference (`app/db/models.py`, `app/data/repositories/user_preferences.py`, `app/api/preferences_routes.py`):**
+- 32번째 테이블 `user_preferences` — user당 1행 (UNIQUE user_id)
+- `default_watchlist_id` nullable FK → watchlists.id (ON DELETE SET NULL)
+- `dashboard_layout_json`, `notification_preferences_json` — 저장 전용, 실제 발송 없음
+- `GET /api/users/me/preferences` — lazy-create 후 반환
+- `PUT /api/users/me/preferences` — 전체 교체; watchlist 소유권 검증
+- `user_id`는 request body에서 받지 않음 (토큰 / dev fallback 기반)
+
+**Provider Resilience (`app/data/provider_resilience.py`):**
+```text
+ProviderCallResult        — 성공/실패 래퍼 (value / error_kind / error_message / attempts)
+ProviderErrorKind         — TIMEOUT / RATE_LIMIT / SERVER_ERROR / CLIENT_ERROR / UNKNOWN
+retry_with_backoff()      — 최대 N회 + 지수 백오프 (CLIENT_ERROR는 재시도 건너뜀)
+CircuitBreaker            — CLOSED → OPEN → HALF_OPEN → CLOSED 상태 전이
+```
+- 실제 KIS / DART / RSS 호출 0건 (opt-in skeleton; 기존 provider 강제 적용 없음)
+- DB 스키마 변경 없음 (Alembic: 0004_user_preferences만 추가)
+
 ## 4. Import Pipeline (v0.4)
 
 운영자가 직접 작성한 메타데이터 CSV 를 시스템에 적재하는 read-only 파이프라인.

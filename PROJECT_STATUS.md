@@ -57,6 +57,73 @@ Watchlist API 고도화(PUT rename/DELETE list/default/memo) + UserPreference(32
 - ❌ Telegram 실 발송 (DRY_RUN 기본 유지)
 - ❌ 평문 IP / 평문 password 저장
 
+### v0.9 Phase A 결과 (요약) — 보안 강화
+
+- 마감 게이트: backend pytest **869 passed** (1 deselected)
+- 산출 태그: `v0.9-security-hardening`
+
+산출물:
+- `slowapi` rate limit 미들웨어 (`RATE_LIMIT_ENABLED` env toggle)
+- `SecurityHeadersMiddleware` (HSTS / X-Frame-Options / CSP / Referrer-Policy 등 7종)
+- `LoginAuditLog` 기반 brute force protection (`AUTH_BRUTEFORCE_ENABLED` toggle, 10회/10분 window, IP SHA256 해시)
+- `Settings` 4 필드 추가 (`rate_limit_enabled` / `security_headers_enabled` / `auth_bruteforce_enabled` / `auth_max_login_attempts`)
+- 통합 테스트 8종 신규 (rate limit / security headers / brute force / auth security count)
+- 모든 기존 테스트 회귀 0건
+
+### v0.9 Phase B 결과 (요약) — 운영 모니터링
+
+- 마감 게이트: backend pytest **869 passed** (1 deselected) (순증 없음 — 모니터링 배선 테스트는 Phase A 기존 smoke 재활용)
+- 산출 태그: `v0.9-monitoring`
+
+산출물:
+- `sentry-sdk` optional init (`SENTRY_ENABLED` / `SENTRY_DSN` env, PII scrub `send_default_pii=False`)
+- `StructuredLogFilter` JSON 포맷 + PII 필드 자동 마스킹 (`LOG_FORMAT=json` env)
+- React `ErrorBoundary` 컴포넌트 — 프런트엔드 JS 에러 시각화
+- `GET /api/health` 상세 응답 확장 (uptime_seconds / db_connected / version)
+- `Settings` 3 필드 추가 (`sentry_enabled` / `sentry_dsn` / `log_format`)
+
+### v0.9 Phase C 결과 (요약) — Watchlist 고도화 + UserPreference + Provider 회복성
+
+- 마감 게이트: backend pytest **916 passed** (1 deselected) — 47건 순증
+- 산출 태그: `v0.9-watchlist-api` (예정)
+- frontend / e2e / build 변경 0건 (Phase C 는 백엔드만; 프런트 관리 UI 는 Phase D)
+
+산출물:
+
+**Watchlist API 고도화 (4 신규 엔드포인트)**
+- `PATCH /api/watchlists/{id}` — rename / set_default (기존 default 자동 demote)
+- `DELETE /api/watchlists/{id}` — watchlist 자체 삭제 (items cascade)
+- `GET /api/watchlists/{id}/items` — 페이지네이션 + symbol_prefix 필터 (total/items/limit/offset)
+- `PATCH /api/watchlists/{id}/items/{symbol}` — memo 수정 / null 로 초기화
+
+**UserPreference — 32번째 테이블**
+- `UserPreference` ORM 모델: `default_watchlist_id` FK (`ondelete="SET NULL"`) / `default_market` / `default_strategy` / `dashboard_layout_json` / `notification_preferences_json`
+- Alembic revision `0004_user_preferences` (down_revision `0003_watchlist`, `compare_metadata` diff 0건)
+- `UserPreferenceRepository`: `get_or_create_for_user` / `update` (sentinel partial) / `set_default_watchlist` / `update_dashboard_layout` / `update_notification_preferences`
+- `GET /api/users/me/preferences` — lazy create on first call
+- `PUT /api/users/me/preferences` — watchlist ownership 검증, 비밀 키 rejection (422)
+- cross-user isolation: 모든 신규 엔드포인트 타 유저 자원 → 404 (403 not 404 — existence 비노출)
+
+**Provider 회복성 skeleton**
+- `ProviderErrorKind` str enum (TIMEOUT / RATE_LIMIT / SERVER_ERROR / CLIENT_ERROR / UNKNOWN)
+- `ProviderCallResult` dataclass (`.ok()` / `.fail()` class methods)
+- `retry_with_backoff()` — exponential backoff (`base_delay_s * 2^(attempt-1)`, `max_delay_s` cap), `CLIENT_ERROR` 비재시도
+- `CircuitBreaker` dataclass — CLOSED → OPEN (N failures) → HALF_OPEN (timeout) → CLOSED (probe 성공) / OPEN (probe 실패)
+- 실 provider 강제 래핑 0건 (opt-in skeleton)
+
+**보안 / forbidden field 가드**
+- 모든 신규 API 응답에 password / password_hash / access_token / jwt_secret / secret / broker / account / quantity / order_price / order_type / side / source_file_path **0건** 검증 완료
+- `notification_preferences_json` 에 비밀 키 포함 시 422 반환
+
+**테스트**
+- `tests/integration/test_watchlist_phase_c.py` 20건 신규
+- `tests/integration/test_user_preferences.py` 17건 신규 (repository 7 + API GET/PUT 5 + auth required 2 + forbidden field guard 2 + secret key rejection 1)
+- `tests/unit/test_provider_resilience.py` 19건 신규 (retry 9 + circuit breaker 10)
+- `test_alembic_migration.py`: HEAD_REVISION `0004_user_preferences`, EXPECTED_TABLE_COUNT 32
+- `test_auth_security.py`: mutating endpoint count 9 (auth 2 + watchlist 6 + preferences 1)
+
+**Alembic head:** `0003_watchlist` → `0004_user_preferences`, `compare_metadata` diff 0건
+
 ---
 
 ## 0-1. v0.8 마감 선언 — User & Migration Foundation (강등됨)

@@ -1,21 +1,22 @@
 # DB_SCHEMA.md
 
-> 본 문서는 **v0.8 Phase C 시점** 기준이다 (`v0.7-final` 위에 Alembic baseline
-> + auth foundation + watchlist 도입 완료). 누적 31 테이블 (v0.1 17 + v0.4 6 +
-> v0.6 2 + v0.7 2 + v0.8 4). 자동매매 / 주문 / 계좌 / 가격 / 수량 컬럼 0건
-> 정책 그대로 유지. v0.8 Phase B 가 도입한 `users.password_hash` 는 scrypt
-> 해시만 저장 (평문 0건). `login_audit_logs.source_ip_hash` /
-> `user_agent_hash` 는 SHA256 해시만 저장 (평문 IP / user agent 0건). v0.8
-> Phase C 의 `watchlist_items` 는 broker / account / quantity / order_* /
-> source_file_path 컬럼 0건 (favourite 만, 주문 아님 — `WatchlistItem.__table__`
-> 컬럼 가드 단언이 회귀 방지).
+> 본 문서는 **v0.9 Phase C 시점** 기준이다 (`v0.8-final` 위에 Alembic baseline
+> + auth foundation + watchlist + user_preferences 도입 완료). 누적 **32 테이블**
+> (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1). 자동매매 / 주문 /
+> 계좌 / 가격 / 수량 컬럼 0건 정책 그대로 유지. v0.8 Phase B 가 도입한
+> `users.password_hash` 는 scrypt 해시만 저장 (평문 0건).
+> `login_audit_logs.source_ip_hash` / `user_agent_hash` 는 SHA256 해시만 저장
+> (평문 IP / user agent 0건). v0.8 Phase C 의 `watchlist_items` 는 broker /
+> account / quantity / order_* / source_file_path 컬럼 0건. v0.9 Phase C 의
+> `user_preferences` 도 password / secret / broker / 주문 컬럼 0건.
 >
 > **v0.8 부터 Alembic 으로 관리한다.** 27 테이블의 baseline revision 은
 > `alembic/versions/0001_baseline_v0_7.py`. 이후 모든 ORM 변경은 신규 revision
-> 으로 추가한다 (manual ALTER 금지). 운영 DB 절차 / stamp / upgrade / 롤백은
-> [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) §17 참조. CI 는
-> `tests/integration/test_alembic_migration.py` 가 `compare_metadata` diff 0건을
-> 강제 — ORM 변경이 revision 없이 머지되면 CI 가 즉시 실패한다.
+> 으로 추가한다 (manual ALTER 금지). 현재 head: `0004_user_preferences`. 운영 DB
+> 절차 / stamp / upgrade / 롤백은 [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md)
+> §17 참조. CI 는 `tests/integration/test_alembic_migration.py` 가
+> `compare_metadata` diff 0건을 강제 — ORM 변경이 revision 없이 머지되면 CI 가
+> 즉시 실패한다.
 
 v0.1 데이터베이스 스키마 초안이다.
 
@@ -786,3 +787,33 @@ order_price / order_type / side / buy_price / sell_price 컬럼 0건** — Watch
 > 적용된 상태라면 `alembic upgrade head` 가 0003 만 실제 실행
 > (INTEGRATION_RUNBOOK §17.5 절차). 다운그레이드 (`alembic downgrade -1`) 는
 > watchlists / watchlist_items 만 drop, auth 테이블은 보존.
+
+## 32. user_preferences (v0.9 Phase C)
+
+사용자별 UI 설정 + 기본 watchlist 포인터. **password / secret / broker / account /
+quantity / order_* 컬럼 0건** (설정 스토리지이지 주문/인증이 아님).
+
+| 컬럼 | 설명 |
+|---|---|
+| id | PK autoincrement |
+| user_id | FK → users.id NOT NULL, unique (사용자당 1행), index |
+| default_watchlist_id | FK → watchlists.id `ON DELETE SET NULL` nullable — watchlist 삭제 시 자동 NULL |
+| default_market | String(32) nullable — 선호 시장 (예: "KOSPI", "NASDAQ") |
+| default_strategy | String(64) nullable — 선호 전략명 |
+| dashboard_layout_json | JSON nullable — 프런트 대시보드 레이아웃 |
+| notification_preferences_json | JSON nullable — 알림 설정 (비밀 키 포함 시 API 422 반환) |
+| created_at / updated_at | TimestampMixin |
+
+**Unique**: `user_id` (컬럼 `unique=True` — 사용자당 정확히 1행).
+**Index**: `user_id` unique index (`ix_user_preferences_user_id`).
+
+**FK 정책**:
+- `user_id` → `users.id` — 사용자 삭제 시 설정도 삭제 (cascade via ORM)
+- `default_watchlist_id` → `watchlists.id` `ON DELETE SET NULL` — watchlist 삭제 시 FK 자동 NULL (설정 행 보존)
+
+> **운영 환경 마이그레이션 (v0.9 Phase C)**: Alembic revision `0004_user_preferences`
+> 가 테이블 1개 생성. `0003_watchlist` 위에 layering —
+> `alembic upgrade head` 한 번이면 적용. `compare_metadata` diff 0건 (CI 강제).
+> 다운그레이드 (`alembic downgrade -1`) 는 `user_preferences` 만 drop, watchlist 테이블은 보존.
+>
+> **헤더 갱신**: DB_SCHEMA.md 헤더의 누적 테이블 수는 **32** (v0.9 Phase C 에서 +1).
