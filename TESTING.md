@@ -11,7 +11,7 @@
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **614 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 final 558 → v0.7 Phase A 614) |
+| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **652 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 final 558 → v0.7 Phase A 614 → Phase B 652) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **77 passed** (13 파일, jsdom + msw v2) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, vendor-charts 청크 383 kB / gzip 105 kB) |
 | Playwright e2e | `cd frontend && npm run e2e` | **13 passed** (chromium + page.route mock) |
@@ -334,6 +334,61 @@ v0.7 Phase A 는 **순수 함수 backend 로직** 만 추가한다. DB 모델 / 
   `app.db.session` / `app.data.repositories` / KIS / DART / Telegram /
   BrokerInterface 를 import 하지 않는다 — 단위 테스트 환경에서 외부 자원
   접근 0건이 보장된다.
+
+## 6.13 v0.7 Phase B — Backtest engine + 신규 테이블 2개 + CLI
+
+v0.7 Phase B 는 backend ORM / Repository / engine / CLI 만 추가한다. API 라우터 /
+프런트 / 비용 모델 / 시장 국면 분리는 Phase C·D 로 이연. 외부 호출 / 자동매매 /
+주문 0건.
+
+- `tests/integration/test_backtest_repositories.py` 신규 — **20 케이스**:
+  - ORM metadata (2): `backtest_runs` + `backtest_results` 두 테이블 모두 expected
+    컬럼 set 포함
+  - `BacktestRunRepository` (7): create defaults / get_by_id 존재 / get_by_id 부재 /
+    list_recent run_date desc 정렬 / list_by_strategy 필터 / mark_finished metric
+    일괄 update + status SUCCESS / mark_failed status FAILED + error_message
+  - `BacktestResultRepository` (7): create / bulk_insert N행 / 빈 bulk_insert
+    no-op / list_by_run id asc 정렬 / list_by_symbol 필터 / aggregate_by_run
+    `{action: count}` GROUP BY / aggregate_by_signal_action
+  - Unique constraint (2): `(backtest_run_id, recommendation_id)` 중복 IntegrityError +
+    `recommendation_id=NULL` 중복 허용
+  - cascade delete: BacktestRun 삭제 → BacktestResult 자동 삭제 (sqlite `PRAGMA
+    foreign_keys = ON` 활성화)
+  - relationship: `BacktestRun.results` 자식 로드
+- `tests/integration/test_backtest_engine.py` 신규 — **18 케이스**:
+  - `build_score_snapshot` (3): 정상 (Recommendation + DataSnapshot 결합) / snapshot
+    None / malformed market_context (str / 비-dict 도 raise 0건)
+  - dry-run vs commit (2): dry-run 시 BacktestRun / BacktestResult 0건 / commit
+    시 적재
+  - 3 strategies × happy (3): TopGrade BUY/PASS/AVOID 분포 / HighScore action split
+    / MultiSignal evidence 기반 BUY + win_rate 계산
+  - metrics (4): BUY-only 산식 (PASS row 가 win_rate / avg_return 에 영향 0건) /
+    horizon 별 missing_result_count 가산 / BUY 0건 → win_rate / avg_return /
+    max_drawdown None / max_drawdown 은 BUY rows 의 최솟값 (가장 깊은 excursion)
+  - buy-only 노트: `BacktestRunSummary.notes` 가 `BUY_ONLY_METRICS_NOTE` 와 일치
+  - date filter (1): start_date / end_date 가 `RecommendationRun.run_date` 외부
+    배제
+  - CLI (4): dry-run DB 0건 / commit BacktestRun + Result 적재 /
+    `UnknownStrategyError` 강제 / `main()` smoke (`--db-url` + `--strategy
+    top_grade` exit 0)
+
+핵심 안전 가드:
+
+- `app/backtest/` + `app/strategy/` 어디에도 `requests` / `httpx` / `aiohttp` /
+  `urllib` / KIS 클라이언트 / DART 클라이언트 / Telegram / `BrokerInterface`
+  import 0건 (grep 검증). 외부 자원 호출 0건 보장.
+- `BacktestEngine` 은 read-only — 입력 테이블은 `recommendations` /
+  `recommendation_results` / `data_snapshots` / `recommendation_runs` 만 SELECT,
+  쓰기 대상은 `backtest_runs` / `backtest_results` 두 신규 테이블만.
+- `BacktestResult` 컬럼에 broker / 주문 / 계좌 / 가격 / 수량 컬럼 부재 — Phase A
+  의 `SCORE_SNAPSHOT_FIELDS` 가드 + Phase B 의 ORM 컬럼 set 가드 양쪽으로
+  강제된다.
+- BUY-only 산식은 `_aggregate(rows)` 헬퍼가 `signal_action == BUY` 만 필터한
+  뒤 win_rate / avg_return 계산. PASS / AVOID 는 `*_count` 에는 잡히고 수익률
+  통계에는 미반영. horizon 별 NULL `close_return` 은 그 horizon 의 평균에서
+  제외되고 `missing_result_count_per_horizon[h]` 에 카운트만 가산.
+- `dry_run=True` (default) 에서 `session.commit()` 호출 0건이고 모든 ORM 객체는
+  rollback 으로 사라진다. CLI 는 `--commit` 명시 없으면 자동 rollback.
 
 ## 7. 금지 사항
 

@@ -770,3 +770,75 @@ Invoke-WebRequest "http://127.0.0.1:8000/api/calendar/earnings?from_date=2026-05
 - `EarningsEventSchema.memo` 는 500자 초과 시 라우터에서 자동 truncate.
 - 자동매매 / 주문 / 신규 POST 라우터 / DART 자동 호출 / Telegram 자동 발송 0건
   유지 (정책 v0.1 ~ v0.5 동일).
+
+## 16. 백테스트 CLI 운영 (v0.7 Phase B)
+
+`scripts/run_backtest.py` 는 v0.7 Phase A 의 `StrategyInterface` 구현체를 과거
+`recommendations` + `recommendation_results` 데이터에 적용해서 승률 / 평균
+수익률 / max drawdown 을 계산한다. 외부 API / 텔레그램 / 주문 호출은 0건.
+
+### 16.1 사용 가능한 전략
+
+`app/strategy/registry.py` 의 `KNOWN_STRATEGIES`:
+
+- `top_grade` — `TopGradeStrategy v1.0.0` (grade S/A → BUY, D → AVOID)
+- `high_score` — `HighScoreStrategy v1.0.0` (total_score ≥75 → BUY, ≤35 → AVOID)
+- `multi_signal` — `MultiSignalStrategy v1.0.0` (total≥65 + fundamental≥60 + news≥50 + earnings≥50/None + ¬HIGH risk + ¬RISK_DISCLOSURE → BUY)
+
+### 16.2 기본 dry-run
+
+```powershell
+.\.venv\bin\python.exe -m scripts.run_backtest --strategy top_grade
+```
+
+dry-run 은 DB 저장 0건. 동일 신호 평가 결과를 stdout 으로만 노출한다 — `signal_count`,
+`buy_count` / `pass_count` / `avoid_count`, `win_rate_*` / `avg_return_*` /
+`max_drawdown`, horizon 별 `missing_result_count`.
+
+### 16.3 commit (BacktestRun + BacktestResult 적재)
+
+```powershell
+.\.venv\bin\python.exe -m scripts.run_backtest --strategy multi_signal `
+    --from-date 2026-04-01 --to-date 2026-05-04 --commit
+```
+
+`--commit` 시:
+- `backtest_runs` 1행 추가 (status `SUCCESS` 또는 `FAILED`)
+- `backtest_results` N행 추가 (평가된 recommendation 당 1행)
+- 중복 적재 방지: `(backtest_run_id, recommendation_id)` Unique 제약
+
+### 16.4 결과 조회 (read-only API 는 v0.7 Phase D 에서 추가 예정)
+
+Phase B 시점에서는 SQL / Repository 로 직접 확인:
+
+```python
+from app.data.repositories import BacktestRunRepository, BacktestResultRepository
+
+with session_factory() as session:
+    runs = BacktestRunRepository(session).list_recent(limit=10)
+    for run in runs:
+        print(run.strategy_name, run.run_date, run.buy_count, run.win_rate_5d)
+    if runs:
+        rows = BacktestResultRepository(session).list_by_run(runs[0].id)
+        for row in rows[:5]:
+            print(row.symbol, row.signal_action, row.return_5d, row.confidence)
+```
+
+### 16.5 통계 정책 (BUY-only)
+
+`win_rate_*` / `avg_return_*` / `max_drawdown` 은 **BUY 신호만** 대상. PASS /
+AVOID 는 `*_count` 에는 잡히지만 수익률 통계에서 제외된다 (`BUY_ONLY_METRICS_NOTE`
+가 응답 / `summary_json.notes` 에 함께 노출). 한 horizon 의
+`recommendation_results.close_return` 이 NULL 인 BUY 신호는 그 horizon 의
+계산에서 제외되고 `summary_json.missing_result_count_per_horizon[h]` 에 카운트만
+가산 — 전체 run 은 실패하지 않는다.
+
+### 16.6 안전 가드
+
+- `BacktestEngine` / 전략 / CLI 어디에도 `requests` / `httpx` / `aiohttp` /
+  `urllib` / KIS / DART / Telegram / `BrokerInterface` import 0건. 외부 호출
+  0건 보장.
+- 신호 데이터 (`backtest_results`) 에 broker / 주문 / 계좌 / 가격 / 수량 컬럼
+  부재 — `ScoreSnapshot` 단계에서 이미 차단된다.
+- v0.7 신규 테이블 2개 추가 후 누적 ALTER 5건 시점 → v0.8 의 Alembic 도입 진입
+  적기 (운영 DB 마이그레이션 자동화 검토).

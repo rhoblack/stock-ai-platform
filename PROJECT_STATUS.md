@@ -9,7 +9,7 @@
 
 ## 0. v0.7 진행 선언 — Strategy & Backtest Foundation
 
-**v0.7 cycle 진행 중 (Phase A 완료).** 기준선 `v0.6-final`
+**v0.7 cycle 진행 중 (Phase B 완료).** 기준선 `v0.6-final`
 (HEAD `e729d60` 시점, origin/main 동기화 완료, 5 누적 태그
 `v0.6-fundamental-data-layer` → `v0.6-earnings-event-pipeline` →
 `v0.6-fundamental-score` → `v0.6-frontend-fundamentals` → `v0.6-final` 모두
@@ -35,7 +35,7 @@ v0.7 에서도 추가하지 않는다.
 | Phase | 작업 | 상태 | 산출 태그 (예정) |
 |---|---|---|---|
 | A | Strategy interface + 룰 기반 전략 정의 (`StrategyInterface` ABC + `TopGradeStrategy` / `HighScoreStrategy` / `MultiSignalStrategy` + 단위 테스트) | ✅ 완료 | `v0.7-strategy-interface` |
-| B | Backtest engine + 신규 테이블 2개 (`BacktestRun` 26번째 + `BacktestResult` 27번째) + `scripts/run_backtest.py` argparse CLI (default dry-run) + 통합 테스트 | ⏳ | `v0.7-backtest-engine` |
+| B | Backtest engine + 신규 테이블 2개 (`BacktestRun` 26번째 + `BacktestResult` 27번째) + `scripts/run_backtest.py` argparse CLI (default dry-run) + 통합 테스트 | ✅ 완료 | `v0.7-backtest-engine` |
 | C | 비용 모델 (`CostModel` placeholder 0.45% 차감) + 시장 국면별 분리 (`MarketRegimeRepository` 활용) + cost_adjusted_return 컬럼 | ⏳ | `v0.7-backtest-cost-regime` |
 | D | 백엔드 read-only API 3종 (`/api/strategies` + `/api/backtest/runs` + `/api/backtest/runs/{run_id}`) + 프런트 10번째 화면 `/backtest` + Sidebar `백테스트 (β)` 메뉴 | ⏳ | `v0.7-frontend-backtest` |
 | E | `RELEASE_NOTES_v0.7.md` + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE 마감 + tag `v0.7-final` | ⏳ | `v0.7-final` |
@@ -154,6 +154,79 @@ DB 마이그레이션 = `CREATE TABLE backtest_runs ...; CREATE TABLE backtest_r
 - 안전 범위: `app/strategy/` 전 파일에서 `requests`, `httpx`, `aiohttp`, `urllib`,
   KIS 클라이언트, DART 클라이언트, Telegram, `app.db.session`, `app.data.repositories`
   import 0건. `BrokerInterface` 호출 0건.
+
+### v0.7 Phase B 결과 (요약) — Backtest engine + 신규 테이블 2개 + CLI
+
+> Phase B 는 backend 데이터 / 엔진 layer 만 추가. API 라우터 / 프런트 / 비용
+> 모델 / 시장 국면 분리 / scheduler / Telegram / 자동매매 / 외부 호출 0건.
+> CostModel / regime split 은 Phase C 로 이연.
+
+- `app/db/models.py` — `BacktestRun` 신규 (26번째 테이블, TimestampMixin) +
+  `BacktestResult` 신규 (27번째 테이블). `BacktestResult.backtest_run_id` →
+  `backtest_runs.id` ON DELETE CASCADE + `cascade="all, delete-orphan"` relationship.
+  Unique `(backtest_run_id, recommendation_id)` 가드.
+- `app/data/repositories/backtest_runs.py` 신규 — `BacktestRunRepository`:
+  `create` / `get_by_id` / `list_recent` / `list_by_strategy` / `mark_finished`
+  (모든 metric 일괄 update + status SUCCESS) / `mark_failed` (status FAILED +
+  error_message). 상태 상수 `STATUS_DRY_RUN` / `STATUS_SUCCESS` / `STATUS_FAILED`.
+- `app/data/repositories/backtest_results.py` 신규 — `BacktestResultRepository`:
+  `create` / `bulk_insert` (Iterable → flush 한 번) / `list_by_run` / `list_by_symbol` /
+  `aggregate_by_run` (`{action: count}` GROUP BY) / `aggregate_by_signal_action`.
+- `app/data/repositories/__init__.py` — 두 repository export + `__all__` 갱신.
+- `app/strategy/registry.py` 신규 — `STRATEGY_REGISTRY` dict +
+  `KNOWN_STRATEGIES = ("high_score", "multi_signal", "top_grade")` +
+  `UnknownStrategyError(KeyError)` + `get_strategy(name) -> StrategyInterface`.
+  `app/strategy/__init__.py` 가 registry 심볼을 re-export.
+- `app/backtest/__init__.py` + `app/backtest/engine.py` 신규:
+  - `BacktestEngine(session)` — `BacktestRunRepository` + `BacktestResultRepository`
+    composition. 외부 의존성 0건.
+  - `BacktestEngine.run(strategy, start_date=None, end_date=None, dry_run=True,
+    limit=None, run_date=None) -> BacktestRunSummary` — `Recommendation` +
+    `RecommendationRun` + `DataSnapshot` outer join 으로 데이터 fetch →
+    `build_score_snapshot` 으로 `ScoreSnapshot` 빌드 → `strategy.evaluate()` →
+    horizon 1·3·5·20일 `RecommendationResult.close_return` 매칭 → 통계 집계.
+    dry_run=True 면 DB 0건 저장하고 summary 만 반환.
+  - `build_score_snapshot(rec, snapshot)` helper — `Recommendation` row +
+    `DataSnapshot.market_context_json` 의 evidence 4종 (`news_evidence`,
+    `disclosure_risk_evidence`, `fundamental_evidence`, `earnings_evidence`) +
+    `risk_summary.level` / `flags` 를 `ScoreSnapshot` 으로 정규화. malformed JSON
+    (str / list / 비-dict) 에 대해 raise 0건 — 누락 키는 None / 빈 리스트로
+    fallback. **broker / 주문 / 가격 / 수량 필드 0건** (Phase A 의
+    `SCORE_SNAPSHOT_FIELDS` frozenset 가드와 부합).
+  - `BUY_ONLY_METRICS_NOTE` 상수 — "win_rate / avg_return / max_drawdown 은 BUY
+    신호만 대상이고 PASS / AVOID 는 *_count 에만 잡힘" 정책 텍스트가 응답 +
+    `summary_json.notes` 에 함께 노출. horizon 별 NULL 결과는
+    `missing_result_count_per_horizon` 에 카운트만 가산하고 그 horizon 평균에서
+    제외 (전체 run 은 실패하지 않음).
+  - `BacktestRunSummary` (frozen dataclass) — dry_run / commit 양쪽이 동일 schema
+    반환. `as_dict()` 직렬화 helper.
+- `scripts/run_backtest.py` 신규 — argparse CLI. `--strategy` 필수
+  (choices=KNOWN_STRATEGIES) + `--from-date` / `--to-date` (YYYY-MM-DD) /
+  `--commit` (없으면 dry-run rollback) / `--db-url` / `--limit`. `_print_summary` 가
+  signal/buy/pass/avoid count + horizon 별 win_rate/avg_return + max_drawdown +
+  missing_result_count + backtest_run_id + BUY_ONLY_METRICS_NOTE 출력. `main()` 의
+  `UnknownStrategyError` 캐치 → exit 2.
+- `tests/integration/test_backtest_repositories.py` 신규 — **20 케이스**:
+  ORM metadata (2: 두 테이블 모두 expected 컬럼 set 포함) + `BacktestRunRepository`
+  (create defaults / get / list_recent 정렬 / list_by_strategy 필터 /
+  mark_finished metrics 일괄 update / mark_failed = 7) + `BacktestResultRepository`
+  (create / bulk_insert / empty bulk_insert / list_by_run 정렬 / list_by_symbol /
+  aggregate_by_run / aggregate_by_signal_action = 7) + Unique constraint (중복 거부 +
+  NULL recommendation_id 중복 허용 = 2) + cascade delete + relationship 자식 로드 (2).
+- `tests/integration/test_backtest_engine.py` 신규 — **18 케이스**: `build_score_snapshot`
+  (3: 정상 / snapshot 없음 / malformed market_context) + dry-run/commit (2: dry-run
+  DB 0건 / commit BacktestRun + Result 적재) + 3 strategies × happy (3:
+  TopGrade BUY/PASS/AVOID 분포 / HighScore action split / MultiSignal full evidence) +
+  metrics (4: BUY-only 산식 / missing horizon 카운트 / BUY 0건 → None / max_drawdown
+  최솟값) + buy-only 노트 + date filter (1: start/end_date 에 RecommendationRun 외부
+  배제) + CLI (4: dry-run DB 0건 / commit 적재 / unknown strategy `UnknownStrategyError` /
+  `main()` smoke).
+- 회귀: backend pytest **614 → 652 passed (+38)**. frontend / e2e / build 변경
+  0건. ScoringEngine 본 weight 변경 0건. 라우터 / 프런트 / scheduler 0건.
+- 안전 범위: `app/backtest/` + `app/strategy/` 어디에도 `requests` / `httpx` /
+  `aiohttp` / `urllib` / KIS 클라이언트 / DART 클라이언트 / Telegram /
+  `BrokerInterface` import 0건 (grep 검증). `backtest_results` 에 broker / 주문 /
+  계좌 / 가격 / 수량 컬럼 부재.
 
 ### v0.7 누적 태그 (예정)
 

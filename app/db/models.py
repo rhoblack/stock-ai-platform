@@ -750,3 +750,98 @@ class EarningsEvent(TimestampMixin, Base):
             name="uq_earnings_events_symbol_event",
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.7 Phase B -- Strategy & Backtest Foundation
+#
+# BacktestRun is one execution of a single strategy over a date range.
+# BacktestResult is one signal (BUY/PASS/AVOID) plus the recommendation_results
+# horizon returns it was paired with. Win-rate / avg-return statistics are
+# scoped to BUY signals only -- PASS / AVOID are counted but excluded from
+# return aggregates (see BacktestEngine docstring).
+#
+# These tables are write targets for app/backtest/engine.py and read targets
+# for the (Phase D) read-only API. They never reference broker / order-side
+# fields.
+# ---------------------------------------------------------------------------
+
+
+class BacktestRun(TimestampMixin, Base):
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    strategy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    signal_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    buy_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avoid_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pass_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    win_rate_1d: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    win_rate_3d: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    win_rate_5d: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    win_rate_20d: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    avg_return_1d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    avg_return_3d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    avg_return_5d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    avg_return_20d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    max_drawdown: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRY_RUN")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    results: Mapped[list["BacktestResult"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class BacktestResult(Base):
+    __tablename__ = "backtest_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    backtest_run_id: Mapped[int] = mapped_column(
+        ForeignKey("backtest_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    recommendation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recommendations.id"),
+        nullable=True,
+    )
+    recommendation_result_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recommendation_results.id"),
+        nullable=True,
+    )
+    signal_action: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    grade: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    total_score: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    return_1d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    return_3d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    return_5d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    return_20d: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    max_drawdown: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    result_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    run: Mapped[BacktestRun] = relationship(back_populates="results")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "backtest_run_id",
+            "recommendation_id",
+            name="uq_backtest_results_run_recommendation",
+        ),
+    )

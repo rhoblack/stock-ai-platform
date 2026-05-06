@@ -24,6 +24,12 @@ from app.strategy.interfaces import (
     StrategyInterface,
     StrategySignal,
 )
+from app.strategy.registry import (
+    KNOWN_STRATEGIES,
+    STRATEGY_REGISTRY,
+    UnknownStrategyError,
+    get_strategy,
+)
 from app.strategy.rule_based import (
     HighScoreStrategy,
     MultiSignalStrategy,
@@ -32,14 +38,18 @@ from app.strategy.rule_based import (
 
 __all__ = [
     "HighScoreStrategy",
+    "KNOWN_STRATEGIES",
     "MultiSignalStrategy",
     "SCORE_SNAPSHOT_FIELDS",
     "STRATEGY_ACTIONS",
     "STRATEGY_ACTION_AVOID",
     "STRATEGY_ACTION_BUY",
     "STRATEGY_ACTION_PASS",
+    "STRATEGY_REGISTRY",
     "ScoreSnapshot",
     "StrategyInterface",
     "StrategySignal",
     "TopGradeStrategy",
+    "UnknownStrategyError",
+    "get_strategy",
 ]

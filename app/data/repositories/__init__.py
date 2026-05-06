@@ -1,6 +1,8 @@
 """Repository implementations for DB-backed persistence."""
 
 from app.data.repositories.analyst_reports import AnalystReportRepository
+from app.data.repositories.backtest_results import BacktestResultRepository
+from app.data.repositories.backtest_runs import BacktestRunRepository
 from app.data.repositories.daily_prices import DailyPriceRepository
 from app.data.repositories.decision_logs import DecisionLogRepository
 from app.data.repositories.earnings_events import EarningsEventRepository
@@ -34,6 +36,8 @@ from app.data.repositories.theme_stock_mappings import ThemeStockMappingReposito
 
 __all__ = [
     "AnalystReportRepository",
+    "BacktestResultRepository",
+    "BacktestRunRepository",
     "DataSnapshotRepository",
     "DailyPriceRepository",
     "DecisionLogRepository",
