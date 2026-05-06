@@ -497,6 +497,63 @@ v0.7 Phase D 는 read-only API 3종 + 프런트 10번째 화면만 추가한다.
 - 새로 추가된 evidence_json 등 dict 응답에서도 `_assert_no_source_file_path`
   recursive 가드가 그대로 작동.
 
+## 6.16 v0.8 Phase A — Alembic baseline migration 테스트
+
+`tests/integration/test_alembic_migration.py` (16 케이스). v0.7-final 시점의
+27 테이블을 baseline 으로 등록한 Alembic 도입을 검증한다. 모든 테스트는
+`tmp_path` 의 임시 SQLite 만 사용 — 운영 / 개발 DB 0건 접근.
+
+검증 항목:
+
+- **`test_baseline_revision_exists_and_is_head`** — `0001_baseline_v0_7` 가
+  `ScriptDirectory.get_heads()` 의 단일 head. `down_revision` 은 `None`. 후속
+  Phase B/C 에서 head 가 `0002_user_audit` / `0003_watchlist` 로 바뀔 때마다
+  본 단언이 명시적으로 갱신되어야 한다 (회귀 신호).
+- **`test_upgrade_head_creates_all_27_tables`** — 빈 SQLite 에 
+  `command.upgrade(cfg, "head")` → `inspect(engine).get_table_names()` 가
+  `alembic_version` + 27 ORM 테이블 정확히 28개. 카운트 + 핵심 spot-check
+  9 테이블 (stocks / recommendations / recommendation_results / analyst_reports /
+  news_items / fundamental_snapshots / earnings_events / backtest_runs /
+  backtest_results) 명시 단언.
+- **`test_alembic_version_table_stamped_at_baseline`** — upgrade 후
+  `MigrationContext.get_current_revision()` == `0001_baseline_v0_7`.
+- **`test_compare_metadata_after_upgrade_is_empty`** (load-bearing) —
+  `compare_metadata(ctx, Base.metadata)` 결과가 빈 list. ORM 변경이 revision
+  없이 머지되면 본 테스트가 즉시 실패. `compare_type=True` /
+  `compare_server_default=True` 로 type 차이도 잡는다.
+- **`test_stamp_marks_existing_db_at_baseline_without_running_ddl`** —
+  운영 DB stamp 시나리오: `Base.metadata.create_all()` 로 기존 27 테이블 적재
+  → `command.stamp(cfg, "0001_baseline_v0_7")` → 기존 테이블 모두 보존 +
+  `alembic_version` 신규 + revision = baseline. INTEGRATION_RUNBOOK §17.3 의
+  실제 운영 절차를 그대로 검증.
+- **`test_downgrade_base_cleanly_drops_all_baseline_tables`** — upgrade →
+  downgrade base 후 27 테이블 전부 drop. `alembic_version` 만 남음 (alembic
+  설계상 정상). 운영 환경에서는 사용 금지지만 dev / 검증용 round-trip 보장.
+- **`test_offline_mode_emits_sql_without_connecting`** — 
+  `command.upgrade(cfg, "head", sql=True)` 가 `CREATE TABLE stocks` /
+  `backtest_runs` 등 SQL 을 stdout 출력 + DB 파일 생성 0건. 
+  INTEGRATION_RUNBOOK §17.5 의 "운영 적용 전 SQL 미리 검토" 패턴 보장.
+- **`test_spot_check_each_required_table_present`** (parametrize 9) —
+  spot-check 9 테이블 각각 개별 케이스로 분리. baseline 누락 시 어떤 테이블이
+  빠졌는지 focused 메시지로 즉시 파악 가능.
+
+안전 가드:
+
+- 모든 케이스가 `tmp_path` 의 임시 SQLite 사용 — `stock_ai_kis_check.db` /
+  `stock_ai.db` / 운영 DB 접근 0건.
+- 외부 API / KIS / DART / Telegram 호출 0건.
+- POST 라우터 / 자동매매 / Broker / Watchlist 코드 호출 0건 — Phase A 는
+  인프라 (Alembic) 만 도입.
+- `app.db.models.Base.metadata` 만 import — 다른 cycle 의 ORM 모델 변경 시에도
+  자동 추적 (compare_metadata 가 잡는다).
+
+회귀 기준:
+
+- backend pytest **682 → 698 passed (+16)** (1 deselected 그대로).
+- 신규 alembic verification step (`alembic upgrade head` against ephemeral
+  SQLite) 도 CI backend 잡에 추가 — 본 pytest 16 케이스 외에 별도 fast
+  signal.
+
 ## 7. 금지 사항
 
 테스트에서 절대 금지:

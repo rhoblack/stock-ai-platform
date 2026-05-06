@@ -802,19 +802,21 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - ❌ WebSocket / SSE — 폴링 그대로
 - ❌ Recommendations / Backtest / Today 산식 변경 — 즐겨찾기는 표시/필터만
 
-### Phase A — Alembic baseline 도입
+### Phase A — Alembic baseline 도입 ✅ 인수
 
-- [ ] `alembic.ini` 신규 (script_location / file_template / sqlalchemy.url placeholder)
-- [ ] `alembic/env.py` 신규 — `target_metadata = app.db.models.Base.metadata` + `Settings.database_url` 분기 + offline mode SQL 출력 지원
-- [ ] `alembic/script.py.mako` 신규 (표준 템플릿)
-- [ ] `alembic/versions/0001_baseline_v0_7.py` 신규 — 27 테이블 baseline (`op.create_table()` 27건, autogenerate 결과)
-- [ ] `scripts/migrate.py` 신규 — `alembic upgrade/downgrade/current/stamp` argparse wrapper
-- [ ] `tests/integration/test_alembic_migration.py` 신규 — 임시 SQLite 에 `alembic upgrade head` → ORM metadata 비교 (compare_metadata diff 0건 단언) + `alembic stamp 0001_baseline_v0_7` 시나리오 + downgrade -1 시나리오
-- [ ] `requirements.txt` — `alembic>=1.13` 추가
-- [ ] `.github/workflows/ci.yml` — alembic 검증 step 추가 (backend pytest 잡 내부)
-- [ ] `INTEGRATION_RUNBOOK.md` §17 신규 — 운영 DB Alembic 적용 절차 (backup → stamp → upgrade → smoke → rollback)
-- 안전 범위: 라우터 0건, frontend 0건, 신규 테이블 0건 (baseline 만), 외부 호출 0건. 운영 DB 변경 0건 (운영자 수동 실행 시점에만 적용)
-- 완료 기준: backend pytest **682 → ~692 (+~10)**, 회귀 0건. autogenerate diff 0건 단언 통과. 태그 `v0.8-alembic-baseline`.
+- [x] `alembic.ini` 신규 — script_location / file_template / `path_separator = os` / sqlalchemy.url 비워둠 (env.py 가 Settings 에서 결정)
+- [x] `alembic/env.py` 신규 — `target_metadata = app.db.models.Base.metadata` + `_resolve_database_url()` 가 `-x url=...` > `alembic.ini` > `Settings.effective_database_url` 순으로 해석. SQLite 시 `render_as_batch=True`. `compare_type=True` + `compare_server_default=True`. offline / online 모두 지원
+- [x] `alembic/script.py.mako` 신규 (표준 템플릿)
+- [x] `alembic/versions/0001_baseline_v0_7.py` 신규 — autogenerate 로 생성한 27 테이블 baseline (`op.create_table()` 27건 + 인덱스 / FK / Unique 모두 포함, `op.drop_table()` 27건 역순). Phase A 정책 명시 docstring (신규 DB / stamp / 운영 절차 / autogenerate 검증 origin)
+- [x] `scripts/migrate.py` 신규 — `alembic` thin wrapper (`current` / `history` / `heads` / `upgrade --to` / `downgrade --to` / `stamp --revision` / `offline-sql --to`). `--db-url` override + `--ini` 경로 옵션
+- [x] `tests/integration/test_alembic_migration.py` 신규 — **16 케이스** (head 단일 / upgrade head + 27 테이블 + spot-check 9 / alembic_version 스탬프 / compare_metadata diff 0건 / stamp 시나리오 (Base.metadata.create_all 후) / downgrade base / offline-sql + DB 미생성 / parametrize spot-check 9). 모든 케이스가 `tmp_path` 임시 DB 만 사용
+- [x] `pyproject.toml` — `alembic>=1.13,<2.0` 추가 (psycopg2-binary 와 SQLAlchemy 사이)
+- [x] `.github/workflows/ci.yml` — backend 잡 내부 `alembic -x url=sqlite:///$RUNNER_TEMP/ci_alembic_smoke.db upgrade head` step 추가 (pytest 직전 fast signal)
+- [x] `INTEGRATION_RUNBOOK.md` §17 신규 — 8 sub-section (alembic 골격 / 신규 DB 초기화 / 기존 운영 DB stamp / Phase B 후속 revision 추가 / 운영 DB upgrade / 실패 롤백 원칙 / Settings 정합성 / 안전 가드)
+- [x] `DB_SCHEMA.md` 상단 — "v0.8 부터 Alembic 으로 관리한다" 명시 + baseline revision 경로 + INTEGRATION_RUNBOOK §17 link + CI compare_metadata 가드 안내
+- [x] `TESTING.md` §6.16 신규 — Alembic migration 테스트 16 케이스 상세 + 안전 가드 + 회귀 기준 (682 → 698)
+- 안전 범위: 라우터 0건, frontend 0건, 신규 테이블 0건 (baseline 만), 외부 호출 0건. 운영 DB 변경 0건 (운영자 수동 실행 시점에만 적용). DB 모델 / ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine / CostModel / regime_split 변경 0건. POST / PUT / DELETE 라우터 0건
+- 완료 기준: backend pytest **682 → 698 passed (+16)**, autogenerate diff 0건 단언 통과, alembic upgrade head + downgrade base + stamp 시나리오 모두 그린, 회귀 0건. 태그 `v0.8-alembic-baseline`.
 
 ### Phase B — 단일 사용자 인증 기반
 

@@ -1,8 +1,16 @@
 # DB_SCHEMA.md
 
-> 본 문서는 **v0.7 마감 시점** 기준이다 (`v0.7-frontend-backtest` 누적,
-> `v0.7-final` 마감 예정). 누적 27 테이블 (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2)
-> 모두 반영. 자동매매 / 주문 / 계좌 / 가격 / 수량 컬럼 0건 정책 그대로 유지.
+> 본 문서는 **v0.8 Phase A 시점** 기준이다 (`v0.7-final` 위에 Alembic baseline
+> 도입 완료, Phase B/C 신규 테이블은 아직 없음). 누적 27 테이블 (v0.1 17 +
+> v0.4 6 + v0.6 2 + v0.7 2) 그대로. 자동매매 / 주문 / 계좌 / 가격 / 수량 컬럼
+> 0건 정책 그대로 유지.
+>
+> **v0.8 부터 Alembic 으로 관리한다.** 27 테이블의 baseline revision 은
+> `alembic/versions/0001_baseline_v0_7.py`. 이후 모든 ORM 변경은 신규 revision
+> 으로 추가한다 (manual ALTER 금지). 운영 DB 절차 / stamp / upgrade / 롤백은
+> [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) §17 참조. CI 는
+> `tests/integration/test_alembic_migration.py` 가 `compare_metadata` diff 0건을
+> 강제 — ORM 변경이 revision 없이 머지되면 CI 가 즉시 실패한다.
 
 v0.1 데이터베이스 스키마 초안이다.
 

@@ -54,6 +54,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # v0.8 Phase A — Alembic baseline verification.
+      # Runs against an ephemeral SQLite database (RUNNER_TEMP) so the CI
+      # never touches the operational DB. The baseline test inside the pytest
+      # suite also covers `compare_metadata` zero-diff against the ORM, but
+      # this top-level command provides a fast standalone signal in CI logs
+      # before the full suite runs.
+      - name: Alembic upgrade head (ephemeral SQLite)
+        run: |
+          python -m alembic -x url=sqlite:///"$RUNNER_TEMP/ci_alembic_smoke.db" upgrade head
+
       - name: pytest
         run: pytest -q
 

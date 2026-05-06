@@ -912,3 +912,159 @@ Invoke-WebRequest http://127.0.0.1:8000/api/backtest/runs/42 | Select-Object -Ex
   부재 — `ScoreSnapshot` 단계에서 이미 차단된다.
 - v0.7 신규 테이블 2개 추가 후 누적 ALTER 5건 시점 → v0.8 의 Alembic 도입 진입
   적기 (운영 DB 마이그레이션 자동화 검토).
+
+## 17. Alembic 운영 절차 (v0.8 Phase A)
+
+v0.7-final 시점의 27 테이블을 baseline 으로 등록한 Alembic 도입이 v0.8 Phase A
+에서 완료되었다. 본 섹션은 운영 DB 에 baseline 을 적용하고, 이후 Phase B/C
+revision 을 안전하게 layering 하는 절차다.
+
+**핵심 원칙**
+
+- 운영 DB 변경은 항상 백업 → stamp / upgrade → smoke test → 실패 시 백업 복구.
+- `alembic upgrade head` 를 자동화 (cron / CI deploy hook) 하지 않는다 — 운영자
+  명시 실행 시점에만 동작한다.
+- `alembic downgrade` 는 dev / 검증 전용. 운영 환경 롤백은 백업 복구가 원칙.
+- Settings 의 `effective_database_url` 흐름 (DATABASE_URL > SQLITE_DATABASE_URL)
+  을 그대로 따르며, ad-hoc 검증 시에만 `-x url=...` 또는
+  `python -m scripts.migrate ... --db-url=...` 로 1회 override.
+
+### 17.1 alembic 골격 (Phase A 산출)
+
+| 파일 | 역할 |
+|---|---|
+| `alembic.ini` | 설정 (script_location = `alembic/`, sqlalchemy.url 비워둠) |
+| `alembic/env.py` | `app.db.models.Base.metadata` 를 target_metadata 로 사용. URL 은 `-x url=` > `alembic.ini` > `Settings.effective_database_url` 순으로 결정. SQLite 시 `render_as_batch=True` |
+| `alembic/script.py.mako` | revision 템플릿 |
+| `alembic/versions/0001_baseline_v0_7.py` | v0.7-final 27 테이블 baseline |
+| `scripts/migrate.py` | `alembic` 의 thin wrapper CLI (current / history / heads / upgrade / downgrade / stamp / offline-sql) |
+| `tests/integration/test_alembic_migration.py` | upgrade head + compare_metadata 0건 + stamp / downgrade / offline-sql 검증 (16 케이스) |
+
+### 17.2 신규 DB 초기화 (개발 / CI / 신규 운영)
+
+빈 DB 에 처음 적재할 때:
+
+```bash
+# (1) Settings 가 가리키는 DB 에 27 테이블 baseline 생성
+python -m scripts.migrate upgrade --to head
+
+# (2) 현재 revision 확인
+python -m scripts.migrate current
+
+# (3) (개발용) mock seed 적재 — 17.x 의 seed_mock_data.py 절차 그대로
+python -m scripts.seed_mock_data
+```
+
+`alembic upgrade head` 는 baseline (`0001_baseline_v0_7`) 을 즉시 적용하며,
+이후 Phase B/C 에서 추가될 revision 도 한 번에 따라간다. `alembic_version`
+테이블이 자동 생성되어 head revision 이 기록된다.
+
+### 17.3 기존 운영 DB stamp 절차 (이미 27 테이블이 있는 경우)
+
+v0.7-final 까지 운영자는 `Base.metadata.create_all()` 또는 mock seed 로 DB 를
+구성했다. 이미 27 테이블이 있는 운영 DB 에 `alembic upgrade head` 를 그대로
+실행하면 `CREATE TABLE` 충돌이 난다. 절차는 stamp 다.
+
+```bash
+# (0) 반드시 백업 먼저
+cp ./stock_ai_kis_check.db ./stock_ai_kis_check.db.backup_$(date +%Y%m%d_%H%M%S)
+
+# (1) 현재 DB 스키마와 baseline 정합성 확인 (drift 가 있으면 v0.7-final 이 아님 — 중단)
+python -m scripts.migrate offline-sql --to head | head -20
+
+# (2) baseline 으로 stamp — alembic_version 테이블만 새로 만들고 DDL 실행 0건
+python -m scripts.migrate stamp --revision 0001_baseline_v0_7
+
+# (3) 현재 revision 확인 — 0001_baseline_v0_7 출력
+python -m scripts.migrate current
+
+# (4) Phase B/C 의 후속 revision 만 적용 (현 시점에는 head 와 baseline 이 같으므로 no-op)
+python -m scripts.migrate upgrade --to head
+```
+
+stamp 는 DDL 을 0건 실행하고 `alembic_version` 테이블에 baseline revision id
+를 기록만 한다. 이후 추가될 Phase B (`0002_user_audit`) 와 Phase C
+(`0003_watchlist`) revision 은 `upgrade head` 시 비-baseline 차이만 적용한다.
+
+### 17.4 Phase B 이후 revision 추가 절차 (v0.8 후속 Phase)
+
+Phase B/C 작업자가 새 ORM 모델 (User / LoginAuditLog / Watchlist /
+WatchlistItem) 을 추가한 뒤:
+
+```bash
+# (1) ORM 변경 후 autogenerate revision 생성
+#     (--rev-id 는 Phase B = 0002_user_audit / Phase C = 0003_watchlist 권장)
+python -m alembic revision --autogenerate -m "user + login_audit_logs" --rev-id 0002_user_audit
+
+# (2) 생성된 alembic/versions/0002_user_audit.py 를 검토 (autogen 결과를 그대로 사용하지 말 것)
+
+# (3) 임시 DB 에서 round-trip 검증
+python -m alembic -x url=sqlite:///./_revrt.db upgrade head
+python -m alembic -x url=sqlite:///./_revrt.db downgrade -1
+python -m alembic -x url=sqlite:///./_revrt.db upgrade head
+rm ./_revrt.db
+
+# (4) tests/integration/test_alembic_migration.py 가 그대로 그린인지 확인
+pytest tests/integration/test_alembic_migration.py -q
+
+# (5) 운영 DB 적용은 17.5 의 backup → upgrade → smoke 절차로 별도 진행
+```
+
+### 17.5 운영 DB upgrade 절차 (Phase B/C revision 적용)
+
+```bash
+# (0) 백업
+cp ./stock_ai_kis_check.db ./stock_ai_kis_check.db.backup_$(date +%Y%m%d_%H%M%S)
+
+# (1) (선택) 적용될 SQL 미리 검토
+python -m scripts.migrate offline-sql --to head
+
+# (2) 현재 revision 확인
+python -m scripts.migrate current
+
+# (3) upgrade — head 까지 모든 revision 순차 적용
+python -m scripts.migrate upgrade --to head
+
+# (4) smoke test
+pytest -q tests/integration/test_alembic_migration.py
+pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults
+
+# (5) 화면 / API 수동 확인 (Today / Recommendations / 백테스트 4 화면 진입)
+```
+
+### 17.6 실패 시 롤백 원칙
+
+- `alembic upgrade` 가 운영 DB 에서 실패한 경우 → **alembic downgrade 사용 금지**.
+  17.5 (0) 에서 만든 `.backup_YYYYMMDD_HHMMSS` 파일을 그대로 복구한다.
+
+  ```bash
+  mv ./stock_ai_kis_check.db.backup_20260601_103000 ./stock_ai_kis_check.db
+  ```
+
+- 개발 / dev DB 에서는 `alembic downgrade -1` 또는 `--to base` 가 가능하다 —
+  단, autogenerate 가 잘 처리하지 못한 (예: SQLite 의 일부 ALTER 한계) 경우가
+  있을 수 있어 dev 환경에서도 백업이 권장된다.
+
+- 신규 (빈) DB 에서 실패한 경우 → 단순히 DB 파일 삭제 후 17.2 처음부터 재실행.
+
+### 17.7 Settings / 환경 변수 정합성
+
+- `Settings.effective_database_url` = `DATABASE_URL or SQLITE_DATABASE_URL`.
+- `alembic/env.py` 가 같은 값을 사용 (`-x url=...` override 가 없을 때).
+- `pyproject.toml` 의존성에 `alembic>=1.13,<2.0` 추가됨 — 운영 환경 재배포 시
+  `pip install -e ".[dev]"` 로 같이 깔린다.
+- `.env` 의 `DATABASE_URL` / `SQLITE_DATABASE_URL` 값이 운영 DB 를 가리키는지
+  17.5 진입 전 `python -m scripts.migrate current --db-url ...` 로 1회 명시
+  검증 권장.
+
+### 17.8 안전 가드 (Phase A 시점)
+
+- 운영 DB 자동 migration 호출 0건 — 모든 명령은 운영자 명시 실행.
+- `alembic` / `scripts/migrate.py` 어디에도 KIS / DART / RSS / 뉴스 / Telegram /
+  Broker import 0건. 외부 호출 0건.
+- POST / PUT / DELETE 라우터 추가 0건 (Phase A 는 인프라만).
+- DB 모델 / ScoringEngine / RecommendationEngine / HoldingCheckEngine /
+  BacktestEngine 변경 0건. ORM 27 테이블 그대로.
+- CI 잡은 `RUNNER_TEMP/ci_alembic_smoke.db` 라는 임시 SQLite 만 사용 — 운영
+  DB 0건 접근.
+
