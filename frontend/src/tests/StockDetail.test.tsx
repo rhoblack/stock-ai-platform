@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route } from 'react-router-dom'
 import { renderWithProviders } from './renderWithProviders'
@@ -632,6 +633,235 @@ describe('StockDetailPage', () => {
           screen.getByTestId('stock-detail-earnings-error'),
         ).toBeInTheDocument(),
       { timeout: 4000 },
+    )
+  })
+
+  // -------- v0.8 Phase D — FavoriteButton (star toggle) --------
+  it('renders FavoriteButton inactive when symbol is not in the default watchlist', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/watchlists', () =>
+        HttpResponse.json({
+          watchlists: [
+            {
+              id: 1,
+              name: '관심종목',
+              is_default: true,
+              item_count: 0,
+              created_at: '2026-05-06T00:00:00',
+              updated_at: '2026-05-06T00:00:00',
+            },
+          ],
+        }),
+      ),
+      http.get('*/api/watchlists/1', () =>
+        HttpResponse.json({
+          id: 1,
+          name: '관심종목',
+          is_default: true,
+          item_count: 0,
+          created_at: '2026-05-06T00:00:00',
+          updated_at: '2026-05-06T00:00:00',
+          items: [],
+        }),
+      ),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('favorite-toggle')).toBeInTheDocument(),
+    )
+    const btn = screen.getByTestId('favorite-toggle')
+    expect(btn).toHaveAttribute('data-active', 'false')
+    expect(btn).toHaveAttribute('aria-pressed', 'false')
+    expect(btn).toHaveAttribute('aria-label', '관심종목에 추가')
+  })
+
+  it('renders FavoriteButton active when symbol is in the default watchlist', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/watchlists', () =>
+        HttpResponse.json({
+          watchlists: [
+            {
+              id: 1,
+              name: '관심종목',
+              is_default: true,
+              item_count: 1,
+              created_at: '2026-05-06T00:00:00',
+              updated_at: '2026-05-06T00:00:00',
+            },
+          ],
+        }),
+      ),
+      http.get('*/api/watchlists/1', () =>
+        HttpResponse.json({
+          id: 1,
+          name: '관심종목',
+          is_default: true,
+          item_count: 1,
+          created_at: '2026-05-06T00:00:00',
+          updated_at: '2026-05-06T00:00:00',
+          items: [
+            { id: 1, symbol: '005930', memo: null, created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00' },
+          ],
+        }),
+      ),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() => {
+      const btn = screen.getByTestId('favorite-toggle')
+      expect(btn).toHaveAttribute('data-active', 'true')
+    })
+    const btn = screen.getByTestId('favorite-toggle')
+    expect(btn).toHaveAttribute('aria-pressed', 'true')
+    expect(btn).toHaveAttribute('aria-label', '관심종목에서 제거')
+  })
+
+  it('calls add mutation when clicking inactive FavoriteButton', async () => {
+    let addCalled = false
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/watchlists', () =>
+        HttpResponse.json({
+          watchlists: [
+            { id: 1, name: '관심종목', is_default: true, item_count: 0, created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00' },
+          ],
+        }),
+      ),
+      http.get('*/api/watchlists/1', () =>
+        HttpResponse.json({
+          id: 1, name: '관심종목', is_default: true, item_count: 0,
+          created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00',
+          items: [],
+        }),
+      ),
+      http.post('*/api/watchlists/1/items', () => {
+        addCalled = true
+        return HttpResponse.json({
+          id: 1, symbol: '005930', memo: null,
+          created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00',
+        })
+      }),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('favorite-toggle')).toBeInTheDocument(),
+    )
+
+    await userEvent.click(screen.getByTestId('favorite-toggle'))
+
+    await waitFor(() => expect(addCalled).toBe(true))
+  })
+
+  it('calls remove mutation when clicking active FavoriteButton', async () => {
+    let removeCalled = false
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/watchlists', () =>
+        HttpResponse.json({
+          watchlists: [
+            { id: 1, name: '관심종목', is_default: true, item_count: 1, created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00' },
+          ],
+        }),
+      ),
+      http.get('*/api/watchlists/1', () =>
+        HttpResponse.json({
+          id: 1, name: '관심종목', is_default: true, item_count: 1,
+          created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00',
+          items: [{ id: 1, symbol: '005930', memo: null, created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00' }],
+        }),
+      ),
+      http.delete('*/api/watchlists/1/items/005930', () => {
+        removeCalled = true
+        return HttpResponse.json({ status: 'removed' })
+      }),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('favorite-toggle')).toBeInTheDocument(),
+    )
+
+    await userEvent.click(screen.getByTestId('favorite-toggle'))
+
+    await waitFor(() => expect(removeCalled).toBe(true))
+  })
+
+  it('auto-creates watchlist and adds item when no watchlist exists (first-time click)', async () => {
+    let createCalled = false
+    let addCalled = false
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/watchlists', () =>
+        HttpResponse.json({ watchlists: [] }),
+      ),
+      http.post('*/api/watchlists', () => {
+        createCalled = true
+        return HttpResponse.json({
+          id: 1, name: '관심종목', is_default: true, item_count: 0,
+          created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00',
+        })
+      }),
+      http.post('*/api/watchlists/1/items', () => {
+        addCalled = true
+        return HttpResponse.json({
+          id: 1, symbol: '005930', memo: null,
+          created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00',
+        })
+      }),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('favorite-toggle')).toBeInTheDocument(),
+    )
+
+    await userEvent.click(screen.getByTestId('favorite-toggle'))
+
+    await waitFor(() => expect(createCalled).toBe(true))
+    await waitFor(() => expect(addCalled).toBe(true))
+  })
+
+  it('shows favorite error on 500 when toggling', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/watchlists', () =>
+        HttpResponse.json({
+          watchlists: [
+            { id: 1, name: '관심종목', is_default: true, item_count: 0, created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00' },
+          ],
+        }),
+      ),
+      http.get('*/api/watchlists/1', () =>
+        HttpResponse.json({
+          id: 1, name: '관심종목', is_default: true, item_count: 0,
+          created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00',
+          items: [],
+        }),
+      ),
+      http.post('*/api/watchlists/1/items', () =>
+        HttpResponse.json({ detail: 'server error' }, { status: 500 }),
+      ),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('favorite-toggle')).toBeInTheDocument(),
+    )
+
+    await userEvent.click(screen.getByTestId('favorite-toggle'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('favorite-error')).toBeInTheDocument(),
     )
   })
 

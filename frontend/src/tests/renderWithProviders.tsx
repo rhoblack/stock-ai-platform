@@ -3,6 +3,7 @@ import { render, type RenderOptions } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
+import { AuthProvider } from '@/store/auth'
 
 interface RenderWithProvidersOptions extends Omit<RenderOptions, 'wrapper'> {
   initialEntries?: string[]
@@ -25,7 +26,9 @@ export function renderWithProviders(
     return (
       <QueryClientProvider client={client}>
         <ThemeProvider>
-          <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
+          <AuthProvider>
+            <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
+          </AuthProvider>
         </ThemeProvider>
       </QueryClientProvider>
     )

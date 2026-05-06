@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', () => {
-  test('all 9 sidebar menus are reachable and render their main content', async ({
+  test('all 11 sidebar menus are reachable and render their main content', async ({
     page,
   }) => {
     await page.goto('/')
@@ -39,6 +39,10 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
 
     await nav.getByRole('link', { name: '백테스트 (β)' }).click()
     await expect(page.getByTestId('backtest-strategies')).toBeVisible()
+
+    // v0.8 Phase D — 관심종목
+    await nav.getByRole('link', { name: '관심종목' }).click()
+    await expect(page.getByTestId('watchlist-page')).toBeVisible()
 
     await nav.getByRole('link', { name: '시스템 로그 / 잡' }).click()
     await expect(page.getByTestId('job-row-101')).toBeVisible()
@@ -305,6 +309,79 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     expect(merged).not.toContain('source_file_path')
     expect(merged).not.toContain('order_type')
     expect(merged).not.toContain('quantity')
+  })
+
+  // -------- v0.8 Phase D --------
+
+  test('Login page auto-redirects to /today when auth_enabled=false', async ({
+    page,
+  }) => {
+    await page.goto('/login')
+    // auth_enabled=false (dev_fallback) → immediate redirect to /today
+    await expect(
+      page.getByRole('heading', { name: '오늘의 리포트', level: 2 }),
+    ).toBeVisible()
+    expect(page.url()).toContain('/today')
+    await expect(page.getByTestId('login-form')).toHaveCount(0)
+  })
+
+  test('Watchlist page shows empty state and create form when no watchlists exist', async ({
+    page,
+  }) => {
+    await page.goto('/watchlist')
+    await expect(page.getByTestId('watchlist-page')).toBeVisible()
+    await expect(page.getByTestId('watchlist-list')).toBeVisible()
+    await expect(page.getByTestId('watchlist-list-empty')).toBeVisible()
+    await expect(page.getByTestId('watchlist-create-form')).toBeVisible()
+    // No trading action buttons or forbidden field labels rendered
+    const cta = [/주문\s*(실행|전송|보내기)/, /매수\s*(주문|실행)/, /매도\s*(주문|실행)/]
+    for (const pattern of cta) {
+      await expect(
+        page.locator('button, [role="button"]').filter({ hasText: pattern }),
+      ).toHaveCount(0)
+    }
+    await expect(page.getByText(/broker_name:/)).toHaveCount(0)
+    await expect(page.getByText(/order_type/)).toHaveCount(0)
+  })
+
+  test('Today page renders WatchlistCard (empty by default)', async ({
+    page,
+  }) => {
+    await page.goto('/today')
+    await expect(page.getByTestId('today-watchlist')).toBeVisible()
+    // default fixture returns empty watchlists → empty placeholder
+    await expect(page.getByTestId('today-watchlist-empty')).toBeVisible()
+    // manage link points to /watchlist
+    const manageLink = page.getByTestId('today-watchlist').getByRole('link', { name: '관리 →' })
+    await expect(manageLink).toHaveAttribute('href', '/watchlist')
+  })
+
+  test('StockDetail shows FavoriteButton (inactive, no watchlist)', async ({
+    page,
+  }) => {
+    await page.goto('/stocks/005930')
+    await expect(page.getByTestId('favorite-toggle')).toBeVisible()
+    await expect(page.getByTestId('favorite-toggle')).toHaveAttribute(
+      'data-active',
+      'false',
+    )
+    await expect(page.getByTestId('favorite-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+
+  test('Watchlist page never exposes order / trading fields', async ({
+    page,
+  }) => {
+    await page.goto('/watchlist')
+    await expect(page.getByTestId('watchlist-page')).toBeVisible()
+    await expect(page.getByText(/access_token/)).toHaveCount(0)
+    await expect(page.getByText(/password/)).toHaveCount(0)
+    await expect(page.getByText(/order_type/)).toHaveCount(0)
+    await expect(page.getByText(/order_price/)).toHaveCount(0)
+    await expect(page.getByText(/quantity/i)).toHaveCount(0)
+    await expect(page.getByText(/source_file_path/)).toHaveCount(0)
   })
 
   test('no automation / order UI is exposed anywhere in v0.2 frontend', async ({

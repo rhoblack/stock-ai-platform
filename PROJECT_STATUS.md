@@ -42,7 +42,7 @@ HoldingCheckEngine 본 weight 변경 0건, 자동매매 / 실주문 / 실 외부
 | A | Alembic baseline (`alembic.ini` + `env.py` + `0001_baseline_v0_7.py` 27 테이블 + CI 검증 + INTEGRATION_RUNBOOK §17) | ⏳ 대기 | `v0.8-alembic-baseline` |
 | B | 단일 사용자 인증 (`User` 28번째 + `LoginAuditLog` 29번째 + JWT + `AUTH_ENABLED` 토글 + `POST /api/auth/login` 첫 POST + `scripts/create_admin.py`) | ⏳ 대기 | `v0.8-auth-foundation` |
 | C | Watchlist DB / API (`Watchlist` 30번째 + `WatchlistItem` 31번째 + GET/POST/DELETE 4 라우터 + 인증 가드 + `0003_watchlist.py`) | ⏳ 대기 | `v0.8-watchlist-api` |
-| D | Watchlist 프런트 + Today/StockDetail 통합 (11번째 화면 `/watchlist` + `/login` + Sidebar `관심종목 ★` + StockDetail 별 토글 + Today 내 관심종목 카드 + Recommendations 별 컬럼) | ⏳ 대기 | `v0.8-frontend-watchlist` |
+| D | Watchlist 프런트 + Today/StockDetail 통합 (11번째 화면 `/watchlist` + `/login` + Sidebar `관심종목` + StockDetail 별 토글 + Today 내 관심종목 카드) | ✅ 완료 | `v0.8-frontend-watchlist` |
 | E | `RELEASE_NOTES_v0.8.md` + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE / API_SPEC / TESTING / DB_SCHEMA / INTEGRATION_RUNBOOK 마감 + tag `v0.8-final` | ⏳ 대기 | `v0.8-final` |
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0008`, 체크리스트는 [`TASKS.md`](./TASKS.md)

@@ -1,7 +1,7 @@
 import { type Page, type Route } from '@playwright/test'
 
-// v0.2 Phase F: e2e fixture. 각 테스트는 백엔드 없이 실행되며,
-// Playwright 의 `page.route` 로 v0.1 백엔드의 13개 GET 라우터 응답을 mock 한다.
+// v0.2 Phase F / v0.8 Phase D: e2e fixture.
+// Playwright 의 `page.route` 로 백엔드 응답을 mock 한다.
 // 실 KIS / 실 텔레그램 / 실 백엔드 호출은 절대 발생하지 않아야 한다.
 
 const HEALTH = { status: 'ok', app: 'stock_ai_platform', env: 'e2e' }
@@ -682,6 +682,42 @@ const BACKTEST_RUN_DETAIL_42 = {
   notes: 'win_rate / avg_return / max_drawdown are computed over BUY signals only.',
 }
 
+// v0.8 Phase D — Auth + Watchlist fixtures
+const AUTH_ME = { auth_enabled: false, via: 'dev_fallback', user: null }
+
+const WATCHLISTS_EMPTY = { watchlists: [] }
+
+const WATCHLISTS_WITH_DEFAULT = {
+  watchlists: [
+    {
+      id: 1,
+      name: '관심종목',
+      is_default: true,
+      item_count: 1,
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-06T00:00:00',
+    },
+  ],
+}
+
+const WATCHLIST_DETAIL_1 = {
+  id: 1,
+  name: '관심종목',
+  is_default: true,
+  item_count: 1,
+  created_at: '2026-05-06T00:00:00',
+  updated_at: '2026-05-06T00:00:00',
+  items: [
+    {
+      id: 1,
+      symbol: '005930',
+      memo: '삼성전자',
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-06T00:00:00',
+    },
+  ],
+}
+
 const SETTINGS_SAFE = {
   app_env: 'e2e',
   app_name: 'stock_ai_platform',
@@ -702,8 +738,16 @@ const SETTINGS_SAFE = {
   feature_custom_ai_training: false,
 }
 
-const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number }> = [
+const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; method?: string }> = [
   { pattern: /\/health$/, payload: HEALTH },
+  // v0.8 Phase D — auth + watchlist
+  { pattern: /\/api\/auth\/me$/, payload: AUTH_ME },
+  { pattern: /\/api\/auth\/login$/, payload: { access_token: 'test-token', token_type: 'bearer', expires_in: 3600, issued_at: '2026-05-06T00:00:00', expires_at: '2026-05-06T01:00:00', user: { id: 1, username: 'admin', is_admin: false } }, method: 'POST' },
+  { pattern: /\/api\/auth\/logout$/, payload: { status: 'ok' }, method: 'POST' },
+  { pattern: /\/api\/watchlists\/1\/items\/005930$/, payload: { status: 'removed' }, method: 'DELETE' },
+  { pattern: /\/api\/watchlists\/1\/items(\?|$)/, payload: WATCHLIST_DETAIL_1.items[0], method: 'POST' },
+  { pattern: /\/api\/watchlists\/1(\?|$)/, payload: WATCHLIST_DETAIL_1 },
+  { pattern: /\/api\/watchlists(\?|$)/, payload: WATCHLISTS_EMPTY },
   { pattern: /\/api\/reports\/today$/, payload: TODAY },
   { pattern: /\/api\/recommendations\/latest$/, payload: RECOMMENDATIONS_LATEST },
   { pattern: /\/api\/recommendations\/history(\?|$)/, payload: RECOMMENDATION_HISTORY },
@@ -737,8 +781,16 @@ export async function installApiMocks(page: Page): Promise<void> {
 
 async function handle(route: Route): Promise<void> {
   const url = route.request().url()
-  for (const { pattern, payload, status = 200 } of HANDLERS) {
+  const method = route.request().method().toUpperCase()
+  for (const { pattern, payload, status = 200, method: handlerMethod } of HANDLERS) {
     if (pattern.test(url)) {
+      // If handler specifies a method, only match that method.
+      // GET handlers (no method) should only match GET requests.
+      if (handlerMethod) {
+        if (method !== handlerMethod) continue
+      } else if (method !== 'GET') {
+        continue
+      }
       await route.fulfill({
         status,
         contentType: 'application/json',
@@ -750,6 +802,6 @@ async function handle(route: Route): Promise<void> {
   await route.fulfill({
     status: 404,
     contentType: 'application/json',
-    body: JSON.stringify({ detail: `e2e mock missing for ${url}` }),
+    body: JSON.stringify({ detail: `e2e mock missing for ${url} [${method}]` }),
   })
 }

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useTodayReport } from '@/hooks/useTodayReport'
 import { useEarningsCalendar } from '@/hooks/useEarningsCalendar'
+import { useDefaultWatchlistId, useWatchlist } from '@/hooks/useWatchlists'
 import { GradePill } from '@/components/common/GradePill'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { DecisionPill } from '@/components/common/DecisionPill'
@@ -11,6 +12,7 @@ import type {
   EarningsCalendarItem,
   HoldingCheck,
   RecommendationItem,
+  WatchlistItem,
 } from '@/api/types'
 
 export function TodayReportPage() {
@@ -71,9 +73,90 @@ export function TodayReportPage() {
         <LatestRunCard latestRunStatus={latest_run?.status} telegramSent={latest_run?.telegram_sent} />
         <HoldingAlertsCard items={holding_alerts} />
         <HighRiskCard items={highRiskAlerts} />
+        {/* v0.8 Phase D: 내 관심종목 카드 */}
+        <WatchlistCard />
         <UpcomingEarningsCard />
       </div>
     </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// v0.8 Phase D — 내 관심종목 카드
+// Shows items from the user's default (or first) watchlist.
+// ---------------------------------------------------------------------------
+
+function WatchlistCard() {
+  const defaultId = useDefaultWatchlistId()
+  const { data, isLoading, isError } = useWatchlist(defaultId)
+
+  return (
+    <section
+      data-testid="today-watchlist"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-5"
+    >
+      <header className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">내 관심종목</h3>
+        <Link
+          to="/watchlist"
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          관리 →
+        </Link>
+      </header>
+      {isLoading ? (
+        <p
+          data-testid="today-watchlist-loading"
+          className="text-sm text-muted-foreground"
+        >
+          관심종목 로딩 중…
+        </p>
+      ) : isError ? (
+        <p
+          data-testid="today-watchlist-error"
+          className="text-sm text-red-700 dark:text-red-300"
+        >
+          관심종목을 불러오지 못했습니다.
+        </p>
+      ) : !data || data.items.length === 0 ? (
+        <p
+          data-testid="today-watchlist-empty"
+          className="text-sm text-muted-foreground"
+        >
+          관심종목이 없습니다.{' '}
+          <Link to="/watchlist" className="hover:underline">
+            추가하기 →
+          </Link>
+        </p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-border">
+          {data.items.map(item => (
+            <WatchlistItemRow key={item.symbol} item={item} />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function WatchlistItemRow({ item }: { item: WatchlistItem }) {
+  return (
+    <li
+      data-testid={`today-watchlist-item-${item.symbol}`}
+      className="flex items-center gap-3 py-2"
+    >
+      <Link
+        to={`/stocks/${item.symbol}`}
+        className="flex-1 truncate text-sm font-medium hover:underline"
+      >
+        {item.symbol}
+      </Link>
+      {item.memo && (
+        <span className="max-w-[140px] truncate text-xs text-muted-foreground" title={item.memo}>
+          {item.memo}
+        </span>
+      )}
+    </li>
   )
 }
 

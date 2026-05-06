@@ -9,6 +9,7 @@ import {
   ScrollText,
   Search,
   Settings as SettingsIcon,
+  Star,
   Tags,
   type LucideIcon,
 } from 'lucide-react'
@@ -21,7 +22,7 @@ interface NavItem {
   matchPrefix?: string
 }
 
-// 10 dashboard menus (v0.5 Phase D adds 테마, v0.7 Phase D adds 백테스트).
+// 11 dashboard menus (v0.8 Phase D adds 관심종목).
 const NAV_ITEMS: NavItem[] = [
   { to: '/today', label: '오늘의 리포트', Icon: LayoutDashboard },
   { to: '/recommendations', label: '추천 종목', Icon: BarChart3 },
@@ -31,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/universe/market-cap-top', label: '시가총액 TOP', Icon: Activity },
   { to: '/themes', label: '테마 (β)', Icon: Tags, matchPrefix: '/themes' },
   { to: '/backtest', label: '백테스트 (β)', Icon: FlaskConical },
+  { to: '/watchlist', label: '관심종목', Icon: Star },
   { to: '/jobs', label: '시스템 로그 / 잡', Icon: ScrollText, matchPrefix: '/jobs' },
   { to: '/settings', label: '설정', Icon: SettingsIcon },
 ]
@@ -44,7 +46,7 @@ export function Sidebar() {
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold">Stock AI</span>
-          <span className="text-xs text-muted-foreground">v0.2 dashboard</span>
+          <span className="text-xs text-muted-foreground">v0.8 dashboard</span>
         </div>
       </div>
       <nav className="flex flex-col gap-1 px-3 pb-4 pt-2" aria-label="primary">
@@ -67,7 +69,7 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="mt-auto px-5 py-4 text-xs text-muted-foreground">
-        <p>v0.1-backend-final 소비 (read-only)</p>
+        <p>v0.8 User & Watchlist Foundation</p>
         <p className="mt-1">자동매매 / 실 주문 미포함</p>
       </div>
     </aside>

@@ -41,10 +41,20 @@ const ThemeDetailPage = lazy(() =>
 const BacktestPage = lazy(() =>
   import('./pages/Backtest').then(m => ({ default: m.BacktestPage })),
 )
+// v0.8 Phase D
+const WatchlistPage = lazy(() =>
+  import('./pages/Watchlist').then(m => ({ default: m.WatchlistPage })),
+)
+const LoginPage = lazy(() =>
+  import('./pages/Login').then(m => ({ default: m.LoginPage })),
+)
 
 export function AppRoutes() {
   return (
     <Routes>
+      {/* v0.8 Phase D: /login lives outside AppLayout (no sidebar/header) */}
+      <Route path="/login" element={<LoginPage />} />
+
       <Route path="/" element={<AppLayout />}>
         <Route index element={<Navigate to="/today" replace />} />
         <Route path="today" element={<TodayReportPage />} />
@@ -59,6 +69,7 @@ export function AppRoutes() {
         <Route path="themes" element={<ThemesPage />} />
         <Route path="themes/:themeId" element={<ThemeDetailPage />} />
         <Route path="backtest" element={<BacktestPage />} />
+        <Route path="watchlist" element={<WatchlistPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:jobId" element={<JobsPage />} />
         <Route path="settings" element={<SettingsPage />} />

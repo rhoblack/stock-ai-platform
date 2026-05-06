@@ -198,4 +198,105 @@ describe('TodayReportPage', () => {
       ).toBeInTheDocument(),
     )
   })
+
+  // -------- v0.8 Phase D — WatchlistCard --------
+  it('renders WatchlistCard with items from the default watchlist (happy)', async () => {
+    server.use(
+      http.get('*/api/reports/today', () => HttpResponse.json(EMPTY_BODY)),
+      http.get('*/api/watchlists', () =>
+        HttpResponse.json({
+          watchlists: [
+            {
+              id: 1,
+              name: '관심종목',
+              is_default: true,
+              item_count: 2,
+              created_at: '2026-05-06T00:00:00',
+              updated_at: '2026-05-06T00:00:00',
+            },
+          ],
+        }),
+      ),
+      http.get('*/api/watchlists/1', () =>
+        HttpResponse.json({
+          id: 1,
+          name: '관심종목',
+          is_default: true,
+          item_count: 2,
+          created_at: '2026-05-06T00:00:00',
+          updated_at: '2026-05-06T00:00:00',
+          items: [
+            { id: 1, symbol: '005930', memo: '삼성전자', created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00' },
+            { id: 2, symbol: '000660', memo: null, created_at: '2026-05-06T00:00:00', updated_at: '2026-05-06T00:00:00' },
+          ],
+        }),
+      ),
+    )
+
+    renderWithProviders(<TodayReportPage />, { initialEntries: ['/today'] })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('today-watchlist')).toBeInTheDocument(),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('today-watchlist-item-005930')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('today-watchlist-item-000660')).toBeInTheDocument()
+    // items link to stock detail
+    const link = screen.getByTestId('today-watchlist-item-005930').querySelector('a')
+    expect(link).toHaveAttribute('href', '/stocks/005930')
+  })
+
+  it('shows WatchlistCard empty placeholder when default watchlist has no items', async () => {
+    server.use(
+      http.get('*/api/reports/today', () => HttpResponse.json(EMPTY_BODY)),
+      http.get('*/api/watchlists', () =>
+        HttpResponse.json({
+          watchlists: [
+            {
+              id: 1,
+              name: '관심종목',
+              is_default: true,
+              item_count: 0,
+              created_at: '2026-05-06T00:00:00',
+              updated_at: '2026-05-06T00:00:00',
+            },
+          ],
+        }),
+      ),
+      http.get('*/api/watchlists/1', () =>
+        HttpResponse.json({
+          id: 1,
+          name: '관심종목',
+          is_default: true,
+          item_count: 0,
+          created_at: '2026-05-06T00:00:00',
+          updated_at: '2026-05-06T00:00:00',
+          items: [],
+        }),
+      ),
+    )
+
+    renderWithProviders(<TodayReportPage />, { initialEntries: ['/today'] })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('today-watchlist-empty')).toBeInTheDocument(),
+    )
+  })
+
+  it('shows WatchlistCard empty placeholder when no watchlists exist', async () => {
+    server.use(
+      http.get('*/api/reports/today', () => HttpResponse.json(EMPTY_BODY)),
+      // default handler returns { watchlists: [] }
+    )
+
+    renderWithProviders(<TodayReportPage />, { initialEntries: ['/today'] })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('today-watchlist')).toBeInTheDocument(),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('today-watchlist-empty')).toBeInTheDocument(),
+    )
+  })
 })

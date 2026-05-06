@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { Star } from 'lucide-react'
 import { useStockDetail } from '@/hooks/useStockDetail'
 import { useStockPriceSeries } from '@/hooks/useStockPriceSeries'
 import { KeyValueGrid } from '@/components/common/KeyValueGrid'
@@ -12,6 +13,15 @@ import { PriceChart } from './PriceChart'
 import { AnalystReportsCard } from './AnalystReportsCard'
 import { FundamentalsCard } from './FundamentalsCard'
 import { EarningsCard } from './EarningsCard'
+import {
+  useCreateWatchlist,
+  useDefaultWatchlistId,
+  useAddWatchlistItem,
+  useIsInWatchlist,
+  useRemoveWatchlistItem,
+  useWatchlists,
+} from '@/hooks/useWatchlists'
+import { ApiError } from '@/api/client'
 import type {
   HoldingCheck,
   RecommendationItem,
@@ -108,6 +118,8 @@ function StockDetailContent({ data }: { data: StockDetailResponse }) {
             {stock.is_active ? 'active' : 'inactive'}
           </p>
         </div>
+        {/* v0.8 Phase D: 즐겨찾기 별 토글 */}
+        <FavoriteButton symbol={stock.symbol} />
       </header>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -127,6 +139,96 @@ function StockDetailContent({ data }: { data: StockDetailResponse }) {
       <RecentRecommendationsCard items={recent_recommendations} />
       <RecentHoldingChecksCard items={recent_holding_checks} />
     </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// v0.8 Phase D — FavoriteButton
+// Toggles the symbol in/out of the user's default (or first) watchlist.
+// If no watchlist exists yet, auto-creates "관심종목" (is_default=true) on
+// first click.
+// ---------------------------------------------------------------------------
+
+function FavoriteButton({ symbol }: { symbol: string }) {
+  const { data: watchlistsData, isLoading: wlListLoading } = useWatchlists()
+  const defaultId = useDefaultWatchlistId()
+  const isInWl = useIsInWatchlist(symbol)
+  const addMutation = useAddWatchlistItem()
+  const removeMutation = useRemoveWatchlistItem()
+  const createMutation = useCreateWatchlist()
+  const [favError, setFavError] = useState<string | null>(null)
+
+  const isPending =
+    addMutation.isPending || removeMutation.isPending || createMutation.isPending
+
+  async function handleToggle() {
+    setFavError(null)
+    try {
+      let wlId = defaultId
+      if (wlId == null) {
+        // No watchlist yet — auto-create a default one
+        const newWl = await createMutation.mutateAsync({
+          name: '관심종목',
+          isDefault: true,
+        })
+        wlId = newWl.id
+      }
+      if (isInWl) {
+        await removeMutation.mutateAsync({ watchlistId: wlId, symbol })
+      } else {
+        await addMutation.mutateAsync({ watchlistId: wlId, symbol })
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          setFavError('이 종목은 관심종목에 추가할 수 없습니다.')
+        } else if (err.status === 409) {
+          setFavError(null) // already in watchlist — ignore
+        } else {
+          setFavError('관심종목 변경에 실패했습니다.')
+        }
+      } else {
+        setFavError('관심종목 변경에 실패했습니다.')
+      }
+    }
+  }
+
+  if (wlListLoading && !watchlistsData) return null
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        data-testid="favorite-toggle"
+        data-active={isInWl}
+        aria-label={isInWl ? '관심종목에서 제거' : '관심종목에 추가'}
+        aria-pressed={isInWl}
+        disabled={isPending}
+        onClick={handleToggle}
+        className={cn(
+          'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors disabled:opacity-50',
+          isInWl
+            ? 'border-yellow-400 bg-yellow-50 text-yellow-700 hover:bg-yellow-100 dark:border-yellow-600 dark:bg-yellow-900/20 dark:text-yellow-300 dark:hover:bg-yellow-900/30'
+            : 'border-border bg-card text-muted-foreground hover:bg-accent',
+        )}
+      >
+        <Star
+          className={cn(
+            'h-3.5 w-3.5',
+            isInWl ? 'fill-yellow-400 text-yellow-400' : '',
+          )}
+        />
+        {isInWl ? '관심종목 ★' : '관심종목 추가'}
+      </button>
+      {favError && (
+        <span
+          data-testid="favorite-error"
+          className="text-xs text-red-600 dark:text-red-300"
+        >
+          {favError}
+        </span>
+      )}
+    </div>
   )
 }
 

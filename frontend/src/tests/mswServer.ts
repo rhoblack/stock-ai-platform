@@ -133,6 +133,60 @@ export const handlers = [
       feature_custom_ai_training: false,
     }),
   ),
+
+  // v0.8 Phase D — Auth
+  http.get('*/api/auth/me', () =>
+    HttpResponse.json({ auth_enabled: false, via: 'dev_fallback', user: null }),
+  ),
+  http.post('*/api/auth/login', () =>
+    HttpResponse.json({
+      access_token: 'test-token',
+      token_type: 'bearer',
+      expires_in: 3600,
+      issued_at: '2026-05-06T00:00:00',
+      expires_at: '2026-05-06T01:00:00',
+      user: { id: 1, username: 'testuser', is_admin: false },
+    }),
+  ),
+  http.post('*/api/auth/logout', () => HttpResponse.json({ status: 'ok' })),
+
+  // v0.8 Phase D — Watchlists
+  http.get('*/api/watchlists', () =>
+    HttpResponse.json({ watchlists: [] }),
+  ),
+  http.get('*/api/watchlists/:id', ({ params }) =>
+    HttpResponse.json({
+      id: Number(params.id),
+      name: '관심종목',
+      is_default: true,
+      item_count: 0,
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-06T00:00:00',
+      items: [],
+    }),
+  ),
+  http.post('*/api/watchlists', () =>
+    HttpResponse.json({
+      id: 1,
+      name: '관심종목',
+      is_default: true,
+      item_count: 0,
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-06T00:00:00',
+    }),
+  ),
+  http.post('*/api/watchlists/:id/items', () =>
+    HttpResponse.json({
+      id: 1,
+      symbol: 'AAPL',
+      memo: null,
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-06T00:00:00',
+    }),
+  ),
+  http.delete('*/api/watchlists/:id/items/:symbol', () =>
+    HttpResponse.json({ status: 'removed' }),
+  ),
 ]
 
 export const server = setupServer(...handlers)

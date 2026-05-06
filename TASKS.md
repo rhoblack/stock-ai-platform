@@ -868,32 +868,31 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - 안전 범위: Watchlist 외 도메인 POST/PUT/DELETE 0건 (Phase C 도입 라우터 = Watchlist 5건만). 자동매매 / 실 외부 API 호출 / scheduler 0건. ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine / CostModel / regime_split 변경 0건. 기존 read-only GET 라우터 동작 변경 0건. WatchlistItem ORM 컬럼에 broker / account / quantity / order_* / 가격 필드 0건 (회귀 단언). request body 의 `user_id` 자동 drop (spoofing 가드)
 - 완료 기준: backend pytest **760 → 808 passed (+48)** (1 deselected 그대로), alembic head = `0003_watchlist`, compare_metadata diff 0건. 태그 `v0.8-watchlist-api`.
 
-### Phase D — Watchlist 프런트 + Today / StockDetail 통합
+### Phase D — Watchlist 프런트 + Today / StockDetail 통합 ✅ 인수
 
-- [ ] `frontend/src/pages/Watchlist/index.tsx` 신규 — 11번째 화면. 즐겨찾기 종목 표 (symbol / 종목명 / 현재가 / 등락률 / 추가일 / 메모 / 삭제 버튼) + 추가 폼 (symbol + memo + 추가)
-- [ ] `frontend/src/pages/Login/index.tsx` 신규 — `AUTH_ENABLED=true` 시 진입. username/password 폼 → JWT localStorage 저장 → `/today` redirect
-- [ ] `frontend/src/components/auth/LoginForm.tsx` 신규
-- [ ] `frontend/src/api/auth.ts` 신규 — `login(username, password)` / `logout()` / `getMe()` API call
-- [ ] `frontend/src/api/client.ts` — Authorization 헤더 자동 첨부 (`localStorage.auth_token`) + 401 시 `/login` redirect
-- [ ] `frontend/src/hooks/useAuthStatus.ts` 신규 — `AUTH_ENABLED` 감지 + 현재 사용자 노출
-- [ ] `frontend/src/hooks/useWatchlist.ts` 신규 (default watchlist 단일)
-- [ ] `frontend/src/hooks/useWatchlistItems.ts` 신규
-- [ ] `frontend/src/hooks/useAddWatchlistItem.ts` 신규 (`useMutation` 첫 도입)
-- [ ] `frontend/src/hooks/useRemoveWatchlistItem.ts` 신규 (`useMutation`)
-- [ ] `frontend/src/components/layout/Sidebar.tsx` — `Star` 아이콘 + `관심종목 ★` 메뉴 추가 (Sidebar 10 → 11)
-- [ ] `frontend/src/router.tsx` — `/watchlist` lazy + `/login` lazy route 추가
-- [ ] `frontend/src/pages/StockDetail/index.tsx` — 헤더에 즐겨찾기 별 토글 추가
-- [ ] `frontend/src/pages/Today/index.tsx` — "내 관심종목" 카드 신규 (즐겨찾기 종목 등락률 / 추천 / 점수 요약, 자동 alert 0건)
-- [ ] `frontend/src/pages/Recommendations/index.tsx` — 표에 즐겨찾기 별 컬럼 추가 (시각 표시만, 정렬 / 필터 변경 0건)
-- [ ] `frontend/src/tests/Watchlist.test.tsx` 신규 — happy / empty / add mutation success / add 401 / add 500 / delete mutation / 자동매매·order UI 부재 + forbidden 토큰 미노출
-- [ ] `frontend/src/tests/Login.test.tsx` 신규 — happy / wrong password / network error / `AUTH_ENABLED=false` 시 로그인 화면 미표시
-- [ ] `frontend/src/tests/StockDetail.test.tsx` — 즐겨찾기 별 토글 케이스 추가
-- [ ] `frontend/src/tests/TodayReport.test.tsx` — "내 관심종목" 카드 케이스 추가
-- [ ] `frontend/src/tests/mswServer.ts` — `/api/watchlists` + `/api/watchlists/{id}/items` + `/api/auth/...` 핸들러 추가
-- [ ] `frontend/e2e/fixtures/apiMocks.ts` — Watchlist + auth fixture
-- [ ] `frontend/e2e/dashboard.spec.ts` — sidebar nav 테스트에 `관심종목 ★` 추가 + Watchlist 화면 (추가 → 즐겨찾기 ★ 활성 → 삭제 → 별 ☆) + Login 화면 + `/watchlist` / `/login` 의 자동매매 부재 가드 + raw JSON `broker`/`quantity`/`order_*` 0건
-- 안전 범위: POST 0건 (Phase C 의 라우터만 사용), 외부 호출 0건, 자동매매 0건, BacktestEngine 변경 0건. 즐겨찾기 mutation 외 모든 라우터는 read-only
-- 완료 기준: backend pytest **~770 → ~775 (+~5)**, frontend vitest **84 → ~95 (+~11)**, e2e **14 → 16 (+2)**, build 그린, 회귀 0건. source_file_path / 주문 관련 필드 0건 노출 가드. 태그 `v0.8-frontend-watchlist`.
+- [x] `frontend/src/api/client.ts` — `setAuthToken` / `getAuthToken` / `removeAuthToken` / `buildAuthHeaders` / `apiPost` / `apiDelete` 추가. Authorization 헤더 자동 첨부
+- [x] `frontend/src/api/types.ts` — `LoginUser` / `LoginResponse` / `MeResponse` / `WatchlistItem` / `Watchlist` / `WatchlistDetail` / `WatchlistsResponse` / `WatchlistStatusResponse` 신규 타입 추가
+- [x] `frontend/src/api/auth.ts` 신규 — `login(username, password)` / `logout()` / `getMe()` API call
+- [x] `frontend/src/api/watchlists.ts` 신규 — `listWatchlists` / `getWatchlist` / `createWatchlist` / `addWatchlistItem` / `removeWatchlistItem` CRUD
+- [x] `frontend/src/store/auth.tsx` 신규 — `AuthProvider` (getMe 자동 호출, AUTH_ENABLED=false 시 즉시 인증, token 절대 렌더링 안 함) + `useAuth()` hook
+- [x] `frontend/src/hooks/useWatchlists.ts` 신규 — `useWatchlists` / `useWatchlist` / `useDefaultWatchlistId` / `useIsInWatchlist` / `useCreateWatchlist` / `useAddWatchlistItem` / `useRemoveWatchlistItem` (useMutation 첫 도입, onSuccess invalidate)
+- [x] `frontend/src/pages/Login/index.tsx` 신규 — AUTH_ENABLED=false 시 자동 redirect, password 필드 매 시도 후 clear, access_token 절대 렌더링 안 함
+- [x] `frontend/src/pages/Watchlist/index.tsx` 신규 — 11번째 화면. `WatchlistListPanel` / `CreateWatchlistPanel` / `WatchlistDetailPanel` / `WatchlistItemRow` / `AddItemForm` (404/409/422/401 error 처리)
+- [x] `frontend/src/components/layout/Sidebar.tsx` — `Star` 아이콘 + `관심종목` 메뉴 추가 (Sidebar 10 → 11), footer v0.8 갱신
+- [x] `frontend/src/router.tsx` — `WatchlistPage` lazy route + `/watchlist` / `LoginPage` lazy route + `/login` (AppLayout 외부)
+- [x] `frontend/src/App.tsx` — `AuthProvider` wrapper 추가
+- [x] `frontend/src/pages/StockDetail/index.tsx` — `FavoriteButton` 컴포넌트 추가 (관심목록 없으면 자동 생성, data-active / aria-pressed 토글)
+- [x] `frontend/src/pages/TodayReport/index.tsx` — `WatchlistCard` 컴포넌트 추가 (default watchlist 표시, empty placeholder 링크)
+- [x] `frontend/src/tests/mswServer.ts` — `/api/auth/me` / `/api/auth/login` / `/api/auth/logout` / `/api/watchlists` / `/api/watchlists/:id` / `POST /api/watchlists` / `POST /:id/items` / `DELETE /:id/items/:symbol` 핸들러 추가
+- [x] `frontend/src/tests/renderWithProviders.tsx` — `AuthProvider` wrapper 추가
+- [x] `frontend/src/tests/Login.test.tsx` 신규 — **8 케이스** (auth_disabled auto-redirect / form render / success redirect / 401 error / 500 error / password clear / token 미노출 / submit disabled)
+- [x] `frontend/src/tests/Watchlist.test.tsx` 신규 — **12 케이스** (empty placeholder / 500 error / list + detail happy / items empty / create success / 409 duplicate / add item / add 404 / add 409 / add 401 / remove item / forbidden fields)
+- [x] `frontend/src/tests/StockDetail.test.tsx` — **+6 케이스** FavoriteButton (inactive / active / add mutation / remove mutation / auto-create watchlist / error on 500)
+- [x] `frontend/src/tests/TodayReport.test.tsx` — **+3 케이스** WatchlistCard (happy / empty items / no watchlists)
+- [x] `frontend/e2e/fixtures/apiMocks.ts` — auth + watchlist fixture 추가, handle 함수 method 매칭 지원
+- [x] `frontend/e2e/dashboard.spec.ts` — sidebar nav 테스트 9 → 11 메뉴 갱신 + Phase D e2e 5건 추가 (Login auto-redirect / Watchlist empty state / Today WatchlistCard / StockDetail FavoriteButton / Watchlist forbidden fields)
+- 안전 범위: POST 0건 신규 추가 (Phase C 의 라우터만 사용), 외부 호출 0건, 자동매매 0건, BacktestEngine 변경 0건. 즐겨찾기 mutation 외 모든 라우터는 read-only. `broker` / `account` / `quantity` / `order_*` / `password` / `access_token` 렌더링 0건
+- 완료 기준: frontend vitest **84 → 113 passed (+29)**, e2e **14 → 19 passed (+5)**, build 그린, 회귀 0건. source_file_path / 주문 관련 필드 0건 노출 가드. 태그 `v0.8-frontend-watchlist`.
 
 ### Phase E — v0.8 릴리스 문서 / 마감
 

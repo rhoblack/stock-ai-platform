@@ -676,3 +676,57 @@ export interface JobResultSummaryKeys {
   market_cap_status?: string
   daily_price_status?: string
 }
+
+// ----- v0.8 Phase D — Auth -----
+
+export interface LoginUser {
+  id: number
+  username: string
+  is_admin: boolean
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+  issued_at: string
+  expires_at: string
+  user: LoginUser
+}
+
+export interface MeResponse {
+  auth_enabled: boolean
+  via: string
+  user: LoginUser | null
+}
+
+// ----- v0.8 Phase D — Watchlist -----
+
+export interface WatchlistItem {
+  id: number
+  symbol: string
+  memo: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Watchlist {
+  id: number
+  name: string
+  is_default: boolean
+  item_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WatchlistDetail extends Watchlist {
+  items: WatchlistItem[]
+}
+
+export interface WatchlistsResponse {
+  watchlists: Watchlist[]
+}
+
+export interface WatchlistStatusResponse {
+  status: string
+}
