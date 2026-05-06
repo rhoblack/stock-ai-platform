@@ -41,7 +41,10 @@ from app.db import models  # noqa: F401  -- ensure all 27 ORM classes register
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"
 BASELINE_REVISION = "0001_baseline_v0_7"
-EXPECTED_TABLE_COUNT = 27
+# v0.8 Phase B introduces the second revision. ``HEAD_REVISION`` is what
+# ``alembic upgrade head`` should land on; new revisions update this constant.
+HEAD_REVISION = "0002_auth_foundation"
+EXPECTED_TABLE_COUNT = 29  # 27 baseline + 2 from 0002 (users + login_audit_logs)
 SPOT_CHECK_TABLES = (
     # v0.1 backend
     "stocks",
@@ -58,6 +61,9 @@ SPOT_CHECK_TABLES = (
     # v0.7 strategy + backtest
     "backtest_runs",
     "backtest_results",
+    # v0.8 Phase B auth foundation
+    "users",
+    "login_audit_logs",
 )
 
 
@@ -73,18 +79,24 @@ def _sqlite_url(tmp_path: Path, name: str = "alembic_test.db") -> str:
     return f"sqlite:///{db_file.as_posix()}"
 
 
-def test_baseline_revision_exists_and_is_head() -> None:
-    """The 0001 baseline revision must exist and be the current head."""
+def test_baseline_revision_exists_with_no_parent() -> None:
+    """The 0001 baseline revision must exist and have no parent revision."""
     cfg = Config(str(ALEMBIC_INI))
     script = ScriptDirectory.from_config(cfg)
-    heads = list(script.get_heads())
-    assert heads == [BASELINE_REVISION], (
-        f"Expected single head {BASELINE_REVISION!r}, got {heads!r}. "
-        "When new revisions are added, this assertion will need to track the new head."
-    )
     rev = script.get_revision(BASELINE_REVISION)
     assert rev is not None
     assert rev.down_revision is None, "Baseline must have no parent."
+
+
+def test_head_revision_matches_constant() -> None:
+    """alembic head must equal HEAD_REVISION; new revisions must update the constant."""
+    cfg = Config(str(ALEMBIC_INI))
+    script = ScriptDirectory.from_config(cfg)
+    heads = list(script.get_heads())
+    assert heads == [HEAD_REVISION], (
+        f"Expected single head {HEAD_REVISION!r}, got {heads!r}. "
+        "When a new revision is added, update HEAD_REVISION in this test."
+    )
 
 
 def test_upgrade_head_creates_all_27_tables(tmp_path: Path) -> None:
@@ -115,8 +127,8 @@ def test_upgrade_head_creates_all_27_tables(tmp_path: Path) -> None:
         )
 
 
-def test_alembic_version_table_stamped_at_baseline(tmp_path: Path) -> None:
-    """After upgrade head, alembic_version row must equal the baseline revision."""
+def test_alembic_version_table_stamped_at_head(tmp_path: Path) -> None:
+    """After upgrade head, alembic_version row must equal the head revision."""
     url = _sqlite_url(tmp_path)
     cfg = _make_config(url)
     command.upgrade(cfg, "head")
@@ -129,7 +141,7 @@ def test_alembic_version_table_stamped_at_baseline(tmp_path: Path) -> None:
     finally:
         engine.dispose()
 
-    assert current == BASELINE_REVISION
+    assert current == HEAD_REVISION
 
 
 def test_compare_metadata_after_upgrade_is_empty(tmp_path: Path) -> None:
@@ -274,6 +286,9 @@ def test_offline_mode_emits_sql_without_connecting(tmp_path: Path) -> None:
         "earnings_events",
         "backtest_runs",
         "backtest_results",
+        # v0.8 Phase B auth foundation
+        "users",
+        "login_audit_logs",
     ],
 )
 def test_spot_check_each_required_table_present(

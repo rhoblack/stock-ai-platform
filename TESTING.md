@@ -554,6 +554,101 @@ v0.7 Phase D 는 read-only API 3종 + 프런트 10번째 화면만 추가한다.
   SQLite) 도 CI backend 잡에 추가 — 본 pytest 16 케이스 외에 별도 fast
   signal.
 
+## 6.17 v0.8 Phase B — 단일 사용자 인증 foundation 테스트
+
+총 **62 케이스**. v0.7-final 위에 추가된 인증 도메인 (`User` /
+`LoginAuditLog` / JWT / scrypt / `POST /api/auth/login` / `/logout` / `/me` /
+admin CLI) 을 다층 검증한다.
+
+### 6.17.1 Unit — `tests/unit/test_auth_security.py` (26 케이스)
+
+`app.auth.security` 의 순수 함수 / 클래스만 검증 — DB / FastAPI 호출 0건,
+외부 호출 0건.
+
+- **PasswordHasher (scrypt)** — hash 형식 (`scrypt$<n>$<r>$<p>$<salt>$<derived>`)
+  단언 / salt 가 매번 다름 / verify 성공·실패 / 평문 hash 미포함 / malformed
+  hash 입력 (5 parametrize) 은 raise 없이 False / 빈 password 거부
+- **JwtIssuer (HS256)** — issue → decode round-trip / 다른 secret 으로 decode
+  실패 (InvalidTokenError) / 만료 token (ExpiredTokenError) / garbage token
+  (InvalidTokenError) / secret 없는 issuer 사용 시 MissingSecretError
+- **hash_for_audit** — SHA256 hex (64자) / 결정적 / 다른 입력은 다른 출력 /
+  None / 빈 / 공백 입력은 None 반환 (3 parametrize)
+- **validate_auth_settings** — disabled 시 통과 / enabled + secret 시 통과 /
+  enabled + None secret 거부 / enabled + 빈 secret 거부
+
+### 6.17.2 Integration — `tests/integration/test_auth_repositories.py` (15 케이스)
+
+in-memory SQLite + `Base.metadata.create_all`.
+
+- **UserRepository** — create with defaults / get_by_username / get_by_id /
+  username UNIQUE 위반 (`BaseRepository.add()` 가 즉시 flush 하므로 두 번째
+  create 에서 IntegrityError) / set_last_login 이 timestamp 갱신 / deactivate /
+  is_admin flag 영속
+- **LoginAuditLogRepository** — LOGIN_SUCCESS / LOGIN_FAILED with unknown user
+  (user_id NULL) / event_type validation (raise on `OOPS`) / **평문 IP /
+  user agent 저장 0건 가드** (column 에 ≠ "203.0.113.7" + len == 64 단언) /
+  list_recent newest-first / list_by_username / list_by_user
+
+### 6.17.3 API — `tests/integration/test_auth_routes.py` (14 케이스)
+
+FastAPI TestClient + dependency override (`get_session` + `get_settings`) +
+in-memory SQLite. 두 운영 모드 모두 커버.
+
+**AUTH_ENABLED=false (dev / CI)**:
+- /login 성공 → access_token 반환 + LOGIN_SUCCESS audit + body 에 `password` /
+  `scrypt$` 0건
+- /login 실패 (wrong password vs unknown user) → 동일 generic 401 메시지 /
+  LOGIN_FAILED audit 2건
+- /login 실패 (deactivated user) → 401 / LOGIN_FAILED
+- /me → `auth_enabled=false`, `via=auth_disabled_fallback`, `user=null`
+- /logout → 200 / LOGOUT audit (username=None)
+
+**AUTH_ENABLED=true + JWT_SECRET**:
+- /me 토큰 없음 / Basic scheme / garbage Bearer 모두 401 + `WWW-Authenticate: Bearer`
+- /me 유효 토큰 → `auth_enabled=true`, `via=token`, user 정보
+- /me 유효 토큰이지만 user deactivate 후 → 401
+- LOGIN_SUCCESS audit 에 username + user_id 기록
+- unknown user 의 LOGIN_FAILED 에는 user_id NULL + username 보존
+- /login 시 `User-Agent` + `X-Forwarded-For` 헤더 → audit row 의
+  `source_ip_hash` / `user_agent_hash` 가 SHA256 hex (`re.fullmatch(r"[0-9a-f]{64}")`),
+  평문 ("203.0.113.7" / "Mozilla/...") 미저장
+- /logout (with token) → audit row 의 username 보존
+- 모든 응답 (login + me) 에 `password_hash` / `scrypt$` 0건
+- `AUTH_ENABLED=true` 모드에서도 `/health` 등 기존 read-only GET 라우터는
+  그대로 OPEN — Watchlist (Phase C) 가 첫 보호 라우터 후보임을 단언
+
+### 6.17.4 CLI — `tests/integration/test_create_admin_cli.py` (5 케이스)
+
+`scripts.create_admin.main()` 직접 호출 + `monkeypatch` 로 env var 주입 +
+`tmp_path` 의 SQLite. `Base.metadata.create_all()` 로 임시 DB 부트스트랩.
+
+- 정상 생성 → user 행이 scrypt 해시 + admin / active / verify 가능 / stdout
+  에 password / hash 0건
+- 중복 username + `--update-if-exists` 없음 → exit 1 + stderr "already exists" +
+  hash / password 0건
+- 중복 username + `--update-if-exists` → password 갱신 (이전 password 더 이상
+  검증 안 됨, 새 password 검증 OK)
+- `--no-admin` flag → is_admin=False
+- ADMIN_PASSWORD="" → exit 1 + stderr "password must not be empty"
+
+### 6.17.5 Alembic head 갱신 — `tests/integration/test_alembic_migration.py`
+
+Phase B 가 새 head 를 layering 했으므로 Phase A 의 single-head 단언이 갱신되었다:
+
+- `BASELINE_REVISION = "0001_baseline_v0_7"` 그대로 (down_revision=None 단언)
+- 신규 `HEAD_REVISION = "0002_auth_foundation"` 단언
+- `EXPECTED_TABLE_COUNT = 29` (27 → 29)
+- spot-check parametrize 에 `users` + `login_audit_logs` 2건 추가
+- `compare_metadata` diff 0건 단언 그대로 (load-bearing 가드)
+
+회귀 기준:
+
+- backend pytest **698 → 760 passed (+62)** (1 deselected 그대로).
+- 신규 alembic head = `0002_auth_foundation` — CI 의 `alembic upgrade head`
+  step 이 자동 검증.
+- frontend / build / e2e 변경 0건 (Phase B 는 백엔드 + CLI 만; 프런트 로그인
+  화면은 Phase D 후보).
+
 ## 7. 금지 사항
 
 테스트에서 절대 금지:

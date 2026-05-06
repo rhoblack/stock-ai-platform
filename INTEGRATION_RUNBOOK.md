@@ -1068,3 +1068,131 @@ pytest -q --deselect tests/unit/test_project_structure.py::test_settings_default
 - CI 잡은 `RUNNER_TEMP/ci_alembic_smoke.db` 라는 임시 SQLite 만 사용 — 운영
   DB 0건 접근.
 
+## 18. 단일 사용자 인증 운영 절차 (v0.8 Phase B)
+
+v0.7-final 까지 read-only 였던 API 에 **인증 도메인 한정으로 POST 첫 도입**.
+운영자는 다음 절차로 admin 계정을 만들고 `AUTH_ENABLED=true` 로 전환한다.
+
+**핵심 정책 (cycle-wide)**:
+
+- `AUTH_ENABLED=false` (default) 면 기존 GET 라우터 그대로 OPEN. login 도
+  ephemeral 비밀로 동작 (process 재시작 시 token 무효).
+- `AUTH_ENABLED=true` 인데 `JWT_SECRET` 미설정이면 **startup 거부**
+  (`app/auth/security.py::validate_auth_settings` → `MissingSecretError`).
+- 다중 사용자 / RBAC / OAuth / SSO / refresh token / password reset 모두
+  v0.8 범위 밖. 단일 admin 사용자 + bcrypt-class scrypt 해시 + 24h JWT 만.
+- 평문 password / 평문 IP / 평문 user agent **저장 0건**. password_hash 는
+  scrypt, IP / UA 는 SHA256 해시.
+
+### 18.1 admin 계정 생성
+
+신규 환경 (Alembic 0002 까지 적용됨):
+
+```bash
+# (1) interactive prompt (가장 안전 — 쉘 history 에 password 안 남음)
+python -m scripts.create_admin --username admin
+
+# (2) 비대화식 (CI / docker-compose 등) — env var 사용
+ADMIN_PASSWORD='S3cret!' python -m scripts.create_admin --username admin
+
+# (3) 별도 DB 에 적용
+python -m scripts.create_admin --username admin --db-url sqlite:///./trial.db
+
+# (4) 이미 존재하는 admin 의 password 갱신 (idempotent)
+ADMIN_PASSWORD='New!' python -m scripts.create_admin --username admin --update-if-exists
+```
+
+CLI 출력은 `[create_admin] created user id=1 username=admin` 만 — password /
+hash 는 절대 출력하지 않는다. 실패 시 1 반환 + stderr 에 사유 (username 충돌 /
+empty password 등).
+
+### 18.2 AUTH_ENABLED=true 로 전환
+
+`.env` 에 다음 두 줄 추가:
+
+```env
+AUTH_ENABLED=true
+JWT_SECRET=<32바이트 이상 무작위 문자열>
+```
+
+`JWT_SECRET` 생성 예 (운영자 1회 실행):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+운영 환경에는 **secrets manager / vault / env injection** 등 안전한 경로로
+주입한다. `.env` 파일 자체를 git 에 커밋하지 않는다.
+
+선택 환경 변수:
+
+| 변수 | default | 설명 |
+|---|---|---|
+| `JWT_ALGORITHM` | `HS256` | HS384 / HS512 가능. RS* 비대칭은 v0.9+ |
+| `JWT_EXPIRES_MINUTES` | `1440` (24h) | 운영 정책에 맞춰 단축 가능 |
+| `PASSWORD_HASH_N` | `16384` (2^14) | scrypt cost. 더 강하게: 32768 (2^15) |
+| `PASSWORD_HASH_R` | `8` | scrypt block size |
+| `PASSWORD_HASH_P` | `1` | scrypt parallelism |
+
+### 18.3 로그인 / token 사용 smoke test
+
+```bash
+# (1) 로그인 → JWT 받기
+curl -sX POST http://localhost:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"S3cret!"}' | jq
+
+# (2) JWT 로 /me 조회
+TOKEN=$(curl -sX POST http://localhost:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"S3cret!"}' | jq -r .access_token)
+
+curl -sH "Authorization: Bearer $TOKEN" http://localhost:8000/api/auth/me | jq
+
+# (3) 로그아웃
+curl -sX POST http://localhost:8000/api/auth/logout \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+응답에 `password_hash` / `scrypt$...` 가 포함되어 있으면 **즉시 보고**.
+Phase B 의 e2e + integration 테스트가 이를 가드한다 — 운영 환경에서 잘못
+보이면 회귀.
+
+### 18.4 audit log 확인
+
+```bash
+# 최근 로그인 시도 50건 — 평문 IP / user agent 0건, hash 만
+sqlite3 stock_ai_kis_check.db \
+  "SELECT id, event_type, username, source_ip_hash, user_agent_hash, created_at
+   FROM login_audit_logs ORDER BY created_at DESC LIMIT 50;"
+```
+
+`source_ip_hash` / `user_agent_hash` 는 64자 16진수 (SHA256). 평문 IP
+("192.168.1.10") 또는 user agent ("Mozilla/5.0 ...") 는 절대 보이지 않아야
+한다 — 라우터 단계에서 `app.auth.security.hash_for_audit` 가 무조건 해시한다.
+
+### 18.5 자주 발생하는 운영 이슈
+
+- **"AUTH_ENABLED=true 인데 startup 시 RuntimeError: AUTH_ENABLED=true but
+  JWT_SECRET is empty..."** → `.env` 에 `JWT_SECRET` 누락. 18.2 절차로 1회 생성.
+- **/api/auth/login 200 인데 access_token 이 process 재시작 후 401** →
+  `AUTH_ENABLED=false` 모드의 ephemeral secret 으로 발급된 token. 운영 환경
+  진입 시 18.2 로 정식 secret 적용.
+- **/api/auth/login 401 (정확한 password 인데도)** → user 가 deactivate 되었을
+  가능성. `sqlite3 ... "SELECT id, username, is_active FROM users;"` 확인. 필요
+  시 `--update-if-exists` 로 갱신.
+- **잠금 / brute force 방어** → v0.8 Phase B 범위 밖. v0.9 운영 모니터링 cycle
+  의 rate limit (`slowapi`) 후보.
+
+### 18.6 Phase B 안전 가드
+
+- 인증 / Watchlist 외 도메인 POST/PUT/DELETE 0건 — Phase B 가 도입한 라우터는
+  `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` 3건뿐.
+- `app/auth/`, `app/api/auth_routes.py`, `scripts/create_admin.py` 어디에도
+  KIS / DART / RSS / Telegram / Broker import 0건.
+- 평문 password / 평문 IP / 평문 user agent 저장 0건.
+- ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine
+  / CostModel / regime_split 변경 0건.
+- 기존 read-only GET 라우터 동작 변경 0건 — `AUTH_ENABLED=true` 모드에서도
+  `/health`, `/api/recommendations/...` 등은 그대로 OPEN. Watchlist (Phase C)
+  가 첫 보호 라우터 후보.

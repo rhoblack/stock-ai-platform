@@ -110,6 +110,38 @@ class Settings:
         default_factory=lambda: _as_bool(os.getenv("DISCLOSURE_COLLECTION_ENABLED"), False),
     )
 
+    # v0.8 Phase B -- single-user authentication foundation.
+    # Default OFF: dev / CI / local environments keep the existing read-only
+    # API surface unchanged. When AUTH_ENABLED=true is exported (typically in
+    # prod), routers using `require_auth` will reject unauthenticated requests.
+    # JWT_SECRET MUST be set when AUTH_ENABLED=true -- startup rejects an
+    # empty secret to prevent token forgery. See app/auth/security.py and
+    # app/auth/dependencies.py.
+    auth_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("AUTH_ENABLED"), False),
+    )
+    jwt_secret: str | None = field(
+        default_factory=lambda: os.getenv("JWT_SECRET") or None,
+    )
+    jwt_algorithm: str = field(
+        default_factory=lambda: os.getenv("JWT_ALGORITHM", "HS256"),
+    )
+    jwt_expires_minutes: int = field(
+        default_factory=lambda: _as_int(os.getenv("JWT_EXPIRES_MINUTES"), 1440),
+    )
+    # scrypt cost parameters. Defaults match a >100ms hash on modern hardware
+    # (RFC 7914 recommended floor: n=2^14, r=8, p=1). Tests inject lower n
+    # (`password_hash_n = 2**10`) to keep the suite fast.
+    password_hash_n: int = field(
+        default_factory=lambda: _as_int(os.getenv("PASSWORD_HASH_N"), 1 << 14),
+    )
+    password_hash_r: int = field(
+        default_factory=lambda: _as_int(os.getenv("PASSWORD_HASH_R"), 8),
+    )
+    password_hash_p: int = field(
+        default_factory=lambda: _as_int(os.getenv("PASSWORD_HASH_P"), 1),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

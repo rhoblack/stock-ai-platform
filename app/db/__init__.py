@@ -8,6 +8,7 @@ from app.db.models import (
     Holding,
     HoldingCheck,
     JobRun,
+    LoginAuditLog,
     MarketCapRanking,
     MarketRegime,
     NewsItem,
@@ -19,6 +20,7 @@ from app.db.models import (
     StockIndicator,
     StockUniverse,
     StockUniverseMember,
+    User,
 )
 
 __all__ = [
@@ -29,6 +31,7 @@ __all__ = [
     "Holding",
     "HoldingCheck",
     "JobRun",
+    "LoginAuditLog",
     "MarketCapRanking",
     "MarketRegime",
     "NewsItem",
@@ -40,4 +43,5 @@ __all__ = [
     "StockIndicator",
     "StockUniverse",
     "StockUniverseMember",
+    "User",
 ]

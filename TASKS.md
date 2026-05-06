@@ -818,25 +818,34 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - 안전 범위: 라우터 0건, frontend 0건, 신규 테이블 0건 (baseline 만), 외부 호출 0건. 운영 DB 변경 0건 (운영자 수동 실행 시점에만 적용). DB 모델 / ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine / CostModel / regime_split 변경 0건. POST / PUT / DELETE 라우터 0건
 - 완료 기준: backend pytest **682 → 698 passed (+16)**, autogenerate diff 0건 단언 통과, alembic upgrade head + downgrade base + stamp 시나리오 모두 그린, 회귀 0건. 태그 `v0.8-alembic-baseline`.
 
-### Phase B — 단일 사용자 인증 기반
+### Phase B — 단일 사용자 인증 기반 ✅ 인수
 
-- [ ] `app/db/models.py` — `User` 신규 (28번째 테이블) + `LoginAuditLog` 신규 (29번째 테이블)
-- [ ] `app/data/repositories/users.py` 신규 — `UserRepository` (create / get_by_id / get_by_username / update_password)
-- [ ] `app/data/repositories/login_audit_logs.py` 신규 — `LoginAuditLogRepository` (create / list_recent / purge_older_than)
-- [ ] `app/auth/__init__.py` 신규 — `AuthService` + `JwtIssuer` + `PasswordHasher` (bcrypt) + `AUTH_ENABLED` flag 노출
-- [ ] `app/auth/dependencies.py` 신규 — `get_current_user` FastAPI Depends + `require_auth` 데코레이터 + `AUTH_ENABLED=false` 시 fixed user_id=1 반환
-- [ ] `app/api/auth_routes.py` 신규 — `POST /api/auth/login` (첫 POST) + `POST /api/auth/logout` + `GET /api/auth/me`
-- [ ] `app/api/main.py` — auth router include + startup 시 `JWT_SECRET` 검증 (`AUTH_ENABLED=true` 시 미설정 거부)
-- [ ] `app/config.py` — `AUTH_ENABLED` (default false) + `JWT_SECRET` (default None) + `JWT_TTL_HOURS` (default 24) + `PROTECT_GET_ROUTES` (default false) 추가
-- [ ] `scripts/create_admin.py` 신규 — argparse CLI default dry-run, `--commit` 시 단일 admin user 생성, password prompt + bcrypt hash + JWT secret 생성 가이드 출력
-- [ ] `scripts/purge_login_audit.py` 신규 — argparse CLI default dry-run, `--days` (default 90) 이전 행 삭제
-- [ ] `alembic/versions/0002_user_audit.py` 신규 — User + LoginAuditLog 테이블 생성
-- [ ] `requirements.txt` — `bcrypt>=4.0` + `pyjwt>=2.8` 추가
-- [ ] `tests/unit/test_auth_service.py` 신규 — bcrypt hash/verify (cost 4) + JWT issue/verify + TTL 만료 + invalid signature
-- [ ] `tests/integration/test_auth_routes.py` 신규 — login happy / login wrong password / login unknown user / logout / me / `AUTH_ENABLED=false` bypass / `AUTH_ENABLED=true` + token 분기 / LoginAuditLog 기록 / source_ip SHA256 해시 / forbidden 키 미노출 / startup `JWT_SECRET` 미설정 거부
-- [ ] `DB_SCHEMA.md` §28 / §29 신규 — User + LoginAuditLog 컬럼 + Index + Unique + 정책
-- 안전 범위: 자동매매 0건, 실 외부 API 호출 0건, scheduler job 0건, ScoringEngine 변경 0건. POST 라우터는 auth 도메인만 (3건). 평문 IP / 평문 password 저장 0건
-- 완료 기준: backend pytest **~692 → ~735 (+~43)**, 회귀 0건. `AUTH_ENABLED=false` 모드에서 기존 회귀 테스트 100% 그대로 통과. 태그 `v0.8-auth-foundation`.
+- [x] `app/db/models.py` — `User` 신규 (28번째 테이블, username unique + scrypt password_hash + is_active + is_admin + last_login_at) + `LoginAuditLog` 신규 (29번째 테이블, username + user_id FK + event_type + source_ip_hash + user_agent_hash + 복합 index 2종)
+- [x] `app/db/__init__.py` — User + LoginAuditLog re-export
+- [x] `app/data/repositories/users.py` 신규 — `UserRepository` (create / get_by_id / get_by_username / set_last_login / deactivate)
+- [x] `app/data/repositories/login_audit_logs.py` 신규 — `LoginAuditLogRepository` (create / list_recent / list_by_username / list_by_user) + `EVENT_LOGIN_SUCCESS` / `EVENT_LOGIN_FAILED` / `EVENT_LOGOUT` 상수 + event_type validation
+- [x] `app/data/repositories/__init__.py` — UserRepository + LoginAuditLogRepository export 추가
+- [x] `app/auth/__init__.py` 신규 — public surface (`PasswordHasher` / `JwtIssuer` / `AuthService` / `hash_for_audit` / `validate_auth_settings` / `AuthenticatedUser` / `LoginResult` / `MissingSecretError` / `InvalidTokenError` / `ExpiredTokenError`)
+- [x] `app/auth/security.py` 신규 — scrypt 기반 `PasswordHasher` (`hash_password` / `verify_password` + malformed hash 입력 raise 0건) + `JwtIssuer` (HS256, issue/decode + ExpiredTokenError + InvalidTokenError + MissingSecretError) + `hash_for_audit` (SHA256 hex, None/empty → None) + `AuthService` (login → LOGIN_SUCCESS/FAILED audit + set_last_login + token; record_logout → LOGOUT audit) + `validate_auth_settings` (AUTH_ENABLED=true → JWT_SECRET 필수)
+- [x] `app/auth/dependencies.py` 신규 — `get_current_user` (AUTH_ENABLED=false 시 dev fallback user_id=1, AUTH_ENABLED=true 시 Bearer token 검증) + `require_auth` (Phase C Watchlist 보호 라우터용) + ephemeral per-process secret (AUTH_ENABLED=false + JWT_SECRET 미설정 시 dev fallback) + `extract_client_ip` (X-Forwarded-For → request.client.host)
+- [x] `app/api/auth_routes.py` 신규 — `POST /api/auth/login` (첫 POST, generic 401 + LoginAuditLog) + `POST /api/auth/logout` + `GET /api/auth/me` (AUTH_ENABLED=false 시 fallback / true 시 user 조회 + deactivate 시 401). LoginRequest / LoginResponse / LoginUser / LogoutResponse / MeResponse Pydantic schema 자체 정의
+- [x] `app/api/__init__.py` — auth_router export
+- [x] `app/main.py` — auth_router include + `validate_auth_settings(settings)` startup 호출 (AUTH_ENABLED=true + JWT_SECRET 미설정 시 startup 거부)
+- [x] `app/config/settings.py` — `auth_enabled` (default false) + `jwt_secret` (default None) + `jwt_algorithm` (default HS256) + `jwt_expires_minutes` (default 1440) + `password_hash_n` / `r` / `p` (scrypt 비용 파라미터) 추가
+- [x] `scripts/create_admin.py` 신규 — argparse CLI (`--username` / `--password` / `--db-url` / `--no-admin` / `--update-if-exists`) + ADMIN_PASSWORD env var + interactive prompt + 평문 / hash 출력 0건
+- [x] `alembic/versions/0002_auth_foundation.py` 신규 — autogenerate 결과 (users + login_audit_logs op.create_table + 5 인덱스) + Phase B 정책 docstring (down_revision=`0001_baseline_v0_7`)
+- [x] `pyproject.toml` — `PyJWT>=2.8,<3.0` 추가 (bcrypt 는 MSYS2 UCRT64 wheel 부재로 stdlib `hashlib.scrypt` 채택, comment 명시)
+- [x] `tests/unit/test_auth_security.py` 신규 — **26 케이스**: PasswordHasher (8 + 5 parametrize), JwtIssuer (5), hash_for_audit (3 + 3 parametrize), validate_auth_settings (4)
+- [x] `tests/integration/test_auth_repositories.py` 신규 — **15 케이스**: UserRepository (7 — create / get_by_username / get_by_id / unique / set_last_login / deactivate / admin), LoginAuditLogRepository (8 — success / unknown user / event_type validation / **평문 IP/UA 미저장** / list_recent / list_by_username / list_by_user)
+- [x] `tests/integration/test_auth_routes.py` 신규 — **14 케이스**: AUTH_ENABLED=false (5) / AUTH_ENABLED=true + token (8) / 기존 read-only 라우터 OPEN 가드 (1)
+- [x] `tests/integration/test_create_admin_cli.py` 신규 — **5 케이스**: 정상 생성 / 중복 거부 / `--update-if-exists` / `--no-admin` / 빈 password
+- [x] `tests/integration/test_alembic_migration.py` 갱신 — `HEAD_REVISION = "0002_auth_foundation"` / `EXPECTED_TABLE_COUNT = 29` / spot-check 에 users + login_audit_logs 추가. `compare_metadata` diff 0건 단언 유지
+- [x] `API_SPEC.md` §17 신규 — auth endpoint 3개 + 정책 (generic 401 / password_hash 미노출 / 평문 IP/UA 미저장 / 기존 read-only 보호 안 함) + 금지 API 갱신
+- [x] `DB_SCHEMA.md` §28 / §29 신규 — User + LoginAuditLog 컬럼 + Index + Unique + 정책
+- [x] `INTEGRATION_RUNBOOK.md` §18 신규 (6 sub-section: admin 계정 생성 / AUTH_ENABLED=true 전환 / login smoke / audit log 확인 / 운영 이슈 / 안전 가드)
+- [x] `TESTING.md` §6.17 신규 — 5 sub-section (Unit 26 / Repo 15 / API 14 / CLI 5 / Alembic head 갱신) + 회귀 기준 698 → 760
+- 안전 범위: 자동매매 0건, 실 외부 API (KIS / DART / RSS / Telegram) 호출 0건, scheduler job 0건, ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine / CostModel / regime_split 변경 0건. 기존 read-only GET 라우터 동작 변경 0건 (AUTH_ENABLED=true 모드에서도 그대로 OPEN). POST 라우터 5건 → **3건만** (`/api/auth/login` + `/api/auth/logout` + `/api/auth/me` 는 GET 이므로 POST 2건). Watchlist 라우터 0건 (Phase C). 평문 IP / 평문 user agent / 평문 password 저장 0건
+- 완료 기준: backend pytest **698 → 760 passed (+62)** (1 deselected 그대로), `AUTH_ENABLED=false` 모드에서 기존 v0.7 회귀 테스트 100% 그대로 통과, alembic head = `0002_auth_foundation`, compare_metadata diff 0건. 태그 `v0.8-auth-foundation`.
 
 ### Phase C — Watchlist DB / API
 

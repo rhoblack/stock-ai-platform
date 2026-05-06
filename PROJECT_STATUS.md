@@ -219,6 +219,95 @@ HoldingCheckEngine 본 weight 변경 0건, 자동매매 / 실주문 / 실 외부
 - 테스트는 `tmp_path` 임시 SQLite 만 사용 — 운영 / 개발 DB 0건 접근
 - CI 는 `RUNNER_TEMP/ci_alembic_smoke.db` 만 사용
 
+### v0.8 Phase B 결과 (요약) — 단일 사용자 인증 foundation
+
+- 마감 일자: **2026-05-06 (Asia/Seoul)**
+- 회귀 게이트: backend pytest **698 → 760 passed (+62)** (1 deselected 그대로),
+  frontend / e2e / build 변경 0건 (Phase B 는 백엔드 + CLI 만; 프런트 로그인
+  화면은 Phase D 후보)
+- 누적 인수 태그 (예정): `v0.8-auth-foundation`
+
+**산출물:**
+
+- `app/db/models.py` — `User` (28번째 테이블, username unique + scrypt
+  password_hash + is_active + is_admin + last_login_at) + `LoginAuditLog`
+  (29번째 테이블, username + user_id FK + event_type + source_ip_hash +
+  user_agent_hash + 복합 index 2종)
+- `app/data/repositories/users.py` — `UserRepository` (5 method) +
+  `app/data/repositories/login_audit_logs.py` — `LoginAuditLogRepository`
+  (4 method) + EVENT 상수 + event_type validation
+- `app/auth/security.py` — scrypt 기반 `PasswordHasher` (bcrypt 대신; MSYS2
+  UCRT64 wheel 부재 + 보안 동등성 — 메모리 hard) + `JwtIssuer` (HS256, 24h
+  default) + `hash_for_audit` (SHA256) + `AuthService` (login → audit + token,
+  generic failure) + `validate_auth_settings` (AUTH_ENABLED=true → JWT_SECRET
+  필수)
+- `app/auth/dependencies.py` — `get_current_user` (AUTH_ENABLED=false 시 dev
+  fallback user_id=1, true 시 Bearer token 검증) + `require_auth` (Phase C
+  Watchlist 보호 라우터용 placeholder) + ephemeral per-process secret +
+  `extract_client_ip`
+- `app/api/auth_routes.py` — `POST /api/auth/login` (첫 POST) +
+  `POST /api/auth/logout` + `GET /api/auth/me`. Pydantic schema 자체 정의
+  (LoginRequest / LoginResponse / LoginUser / LogoutResponse / MeResponse)
+- `app/main.py` — auth_router include + `validate_auth_settings(settings)`
+  startup 호출
+- `app/config/settings.py` — `auth_enabled` / `jwt_secret` / `jwt_algorithm`
+  / `jwt_expires_minutes` / `password_hash_n` / `r` / `p` 7 필드 추가
+- `scripts/create_admin.py` — argparse CLI (interactive / env var / `--db-url`
+  / `--no-admin` / `--update-if-exists`) + 평문 / hash 출력 0건
+- `alembic/versions/0002_auth_foundation.py` — autogenerate 결과 (down_revision
+  = `0001_baseline_v0_7`) + Phase B 정책 docstring
+- `pyproject.toml` — `PyJWT>=2.8,<3.0` 추가. bcrypt 미채택 사유 (scrypt
+  stdlib 채택) inline comment
+- `tests/unit/test_auth_security.py` — **26 케이스** (PasswordHasher / JwtIssuer
+  / hash_for_audit / validate_auth_settings)
+- `tests/integration/test_auth_repositories.py` — **15 케이스** (User /
+  LoginAuditLog 검증, **평문 IP/UA 미저장 가드 포함**)
+- `tests/integration/test_auth_routes.py` — **14 케이스** (AUTH_ENABLED=false
+  + true 양쪽 모드, generic 401, audit hash 가드, 기존 read-only OPEN 가드)
+- `tests/integration/test_create_admin_cli.py` — **5 케이스** (정상 생성 /
+  중복 / update-if-exists / no-admin / empty password)
+- `tests/integration/test_alembic_migration.py` 갱신 — `HEAD_REVISION =
+  "0002_auth_foundation"` + `EXPECTED_TABLE_COUNT = 29` + spot-check 11 →
+  13 항목 (users + login_audit_logs 추가). `compare_metadata` diff 0건 가드
+  유지
+- `API_SPEC.md` §17 신규 — auth endpoint 3개 + 정책 + 금지 API 갱신
+- `DB_SCHEMA.md` §28 / §29 신규 + 상단 헤더 (27 → 29 테이블)
+- `INTEGRATION_RUNBOOK.md` §18 신규 (6 sub-section)
+- `TESTING.md` §6.17 신규 (5 sub-section + 회귀 기준)
+
+**Auth settings 정책 요약:**
+
+| 환경 | `AUTH_ENABLED` | 동작 |
+|---|---|---|
+| dev / local / CI | `false` (default) | 기존 GET 라우터 그대로 OPEN. login 도 ephemeral per-process secret 으로 동작 (재시작 시 token 무효) |
+| prod | `true` (`.env` 명시) | `require_auth` 가드 활성. `JWT_SECRET` 미설정 시 startup 거부 |
+
+- `JWT_SECRET` 누락 + AUTH_ENABLED=true → `MissingSecretError` (startup 거부)
+- bcrypt 대신 stdlib `hashlib.scrypt` (RFC 7914, 메모리 hard, MSYS2 UCRT64
+  wheel 부재 회피, n=2^14 default)
+- JWT TTL 기본 24h, refresh token 미구현 (만료 시 재로그인)
+
+**보안 가드 결과:**
+
+- 평문 password 저장 0건 — `users.password_hash` 는 항상 scrypt
+- 평문 IP / 평문 user agent 저장 0건 — `login_audit_logs.source_ip_hash` /
+  `user_agent_hash` 는 항상 SHA256 hex 64자 (e2e 단언)
+- API 응답에 `password_hash` / `scrypt$` 0건 (login + me 응답 + create_admin
+  CLI stdout/stderr 모두 가드)
+- Login 실패 응답이 unknown user / wrong password / deactivated 를 generic
+  메시지로 통일 — username 존재 여부 노출 0건
+- ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine
+  / CostModel / regime_split 변경 0건
+- 기존 read-only GET 라우터 동작 변경 0건 (AUTH_ENABLED=true 에서도 OPEN)
+- POST 라우터 = `/api/auth/login` + `/api/auth/logout` 2건만. 그 외 도메인
+  POST/PUT/DELETE 0건
+
+**Alembic head:**
+
+- `0001_baseline_v0_7` → `0002_auth_foundation` (down_revision 정합)
+- `compare_metadata` diff 0건 단언 통과 (load-bearing 가드)
+- baseline `0001` 은 변경 0건 (Phase A 결과 그대로)
+
 ---
 
 ## 0-1. v0.7 마감 선언 — Strategy & Backtest Foundation

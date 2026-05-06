@@ -855,3 +855,75 @@ class BacktestResult(Base):
             name="uq_backtest_results_run_recommendation",
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.8 Phase B -- single-user authentication foundation
+#
+# User: a single admin account (multi-user / RBAC / OAuth / SSO are out of
+# scope -- see PLAN-0008). password_hash uses scrypt (see app/auth/security.py)
+# and is NEVER null and NEVER stored in plaintext. last_login_at is updated by
+# AuthService.login on a successful POST /api/auth/login.
+#
+# LoginAuditLog: append-only audit trail for LOGIN_SUCCESS / LOGIN_FAILED /
+# LOGOUT events. source_ip and user_agent are SHA256-hashed before insert
+# (`app.auth.security.hash_for_audit`) -- raw IP / UA are never persisted.
+# ---------------------------------------------------------------------------
+
+
+class User(TimestampMixin, Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    audit_logs: Mapped[list["LoginAuditLog"]] = relationship(
+        back_populates="user",
+    )
+
+
+class LoginAuditLog(Base):
+    __tablename__ = "login_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # username is captured even for LOGIN_FAILED events where user_id is NULL,
+    # so operators can investigate brute-force attempts on unknown accounts.
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # SHA256-hashed values only -- raw IP / user agent MUST NOT be stored.
+    source_ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+        index=True,
+    )
+
+    user: Mapped[User | None] = relationship(back_populates="audit_logs")
+
+    __table_args__ = (
+        Index(
+            "ix_login_audit_logs_username_created",
+            "username",
+            "created_at",
+        ),
+        Index(
+            "ix_login_audit_logs_event_created",
+            "event_type",
+            "created_at",
+        ),
+    )

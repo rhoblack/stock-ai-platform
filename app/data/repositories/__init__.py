@@ -10,6 +10,7 @@ from app.data.repositories.fundamental_snapshots import FundamentalSnapshotRepos
 from app.data.repositories.holdings import HoldingRepository
 from app.data.repositories.holding_checks import HoldingCheckRepository
 from app.data.repositories.job_runs import JobRunRepository
+from app.data.repositories.login_audit_logs import LoginAuditLogRepository
 from app.data.repositories.market_cap_rankings import MarketCapRankingRepository
 from app.data.repositories.market_regimes import MarketRegimeRepository
 from app.data.repositories.news_items import NewsItemRepository
@@ -33,6 +34,7 @@ from app.data.repositories.stock_universes import (
     StockUniverseRepository,
 )
 from app.data.repositories.theme_stock_mappings import ThemeStockMappingRepository
+from app.data.repositories.users import UserRepository
 
 __all__ = [
     "AnalystReportRepository",
@@ -46,6 +48,7 @@ __all__ = [
     "HoldingRepository",
     "HoldingCheckRepository",
     "JobRunRepository",
+    "LoginAuditLogRepository",
     "MarketCapRankingRepository",
     "MarketRegimeRepository",
     "NewsItemRepository",
@@ -62,4 +65,5 @@ __all__ = [
     "StockUniverseMemberRepository",
     "StockUniverseRepository",
     "ThemeStockMappingRepository",
+    "UserRepository",
 ]

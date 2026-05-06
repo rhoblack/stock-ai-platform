@@ -3,7 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import router as api_router
+from app.api import auth_router, router as api_router
+from app.auth.security import validate_auth_settings
 from app.config.logging import configure_logging
 from app.config.settings import get_settings
 from app.db.session import SessionLocal
@@ -52,6 +53,11 @@ def create_app() -> FastAPI:
         log_to_file=settings.log_to_file,
     )
 
+    # v0.8 Phase B -- fail fast if AUTH_ENABLED=true is set without a secret.
+    # Raising here turns a misconfiguration into a startup error rather than
+    # a runtime 500 on the first /api/auth/login attempt.
+    validate_auth_settings(settings)
+
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
@@ -68,6 +74,7 @@ def create_app() -> FastAPI:
             "env": settings.app_env,
         }
 
+    app.include_router(auth_router)
     app.include_router(api_router)
     return app
 

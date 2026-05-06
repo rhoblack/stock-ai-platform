@@ -1,14 +1,17 @@
 # API_SPEC.md
 
-> 본 문서는 **v0.7 마감 시점** 기준이다 (`v0.7-frontend-backtest` 누적,
-> `v0.7-final` 마감 예정). v0.5 §14 테마 + v0.6 §15 재무·실적 + v0.7 §16
-> 백테스트 + 추천 / 보유 evidence 화이트리스트 + Strategy / Backtest 응답에
-> broker / 주문 필드 0건 가드가 모두 반영되어 있다.
+> 본 문서는 **v0.8 Phase B 시점** 기준이다 (`v0.8-auth-foundation` 누적).
+> v0.5 §14 테마 + v0.6 §15 재무·실적 + v0.7 §16 백테스트 + v0.8 §17 인증 +
+> 추천 / 보유 evidence 화이트리스트 + Strategy / Backtest 응답에 broker / 주문
+> 필드 0건 가드가 모두 반영되어 있다.
 
 FastAPI 기반 PC 대시보드 API 명세이다.
 
-v0.1 ~ v0.7 모든 사이클의 API는 조회 중심이다 (read-only GET 만, POST / PUT /
-DELETE 0건). 실거래 주문 API는 구현하지 않는다.
+v0.1 ~ v0.7 모든 사이클의 API는 조회 중심이었다 (read-only GET 만). v0.8 Phase
+B 에서 단일 사용자 인증 도메인 한정으로 **POST 라우터 첫 도입** —
+`POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` 3건. 그
+외 도메인 (recommendations / holdings / backtest / 잡 트리거 / 알림 / 점수 등)
+은 여전히 read-only GET 만. 실거래 주문 API는 구현하지 않는다.
 
 v0.7 마감 시점 기준으로 23+ GET 라우터가 `app/api/routes.py`에 구현되어 있고
 [Pydantic schema](app/api/schemas.py)는 risk_summary, risk_level, risk_flags,
@@ -629,13 +632,112 @@ cost model 메타.
 order_price / order_type / side 컬럼이 없으므로 응답에도 0건. e2e 테스트가 raw
 JSON 트리에서 `source_file_path` / `order_type` / `quantity` 0건을 단언한다.
 
+## 17. 인증 (v0.8 Phase B)
+
+v0.1 ~ v0.7 동안 일관 유지된 read-only 정책의 **첫 변경 cycle**. POST 라우터
+3건만 추가 — 그 외 도메인 (recommendations / holdings / backtest / 잡 트리거 /
+알림 / 점수 등) POST/PUT/DELETE 0건. 다중 사용자 / OAuth / SSO / refresh token
+은 구현 범위 밖이다.
+
+**운영 모드**: `Settings.auth_enabled` (env `AUTH_ENABLED`) 토글 — `false`
+default 면 dev / CI 호환성 유지 (기존 GET 라우터 그대로 OPEN, login 도 ephemeral
+secret 으로 동작). `true` 시 `JWT_SECRET` 미설정이면 startup 거부 (`MissingSecretError`).
+어느 모드에서도 기존 read-only GET 라우터는 강제 보호되지 않는다 — Watchlist
+(Phase C) 가 첫 보호 라우터 후보.
+
+### POST /api/auth/login
+
+요청:
+
+```json
+{
+  "username": "admin",
+  "password": "hunter2!"
+}
+```
+
+성공 (200):
+
+```json
+{
+  "access_token": "eyJhbGciOiJI...",
+  "token_type": "bearer",
+  "expires_in": 86400,
+  "issued_at": "2026-05-06T00:00:00+00:00",
+  "expires_at": "2026-05-07T00:00:00+00:00",
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "is_admin": true
+  }
+}
+```
+
+실패 (401):
+
+```json
+{ "detail": "invalid username or password" }
+```
+
+- 응답에 `password_hash` / `password` / `scrypt$...` 0건 (e2e + integration 가드).
+- 실패 응답은 "unknown user" / "wrong password" / "deactivated" 를 단일 generic
+  메시지로 통일 — username 존재 여부 노출 0건.
+- 모든 시도는 `LoginAuditLog` 에 기록 (성공 = LOGIN_SUCCESS / 실패 = LOGIN_FAILED).
+  `source_ip` 와 `user_agent` 는 SHA256 해시만 저장 (평문 0건).
+
+### POST /api/auth/logout
+
+요청 헤더에 `Authorization: Bearer <token>` (있으면 user 확인). body 없음.
+
+성공 (200): `{"status": "ok"}`
+
+- JWT 자체는 stateless — token revocation list 미구현.
+- audit log 에 LOGOUT 이벤트만 기록.
+
+### GET /api/auth/me
+
+`AUTH_ENABLED=false`:
+
+```json
+{ "auth_enabled": false, "via": "auth_disabled_fallback", "user": null }
+```
+
+`AUTH_ENABLED=true` + 유효 Bearer token:
+
+```json
+{
+  "auth_enabled": true,
+  "via": "token",
+  "user": { "id": 1, "username": "admin", "is_admin": true }
+}
+```
+
+- `AUTH_ENABLED=true` 인데 token 없음 / 만료 / 위조 → 401 (`WWW-Authenticate: Bearer`)
+- `AUTH_ENABLED=true` + token 발급 후 user 가 deactivate 된 경우 → 401
+- 응답에 `password_hash` 0건 (DB row → schema 변환 시 명시적으로 제외)
+
+**금지 필드** (v0.1 ~ v0.7 누적 정책 그대로 유지):
+
+- `password_hash` / `password` / `scrypt$...` 노출 0건
+- `source_file_path` 노출 0건 (audit / user 응답에는 source_file_path 자체가 없음)
+- `broker` / `account` / `quantity` / `order_*` 0건
+- 평문 IP / 평문 user agent 0건 (audit row 의 `source_ip_hash` /
+  `user_agent_hash` 만, 라우터에서 schema 화 안 함)
+
 ## 금지 API
 
-v0.1에서는 다음 API를 만들지 않는다.
+v0.1 ~ v0.8 모든 cycle 에서 다음 API 는 만들지 않는다.
 
 ```text
 POST /api/orders
 POST /api/trading/auto
 POST /api/trading/full-auto
 POST /api/broker/place-order
+POST /api/jobs/trigger              # 잡 수동 트리거 = v0.9+ 후보 (인증 + 보안 검토 후)
+POST /api/recommendations            # 추천 즉시 생성 = v0.9+ 후보
+POST /api/backtest/runs              # 백테스트 시작 = v0.9+ 후보
+DELETE /api/recommendations/{id}     # 운영자 재정의 = 권한 검토 필요
 ```
+
+v0.8 Phase B 가 도입한 POST 는 `/api/auth/login` + `/api/auth/logout` 2건뿐이다.
+Watchlist (`/api/watchlists/...`) 는 Phase C 후보 — Phase B 에서는 도입하지 않는다.
