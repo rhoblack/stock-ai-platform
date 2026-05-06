@@ -995,7 +995,7 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] `TESTING.md` 기준선 갱신 (916 pytest / 146 vitest / 19 e2e — Phase D 시점 이미 반영)
 - [x] `ARCHITECTURE.md` v0.9 마감 시점 반영 (보안 미들웨어 레이어 / UserPreference / provider 회복성)
 - [x] `API_SPEC.md` / `INTEGRATION_RUNBOOK.md` 헤더 정합성 갱신
-- [ ] tag `v0.9-final` + push (누적 5 태그 모두 원격 push 확인)
+- [x] tag `v0.9-final` + push (commit `6062ad4`, 누적 5 태그 모두 원격 push 확인)
 - 완료 기준: 4 게이트 그린 (pytest 916 / vitest 146 / e2e 19 / build) + 5 누적 태그 push + RELEASE_NOTES_v0.9.md 작성
 
 ---
