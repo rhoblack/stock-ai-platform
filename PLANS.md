@@ -1906,3 +1906,289 @@ v0.8-final                     ← Phase E 마감 (RELEASE_NOTES_v0.8 + 4 게이
 - `AUTH_ENABLED=true` + JWT 시 보호 라우터 401/200 분기 단언
 - `source_file_path` / `broker` / `account` / `quantity` / `order_*` 외부 노출 0건 (helper 검증, Watchlist 응답 포함)
 - Alembic `compare_metadata` diff 0건 단언 (baseline 정합성)
+
+---
+
+## PLAN-0009: v0.9 Operational Security & Watchlist Polish (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.8-final` (HEAD `80f0bac` 시점, origin/main 동기화 완료, 5 누적 태그 모두 push 완료)
+- v0.1 ~ v0.8 모두 인수 완료. 회귀 게이트: backend pytest **808 passed (1 deselected)**, frontend vitest **113 passed**, Playwright e2e **19 passed**, build 그린
+- v0.9 는 v0.8-final 위에 **보안 강화 + 운영 모니터링 + Watchlist API 고도화 + UserPreference 기초** 5 phase 누적이다. v0.8 에서 POST 라우터(5건)와 인증(JWT + scrypt)이 도입되었으므로, v0.9 에서는 그 위에 운영 필수 기반(rate limit / security headers / Sentry) 과 UX 고도화(Watchlist rename/delete/default + 메모 편집 + UserPreference) 를 쌓는다.
+- v0.1 의 자동매매 부재 / 실 KIS 주문 0건 / DRY_RUN 기본 / mock·Fake provider 정책 + v0.4 의 저작권 정책 + v0.5 의 자동 fetch default OFF + v0.6 의 evidence whitelist + v0.7 의 BUY-only metrics + v0.8 의 POST 5건 한정 + 단일 사용자 정책 모두 그대로 유지한다.
+- v0.9 도 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO / 실 외부 API 자동 호출 / Telegram 실 발송 0건 정책을 유지한다. **실 DART / 실 RSS provider 구현은 라이선스 검토(사람) 선행 없이 코드 추가 불가** — v0.9 에서는 인터페이스 + 회복성 레이어(retry decorator / failure isolation / provider_status enum) 강화만 수행한다.
+
+### 후보 비교 (v0.9 진입 시점 기준)
+
+| # | 후보 | 가치 | 난이도 | 위험 | 외부 의존성 | 라이선스 위험 | v1.0 기여 | v0.9 채택 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 보안 강화 (rate limit / security headers / brute force) | 높음 — POST 라우터 운영 전 필수. rate limit 없으면 login endpoint 노출 위험 | 낮음~중 — `slowapi` + middleware 추가 | 낮음 | slowapi (MIT) | 없음 | 매우 높음 | ✅ 채택 (Phase A) |
+| 2 | 운영 모니터링 (Sentry + 구조화 로깅) | 높음 — v0.9 부터 외부 노출 가능성 증가. 장애 가시성 필수 | 낮음~중 — sentry-sdk (SENTRY_ENABLED=false 기본) + LOG_FORMAT=json env | 낮음 | sentry-sdk (BSL) | 없음 | 높음 | ✅ 채택 (Phase B) |
+| 3 | Watchlist API 고도화 (PUT rename / DELETE list / default / 메모) | 중~높음 — 사용자 체감 가치. v0.8 에서 create/add/delete-item 만 구현 | 중 — PUT/DELETE 신규 라우터 4건 + cascade delete + Alembic revision | 낮음 | 없음 | 없음 | 중 | ✅ 채택 (Phase C) |
+| 4 | UserPreference 기초 (기본 watchlist / 기본 시장 / 기본 전략) | 중 — 단일 사용자이므로 즉각 가치 작음. 하지만 32번째 테이블 + GET/PUT preference API 는 향후 다중 사용자 기반 | 중 — 신규 테이블 + Alembic revision + GET/PUT /api/me/preferences | 낮음 | 없음 | 없음 | 중~높음 | ✅ 채택 (Phase C, Watchlist 와 묶음) |
+| 5 | Provider 회복성 레이어 (retry decorator / failure isolation / status enum) | 중 — 실 provider 없는 상태에서도 인터페이스 강화. `/api/jobs` 응답에 provider health 추가 | 낮음~중 — ABC + Fake provider 내부 리팩터. 실 provider 구현 0건 | 낮음 | 없음 | 없음 | 높음 | ✅ 채택 (Phase C, 범위 내) |
+| 6 | Frontend 관리 UI (Watchlist rename/delete/default + 메모 인라인 편집 + Settings 화면) | 중~높음 — Phase C API 없이 진행 불가. Phase C 와 연동 | 중 — React mutation + vitest + e2e 보강 | 낮음 | 없음 | 없음 | 중 | ✅ 채택 (Phase D) |
+| 7 | 실 DART API 구현체 | 중~높음 | 높음 | 높음 | 외부 API 높음 | **라이선스 검토 필수 (사람)** | 높음 | ❌ v0.9+ 후보 — 라이선스 검토 선행 |
+| 8 | 실 RSS / News API 구현체 | 중~높음 | 높음 | 높음 | 외부 API 높음 | **라이선스 검토 필수 (사람)** | 높음 | ❌ v0.9+ 후보 — 라이선스 검토 선행 |
+| 9 | 백테스트 고도화 (walk-forward / multi-strategy / per-symbol slippage) | 높음 (v1.0) | 높음 | 낮음 | 없음 | 없음 | 매우 높음 | ❌ v0.10 후보 — v0.7~v0.8 데이터 누적 필요 |
+| 10 | 인증 고도화 (다중 사용자 / OAuth / refresh token) | 중 | 높음 | 중 | 없음 | 없음 | 높음 | ❌ v0.10+ 후보 — 단일 사용자 운영 검증 후 |
+| 11 | LLM 자동 전략 생성 | 낮음~중 | 매우 높음 | 높음 | LLM API | 없음 | 중 | ❌ v0.11+ 후보 |
+| 12 | 자동매매 / 실주문 | (위험) | 매우 높음 | 매우 높음 | KIS 실 주문 API | 라이선스 + 컴플라이언스 | — | ❌ Future Backlog |
+
+### 시나리오 옵션
+
+**Scenario X — Security + Monitoring + Provider 회복성 (권장 기반 ✅)**
+
+- Phase A: 보안 강화 — `slowapi` rate limit (login 10/min, watchlist write 30/min) + CORS `ALLOWED_ORIGINS` 환경변수 + security headers middleware (X-Content-Type-Options / X-Frame-Options / Referrer-Policy / HSTS) + CSP 기초 + brute force protection (LoginAuditLog 기반 카운터 → 5회 실패 시 15분 잠금)
+- Phase B: 운영 모니터링 — `sentry-sdk` backend (SENTRY_DSN env + SENTRY_ENABLED=false default) + JSON 구조화 로깅 (LOG_FORMAT=json env) + React ErrorBoundary + frontend Sentry optional (VITE_SENTRY_DSN) + `/api/jobs` failure summary 보강
+- Phase C: Watchlist API 고도화 + UserPreference + Provider 회복성 — PUT/DELETE 라우터 4건 + `UserPreference` 32번째 테이블 + Alembic revision 0004~0005 + provider_status enum + retry decorator
+- Phase D: Frontend — Watchlist 관리 UI + Settings 화면 보강 + React ErrorBoundary wrap + vitest/e2e 보강
+- Phase E: 마감 — `RELEASE_NOTES_v0.9.md` + 4 게이트 재확인 + tag `v0.9-final`
+
+**Scenario Y — Watchlist Polish + UserPreference (UX 우선)**
+
+- Phase A~D: 보안 강화 없이 Watchlist rename/delete/default + UserPreference + 프런트 UI 집중
+- **단점**: rate limit / security headers 없이 POST 라우터를 운영하면 외부 노출 시 위험. Phase A 보안 강화가 운영 필수 — 건너뛸 수 없음. **권장하지 않음**
+
+**Scenario Z — 백테스트 고도화 우선**
+
+- Phase A~D: walk-forward / multi-strategy / per-symbol slippage
+- **단점**: v0.7 이후 데이터 누적 기간이 충분하지 않음. walk-forward 는 최소 6개월 이상의 recommendation_results 가 있어야 의미 있음. 현재 시기상조. **v0.10 후보**
+
+**Scenario W — 실 DART/RSS Provider 구현**
+
+- Phase A~D: DartFundamentalProvider / RssNewsProvider 구현
+- **단점**: 라이선스 검토(사람) 없이 코드 추가 불가. DART OpenAPI 이용 약관 / 상업 목적 가부 / Rate limit 정책을 법무 또는 운영자가 확인해야 함. **현 cycle 부적합**
+
+**채택 결론: Scenario X 수정 — Operational Security & Watchlist Polish (권장 ✅)**
+
+Scenario X 의 Security + Monitoring 기반 위에 Scenario Y 의 Watchlist Polish + UserPreference 를 합친다. 백테스트 / 실 Provider / LLM 은 모두 미착수.
+
+### Phase A: Security Hardening
+
+**목표**: POST 라우터 운영 전 필수 보안 레이어 완성. v0.8 에서 도입한 JWT + scrypt 위에 rate limit / CORS 강화 / security headers / brute force protection 추가.
+
+**산출물**:
+
+1. `app/middleware/security_headers.py` — `SecurityHeadersMiddleware` (Starlette `BaseHTTPMiddleware` 상속)
+   - `X-Content-Type-Options: nosniff`
+   - `X-Frame-Options: DENY`
+   - `Referrer-Policy: strict-origin-when-cross-origin`
+   - `Permissions-Policy: geolocation=(), camera=()`
+   - `Strict-Transport-Security: max-age=63072000; includeSubDomains` (HTTPS 환경만)
+   - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:` (기초 CSP)
+2. `app/middleware/rate_limit.py` — `slowapi` (MIT) 기반 Rate Limiter
+   - `POST /api/auth/login`: 10/min per IP
+   - `POST /api/watchlists`, `POST /api/watchlists/{id}/items`, `DELETE /api/watchlists/{id}/items/{symbol}`: 30/min per IP
+   - `GET` 라우터: 제한 없음
+3. `app/auth/brute_force.py` — LoginAuditLog 기반 카운터
+   - 동일 username 5회 실패 → 15분 잠금 (`X-Retry-After` 헤더 반환)
+   - 잠금 상태는 DB (LoginAuditLog) 에서 쿼리 — 인메모리 캐시 없이 stateless
+4. `app/config.py` 환경 변수 추가
+   - `ALLOWED_ORIGINS`: comma-separated, default `http://localhost:5173`
+   - `RATE_LIMIT_ENABLED`: bool, default `true`
+   - `BRUTE_FORCE_ENABLED`: bool, default `true`
+   - `BRUTE_FORCE_MAX_ATTEMPTS`: int, default `5`
+   - `BRUTE_FORCE_LOCKOUT_MINUTES`: int, default `15`
+5. `tests/unit/test_security_headers.py` — SecurityHeadersMiddleware 응답 헤더 단언 (~8 tests)
+6. `tests/unit/test_rate_limit.py` — rate limit 초과 시 429 단언 (~6 tests)
+7. `tests/unit/test_brute_force.py` — 5회 실패 → 423 Locked + X-Retry-After 단언 (~8 tests)
+8. `requirements.txt` — `slowapi>=0.1.9` 추가
+
+**정책 가드** (Phase A 에서 하지 않을 것):
+
+- ❌ 실 KIS / DART / RSS / Telegram 자동 호출
+- ❌ DB 모델 신규 테이블 추가 (LoginAuditLog 기존 테이블 조회만)
+- ❌ 새 API 라우터 (보안 미들웨어만)
+- ❌ 프런트엔드 변경
+
+**인수 게이트**: backend pytest ~830 passed / 4 게이트 그린 / 태그 `v0.9-security-hardening`
+
+---
+
+### Phase B: Error Monitoring + Structured Logging
+
+**목표**: 운영 가시성 확보. Sentry 통합(optional) + JSON 구조화 로깅 + React ErrorBoundary.
+
+**산출물**:
+
+1. `app/logging_config.py` — 구조화 로깅 설정
+   - `LOG_FORMAT=json` 환경변수 → `structlog` 또는 `python-json-logger` 기반 JSON 포맷
+   - `LOG_FORMAT=text` (default) → 기존 uvicorn 포맷 유지
+   - 로그 필드: `timestamp`, `level`, `logger`, `message`, `request_id`, `user_id` (인증 컨텍스트)
+2. `app/middleware/request_id.py` — `RequestIDMiddleware` (`X-Request-ID` 헤더 + 로그 컨텍스트 주입)
+3. `app/monitoring/sentry.py` — Sentry SDK 통합
+   - `SENTRY_ENABLED=false` 기본 — 미설정 시 0건 외부 전송
+   - `SENTRY_DSN` 환경변수 없으면 skip
+   - `SENTRY_TRACES_SAMPLE_RATE=0.1` 기본
+   - `before_send` hook — PII 필터링 (email / IP / token field 제거)
+4. `/api/jobs` 라우터 보강 — `failure_summary` 필드: 최근 24h 실패 잡 건수 + 마지막 오류 메시지 요약
+5. `frontend/src/components/ErrorBoundary.tsx` — React ErrorBoundary 컴포넌트
+   - 페이지별 wrap: `<App>` 최상위 + 개별 화면 (Watchlist / StockDetail / Backtest)
+   - fallback UI: "오류가 발생했습니다. 새로고침 해주세요." + reload 버튼
+   - `VITE_SENTRY_DSN` 환경변수 있을 때만 Sentry 보고
+6. `tests/unit/test_logging_config.py` — JSON 포맷 단언 (~6 tests)
+7. `tests/unit/test_request_id.py` — X-Request-ID 헤더 전파 단언 (~4 tests)
+8. `requirements.txt` — `sentry-sdk>=2.0` + `python-json-logger>=2.0` 추가
+
+**정책 가드** (Phase B 에서 하지 않을 것):
+
+- ❌ Prometheus exporter / Grafana 대시보드 (v0.10+ 후보)
+- ❌ 실 Sentry 전송 (SENTRY_ENABLED=false 기본 유지)
+- ❌ PII (email / IP / token) Sentry 전송
+- ❌ DB 모델 신규 테이블 추가
+- ❌ 새 비즈니스 로직 API 라우터
+
+**인수 게이트**: backend pytest ~850 passed / 4 게이트 그린 / 태그 `v0.9-monitoring`
+
+---
+
+### Phase C: Watchlist API 고도화 + UserPreference + Provider 회복성
+
+**목표**: v0.8 의 create/add-item/delete-item 5건 위에 rename/delete-list/set-default/memo-edit 4건 추가 + UserPreference 32번째 테이블 + provider 회복성 인터페이스 강화.
+
+**산출물**:
+
+1. 새 API 라우터 4건 (`app/api/watchlist_routes.py` 확장)
+   - `PUT /api/watchlists/{id}` — watchlist rename (body: `{"name": "..."}`)
+   - `DELETE /api/watchlists/{id}` — watchlist + 모든 items cascade delete
+   - `PUT /api/watchlists/{id}/default` — default watchlist 지정 (UserPreference 연동)
+   - `PUT /api/watchlists/{id}/items/{symbol}` — item 메모 편집 (body: `{"memo": "..."}`)
+2. `app/db/models.py` — `UserPreference` 32번째 ORM 테이블
+   - `id`, `user_id` (FK → User), `default_watchlist_id` (FK → Watchlist, nullable), `default_market` (str, nullable), `default_strategy` (str, nullable), `created_at`, `updated_at`
+   - 정책 가드 필드 0건: `broker`, `account`, `quantity`, `order_*`
+3. `app/api/user_routes.py` — UserPreference 라우터
+   - `GET /api/me/preferences` — 현재 로그인 사용자 preferences 조회
+   - `PUT /api/me/preferences` — preferences 업데이트
+4. `alembic/versions/0004_watchlist_enhance.py` — WatchlistItem.memo 컬럼 추가
+5. `alembic/versions/0005_user_preference.py` — UserPreference 테이블 생성
+6. `app/data/provider_base.py` 또는 `app/data/collectors/base.py` — provider 회복성 인터페이스
+   - `ProviderStatus` enum: `DISABLED / HEALTHY / ERROR / RATE_LIMITED`
+   - `@retry_with_backoff(max_retries=3, base_delay=1.0)` decorator
+   - `ProviderHealthSnapshot`: `status`, `last_success_at`, `last_error_at`, `consecutive_failures`
+   - `/api/jobs` 응답에 `provider_health` dict 추가 (각 provider 의 `ProviderHealthSnapshot`)
+7. `tests/unit/test_watchlist_api_v2.py` — PUT/DELETE 신규 라우터 단언 (~30 tests)
+   - cross-user 403 isolation
+   - cascade delete 단언 (items 포함 삭제)
+   - memo 업데이트 단언
+8. `tests/unit/test_user_preferences.py` — GET/PUT /api/me/preferences 단언 (~12 tests)
+9. `tests/unit/test_provider_resilience.py` — retry decorator + ProviderStatus 전환 단언 (~10 tests)
+
+**정책 가드** (Phase C 에서 하지 않을 것):
+
+- ❌ 실 DART / RSS provider 구현 (ProviderStatus + retry interface 만)
+- ❌ WatchlistItem 에 broker/account/quantity/order_* 컬럼 추가
+- ❌ 자동매매 / BrokerInterface 구현
+- ❌ UserPreference 에 KIS 계좌 / 자동매매 설정 추가
+- ❌ 다중 사용자 / RBAC
+
+**인수 게이트**: backend pytest ~910 passed / alembic upgrade head 성공 / alembic compare_metadata diff 0건 / 4 게이트 그린 / 태그 `v0.9-watchlist-api`
+
+---
+
+### Phase D: Frontend 관리 UI
+
+**목표**: Phase C API 와 연동하는 프런트엔드 관리 UI 완성. Watchlist rename/delete/default + 메모 인라인 편집 + Settings 화면 보강.
+
+**산출물**:
+
+1. `frontend/src/pages/Watchlist.tsx` 확장
+   - 목록 헤더에 "목록 이름 수정" 연필 아이콘 → inline rename (PUT /api/watchlists/{id})
+   - "목록 삭제" 버튼 → 확인 모달 → DELETE /api/watchlists/{id}
+   - "기본 목록으로 설정" 버튼 → PUT /api/watchlists/{id}/default
+   - WatchlistItem 행 메모 셀 → 클릭 시 inline text input → PUT /api/watchlists/{id}/items/{symbol}
+2. `frontend/src/pages/Settings.tsx` (신규 또는 기존 확장)
+   - `GET /api/me/preferences` 조회
+   - 기본 시장 선택 (드롭다운: ALL / KOSPI / KOSDAQ)
+   - 기본 전략 선택 (드롭다운: MomentumStrategy / MeanReversionStrategy / BreakoutStrategy)
+   - 기본 Watchlist 선택 (watchlist 목록에서 선택)
+   - `PUT /api/me/preferences` 저장
+3. ErrorBoundary wrap (Phase B 컴포넌트 활용)
+   - 각 화면 라우터에 `<ErrorBoundary>` 감싸기
+4. `frontend/src/store/watchlistSlice.ts` 확장 — rename/delete/setDefault/updateMemo action
+5. `frontend/src/tests/WatchlistManage.test.tsx` — rename/delete/default/memo useMutation 시나리오 (~20 tests)
+6. `frontend/src/tests/Settings.test.tsx` — preferences GET/PUT 시나리오 (~10 tests)
+7. `e2e/watchlist_manage.spec.ts` — rename / delete / default 플로우 e2e 5건 추가
+8. `e2e/settings.spec.ts` — preferences 저장 플로우 e2e 3건 추가
+
+**정책 가드** (Phase D 에서 하지 않을 것):
+
+- ❌ 자동매매 UI / 브로커 연동 UI
+- ❌ KIS 실 계좌 정보 표시
+- ❌ Watchlist 자동 가격 알림 / 텔레그램 알림 UI
+- ❌ 다중 사용자 관리 UI / 어드민 패널
+- ❌ Recommendations / Backtest / Holdings 산식 변경
+
+**인수 게이트**: vitest ~130 passed / e2e ~27 passed / build 그린 / 태그 `v0.9-frontend`
+
+---
+
+### Phase E: 마감
+
+**목표**: v0.9 cycle 마감 선언, 릴리즈 노트 + 문서 갱신 + 태그 push.
+
+**산출물**:
+
+1. `RELEASE_NOTES_v0.9.md` — Phase A~D 산출물 + 최종 게이트 수치 + 안전 정책 + 알려진 한계 + v0.10 후보
+2. `README.md` — v0.9 누적 내용 반영 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
+3. `PROJECT_STATUS.md` — §0 v0.9 마감 선언으로 교체, §0-1 강등 연쇄
+4. `TASKS.md` — v0.9 Phase E 체크리스트 완료 처리
+5. `ROADMAP.md` — v0.9 행 ✅ 마감 + v0.10+ 후보 반영
+6. `TESTING.md` — 기준선 ~130 vitest / ~27 e2e / ~910 pytest 갱신
+7. `ARCHITECTURE.md` — v0.9 마감 시점 반영 (보안 미들웨어 레이어, UserPreference, provider 회복성)
+8. tag `v0.9-final` + push
+
+**인수 게이트**: 4 게이트 그린 (backend pytest ~910 / vitest ~130 / e2e ~27 / build) / 5 누적 태그 push 완료
+
+---
+
+### v0.9 정책 (변경 없을 항목)
+
+- ❌ 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ `BrokerInterface` 구현 (placeholder 유지)
+- ❌ 실 DART / 실 RSS / 실 News API 자동 호출 — 라이선스 검토(사람) 선행 없이 구현 불가
+- ❌ MockBroker / ReplayBroker / SimulationBroker
+- ❌ ScoringEngine / HoldingCheckEngine 본 weight 변경
+- ❌ Recommendations / Backtest / Today 산식 변경
+- ❌ 다중 사용자 / RBAC / OAuth / SSO / refresh token
+- ❌ WebSocket / SSE
+- ❌ Prometheus exporter / Grafana 대시보드 (v0.10+ 후보)
+- ❌ LLM 자동 전략 / 자동 분석
+- ❌ WatchlistItem 에 broker/account/quantity/order_* 컬럼 추가
+- ❌ Telegram 실 발송 (DRY_RUN 기본 유지)
+- ❌ 평문 IP / 평문 password 저장 (SHA256 해시 / scrypt 유지)
+- ❌ `source_file_path` / 본문 paragraph 외부 노출
+
+### v0.9 새로 허용하는 POST/PUT/DELETE (v0.8 5건 + v0.9 추가 6건 = 누적 11건)
+
+| 메서드 | 경로 | 설명 | Phase |
+|---|---|---|---|
+| POST | `/api/auth/login` | 로그인 (v0.8) | v0.8 |
+| POST | `/api/auth/logout` | 로그아웃 (v0.8) | v0.8 |
+| GET | `/api/auth/me` | 내 정보 조회 (v0.8, GET 이지만 인증 전용) | v0.8 |
+| POST | `/api/watchlists` | 목록 생성 (v0.8) | v0.8 |
+| POST | `/api/watchlists/{id}/items` | 종목 추가 (v0.8) | v0.8 |
+| DELETE | `/api/watchlists/{id}/items/{symbol}` | 종목 삭제 (v0.8) | v0.8 |
+| PUT | `/api/watchlists/{id}` | 목록 이름 변경 (v0.9 신규) | v0.9 C |
+| DELETE | `/api/watchlists/{id}` | 목록 삭제 (cascade) (v0.9 신규) | v0.9 C |
+| PUT | `/api/watchlists/{id}/default` | 기본 목록 지정 (v0.9 신규) | v0.9 C |
+| PUT | `/api/watchlists/{id}/items/{symbol}` | 종목 메모 편집 (v0.9 신규) | v0.9 C |
+| GET | `/api/me/preferences` | 사용자 설정 조회 (v0.9 신규) | v0.9 C |
+| PUT | `/api/me/preferences` | 사용자 설정 저장 (v0.9 신규) | v0.9 C |
+
+그 외 모든 도메인 (Recommendations / Holdings / Backtest / 잡 트리거 / 알림 / 점수) POST/PUT/DELETE = 0건
+
+### 완료 기준 (cycle-wide)
+
+- 모든 phase 통과 / 4 게이트 그린 (backend pytest ~910 / vitest ~130 / e2e ~27 / build)
+- `RELEASE_NOTES_v0.9.md` 작성 완료
+- 5 누적 태그 부여 + push: `v0.9-security-hardening` → `v0.9-monitoring` → `v0.9-watchlist-api` → `v0.9-frontend` → `v0.9-final`
+- 새 PUT/DELETE 라우터 6건 = cross-user 403 isolation 단언 포함
+- `UserPreference` 테이블 = broker/account/quantity/order_* 컬럼 0건 가드
+- Alembic 0004~0005 revision 적용 + `compare_metadata` diff 0건 단언
+- `SENTRY_ENABLED=false` 기본 — 미설정 시 외부 전송 0건
+- `RATE_LIMIT_ENABLED=true` 기본 — login 10/min + watchlist write 30/min
+- `AUTH_ENABLED=false` 모드에서 v0.8 회귀 테스트 100% 그대로 통과
+- 실 DART / 실 RSS / 실 News API 자동 호출 0건 — provider_status + retry interface 만 추가
+- 자동매매 / BrokerInterface 구현 0건

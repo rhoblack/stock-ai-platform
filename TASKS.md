@@ -909,9 +909,86 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 
 **실제 결과 (Phase E 시점)**: vitest **113 passed** (16 파일) / e2e **19 passed** / build 그린 / backend pytest **808 passed** (1 deselected, 가상환경 필요). 태그 `v0.8-frontend-watchlist` 커밋 `65a0c94` 로컬 생성 완료.
 
-## v0.9+ — Backlog (v0.8 마감 후 검토 대기)
+## v0.9 — Operational Security & Watchlist Polish (시작: 2026-05-06)
 
-자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) §8 / [`PLANS.md`](./PLANS.md) `PLAN-0008` "v0.9+ 후보" 참조. 한 줄 요약:
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0009`
+기준선 태그: `v0.8-final` / 회귀 게이트: pytest **808** / vitest **113** / e2e **19** / build 그린
+
+### Phase A: Security Hardening
+
+- [ ] `app/middleware/security_headers.py` — `SecurityHeadersMiddleware` (X-Content-Type-Options / X-Frame-Options / Referrer-Policy / HSTS / CSP 기초)
+- [ ] `app/middleware/rate_limit.py` — `slowapi` rate limit (login 10/min / watchlist write 30/min)
+- [ ] `app/auth/brute_force.py` — LoginAuditLog 기반 brute force protection (5회 실패 → 15분 잠금)
+- [ ] `app/config.py` 환경 변수 추가 (`ALLOWED_ORIGINS`, `RATE_LIMIT_ENABLED`, `BRUTE_FORCE_ENABLED` 등)
+- [ ] `requirements.txt` — `slowapi>=0.1.9` 추가
+- [ ] `tests/unit/test_security_headers.py` 신규 (~8 tests)
+- [ ] `tests/unit/test_rate_limit.py` 신규 (~6 tests)
+- [ ] `tests/unit/test_brute_force.py` 신규 (~8 tests)
+- [ ] backend pytest ~830 passed / 4 게이트 그린
+- [ ] tag `v0.9-security-hardening` + push
+
+### Phase B: Error Monitoring + Structured Logging
+
+- [ ] `app/logging_config.py` — 구조화 로깅 (`LOG_FORMAT=json` env / JSON vs text 포맷 분기)
+- [ ] `app/middleware/request_id.py` — `RequestIDMiddleware` (`X-Request-ID` 헤더 + 로그 컨텍스트)
+- [ ] `app/monitoring/sentry.py` — Sentry SDK 통합 (`SENTRY_ENABLED=false` 기본 / PII 필터링)
+- [ ] `/api/jobs` 라우터 — `failure_summary` 필드 보강 (최근 24h 실패 건수 + 오류 요약)
+- [ ] `frontend/src/components/ErrorBoundary.tsx` 신규 + 각 화면 wrap
+- [ ] `requirements.txt` — `sentry-sdk>=2.0` + `python-json-logger>=2.0` 추가
+- [ ] `tests/unit/test_logging_config.py` 신규 (~6 tests)
+- [ ] `tests/unit/test_request_id.py` 신규 (~4 tests)
+- [ ] backend pytest ~850 passed / 4 게이트 그린
+- [ ] tag `v0.9-monitoring` + push
+
+### Phase C: Watchlist API 고도화 + UserPreference + Provider 회복성
+
+- [ ] `app/api/watchlist_routes.py` — PUT /api/watchlists/{id} (rename) 추가
+- [ ] `app/api/watchlist_routes.py` — DELETE /api/watchlists/{id} (cascade delete) 추가
+- [ ] `app/api/watchlist_routes.py` — PUT /api/watchlists/{id}/default (기본 목록 지정) 추가
+- [ ] `app/api/watchlist_routes.py` — PUT /api/watchlists/{id}/items/{symbol} (메모 편집) 추가
+- [ ] `app/db/models.py` — `UserPreference` 32번째 ORM 테이블 추가 (broker/account/quantity/order_* 0건)
+- [ ] `app/api/user_routes.py` — GET /api/me/preferences + PUT /api/me/preferences 추가
+- [ ] `alembic/versions/0004_watchlist_enhance.py` — WatchlistItem.memo 컬럼 추가
+- [ ] `alembic/versions/0005_user_preference.py` — UserPreference 테이블 생성
+- [ ] `app/data/provider_base.py` — `ProviderStatus` enum + `@retry_with_backoff` decorator + `ProviderHealthSnapshot`
+- [ ] `/api/jobs` 응답에 `provider_health` dict 추가
+- [ ] `tests/unit/test_watchlist_api_v2.py` 신규 (~30 tests, cross-user 403 포함)
+- [ ] `tests/unit/test_user_preferences.py` 신규 (~12 tests)
+- [ ] `tests/unit/test_provider_resilience.py` 신규 (~10 tests)
+- [ ] alembic upgrade head 성공 + compare_metadata diff 0건
+- [ ] backend pytest ~910 passed / 4 게이트 그린
+- [ ] tag `v0.9-watchlist-api` + push
+
+### Phase D: Frontend 관리 UI
+
+- [ ] `frontend/src/pages/Watchlist.tsx` — 목록 rename (inline) + 목록 delete (확인 모달) + 기본 목록 설정 버튼
+- [ ] `frontend/src/pages/Watchlist.tsx` — WatchlistItem 메모 인라인 편집
+- [ ] `frontend/src/pages/Settings.tsx` 신규 또는 확장 — UserPreference GET/PUT (기본 시장/전략/watchlist 선택)
+- [ ] `frontend/src/store/watchlistSlice.ts` 확장 — rename/delete/setDefault/updateMemo action
+- [ ] ErrorBoundary 각 화면 라우터 wrap (Phase B 컴포넌트 활용)
+- [ ] `frontend/src/tests/WatchlistManage.test.tsx` 신규 (~20 tests)
+- [ ] `frontend/src/tests/Settings.test.tsx` 신규 (~10 tests)
+- [ ] `e2e/watchlist_manage.spec.ts` 신규 (5건 추가)
+- [ ] `e2e/settings.spec.ts` 신규 (3건 추가)
+- [ ] vitest ~130 passed / e2e ~27 passed / build 그린
+- [ ] tag `v0.9-frontend` + push
+
+### Phase E: 마감 (문서)
+
+- [ ] `RELEASE_NOTES_v0.9.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.10 후보)
+- [ ] `README.md` v0.9 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
+- [ ] `PROJECT_STATUS.md` §0 v0.9 마감 선언으로 교체
+- [ ] `ROADMAP.md` v0.9 행 ✅ 마감 + v0.10+ 후보 반영
+- [ ] `TESTING.md` 기준선 갱신 (~910 pytest / ~130 vitest / ~27 e2e)
+- [ ] `ARCHITECTURE.md` v0.9 마감 시점 반영 (보안 미들웨어 레이어 / UserPreference / provider 회복성)
+- [ ] tag `v0.9-final` + push (누적 5 태그 모두 원격 push 확인)
+- 완료 기준: 4 게이트 그린 (pytest ~910 / vitest ~130 / e2e ~27 / build) + 5 누적 태그 push + RELEASE_NOTES_v0.9.md 작성
+
+---
+
+## v0.10+ — Backlog (v0.9 마감 후 검토 대기)
+
+자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) §9 / [`PLANS.md`](./PLANS.md) `PLAN-0009` "v0.10+ 후보" 참조. 한 줄 요약:
 
 - **사용자 설정** — 관심 시장 / 기본 필터 / 기본 전략 / 알림 선호도 (인증 후 자연 확장)
 - **운영 모니터링** — Sentry / Prometheus / Grafana, 외부 노출 시점에 함께
