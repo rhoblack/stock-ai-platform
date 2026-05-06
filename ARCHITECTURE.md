@@ -1,14 +1,14 @@
 # Architecture
 
-> 본 문서는 **v0.8 마감 시점** 기준으로 갱신된다 (`v0.8-frontend-watchlist` 태그
-> 누적, `v0.8-final` 마감). v0.1 Backend → v0.2 Frontend → v0.3
-> Analysis/Ops → v0.4 Analyst & Theme Intelligence → v0.5 News·공시·테마 랭킹 →
-> v0.6 Fundamental & Earnings Intelligence → v0.7 Strategy & Backtest Foundation →
-> v0.8 User & Migration Foundation 이 모두 누적된 상태의 시스템 구조를 반영한다.
-> **v0.8 의 Auth / Watchlist layer 는 신규 `app/auth/` 패키지 + `app/api/auth_routes.py` +
-> `app/api/watchlist_routes.py` 로 분리** (Watchlist write 라우터 첫 도입 — 5건 한정,
-> cross-user 404 격리 + spoofing 가드 + broker/주문 필드 0건 격리). Alembic baseline
-> 은 `alembic/versions/` 3 revision 으로 관리된다.
+> 본 문서는 **v0.9 Phase A 시점** 기준으로 갱신된다 (`v0.9-security-hardening` 태그).
+> v0.1 Backend → v0.2 Frontend → v0.3 Analysis/Ops → v0.4 Analyst & Theme Intelligence →
+> v0.5 News·공시·테마 랭킹 → v0.6 Fundamental & Earnings Intelligence →
+> v0.7 Strategy & Backtest Foundation → v0.8 User & Migration Foundation →
+> **v0.9 Phase A Operational Security** 이 모두 누적된 상태의 시스템 구조를 반영한다.
+> v0.9 Phase A 는 `app/middleware/` 패키지 신규 도입 (`SecurityHeadersMiddleware` /
+> `rate_limit` slowapi 모듈) + `app/auth/brute_force.py` (인메모리 BruteForceGuard) 를
+> 추가하고, `app/main.py` 에서 미들웨어 스택을 완성한다. Alembic revision 은 변경 없음
+> (브루트포스 상태는 인메모리 전용, DB 스키마 변경 0건).
 
 ## 1. 핵심 흐름
 
@@ -211,6 +211,43 @@ FEATURE_REAL_ORDER_EXECUTION=false 등). 실 자격증명 / 실 KIS / 실 Telegr
 `Docker` (v0.2): backend (`uvicorn`) + nginx (frontend SPA + `/api` proxy) +
 postgres compose. `web` 컨테이너가 `/api` / `/health` 를 `backend:8000` 으로
 proxy.
+
+### 3.11 Security Middleware Layer (v0.9 Phase A)
+
+v0.9 Phase A 에서 신규 도입된 `app/middleware/` 패키지와 `app/auth/brute_force.py`.
+모든 HTTP 응답 경로에 보안 레이어를 삽입하며, DB 스키마 변경 0건.
+
+```text
+HTTP Request
+    │
+    ▼
+SecurityHeadersMiddleware  (outermost — 모든 응답에 4개 헤더 주입)
+    │  X-Content-Type-Options: nosniff
+    │  X-Frame-Options: DENY
+    │  Referrer-Policy: no-referrer
+    │  Permissions-Policy: camera=(), microphone=(), geolocation=()
+    │  (app.state.security_headers_enabled=True 시 활성)
+    ▼
+SlowAPIMiddleware           (slowapi 0.1.9)
+    │  key = client IP  (rate_limit_enabled=True 시)
+    │  key = __exempt_{uuid} (rate_limit_enabled=False — test 모드)
+    │  login 기본 5/min, 기타 100/min
+    │  초과 시 429 Too Many Requests
+    ▼
+BruteForceGuard            (app/auth/brute_force.py — auth_routes 에서 pre-check)
+    │  key = SHA256(username:ip_hash) — composite key
+    │  max_failures=5, window=300s, lockout=900s (설정 가능)
+    │  잠금 시 LOCKOUT_REJECTED audit 기록 후 generic 401
+    │  성공 시 카운터 초기화
+    ▼
+Route Handlers             (실제 비즈니스 로직)
+```
+
+**설계 원칙:**
+- `app.state.{flag}` 런타임 토글로 테스트 스위트에서 autouse fixture 가 전체 비활성화
+- CSP 는 Vite 개발 서버 / nginx 프록시와 충돌 우려로 Phase D+ 예정 (현재 미주입)
+- 브루트포스 상태는 프로세스 인메모리 전용 — Alembic revision 불필요
+- `EVENT_LOCKOUT_REJECTED` 는 `login_audit_logs.event_type` VARCHAR 에 새 값 추가 (no migration)
 
 ## 4. Import Pipeline (v0.4)
 

@@ -1,17 +1,17 @@
 # TESTING.md
 
-> 본 문서는 **v0.8 마감 시점** 기준으로 갱신된다 (`v0.8-frontend-watchlist` 누적,
-> `v0.8-final` 마감). 누적 cycle 의 게이트 baseline 과 v0.4 / v0.5 / v0.6 /
-> v0.7 / v0.8 신규 테스트 카테고리를 반영한다.
+> 본 문서는 **v0.9 Phase A 시점** 기준으로 갱신된다 (`v0.9-security-hardening`
+> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4 / v0.5 / v0.6 /
+> v0.7 / v0.8 / v0.9 신규 테스트 카테고리를 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.8 마감 시점)
+## 1. 현재 회귀 게이트 (v0.9 Phase A 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **808 passed** (v0.7 682 → v0.8 Phase A 698 → Phase B 760 → Phase C 808) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **845 passed** (v0.8 808 → v0.9 Phase A 845; +37 신규 보안 테스트) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **113 passed** (16 파일, jsdom + msw v2) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
@@ -716,6 +716,66 @@ Phase C 가 새 head 를 layering 했으므로:
 - 신규 alembic head = `0003_watchlist` — CI 의 `alembic upgrade head` step 자동 검증
 - frontend / build / e2e 변경 0건 (Phase C 는 백엔드만; 프런트 Watchlist 화면 / Login
   화면 / StockDetail 별 토글은 Phase D 후보)
+
+## 6.19 v0.9 Phase A — Security Hardening 테스트
+
+총 **37 케이스 신규** (unit 26 + integration 11). slowapi rate limit / SecurityHeadersMiddleware /
+BruteForceGuard / auth_routes 강화를 다층 검증.
+
+### 6.19.1 Unit — `tests/unit/test_security_headers.py` (8 케이스)
+
+FastAPI TestClient + `app/main.app` 공유 객체. autouse conftest fixture 로 rate limit /
+brute force 비활성화 상태에서 실행.
+
+- `/health` 응답에 4개 헤더 각각 존재: `X-Content-Type-Options: nosniff` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer` / `Permissions-Policy`
+- 단일 요청에서 4개 헤더 동시 존재
+- `app.state.security_headers_enabled = False` 시 4개 헤더 모두 부재
+- `False → True` 재활성화 시 헤더 복원
+- `Content-Security-Policy` 헤더 **미존재** 단언 (Phase D+ 예정)
+- GET `/api/auth/me` 엔드포인트에도 보안 헤더 존재 (DB 접근 0건 fallback 경로 사용)
+
+### 6.19.2 Unit — `tests/unit/test_brute_force.py` (12 케이스)
+
+순수 인메모리 단위 테스트 — DB / FastAPI / 네트워크 호출 0건.
+
+- `check_allowed` 실패 없을 때 / max_failures 미만일 때 pass
+- `max_failures` 도달 시 `BruteForceLockedError` raise
+- `is_locked` True/False
+- `record_success` 가 실패 카운터 초기화 (2회 실패 후 성공 → 2회 추가 실패도 잠금 미발생)
+- 다른 IP 같은 user / 같은 IP 다른 user 가 독립적으로 카운트 (composite key 격리)
+- `reset()` 으로 모든 잠금 해제
+- `None` IP 허용 (None 도 복합 키 구성 요소로 허용)
+
+### 6.19.3 Unit — `tests/unit/test_rate_limit.py` (6 케이스)
+
+- `limiter` 가 `slowapi.Limiter` 인스턴스
+- `rate_limit_enabled=False` 시 `_limiter_key` 가 `__exempt_` 접두어 UUID 반환
+- `rate_limit_enabled=False` 시 10회 호출에서 서로 다른 고유 키 반환 (카운터 공유 방지)
+- `rate_limit_enabled=True` 시 `_limiter_key` 가 클라이언트 IP 반환
+- Settings 기본값 단언: `rate_limit_enabled=True`, `rate_limit_auth="5/minute"`, `rate_limit_default="100/minute"`
+- HTTP 레벨 트리거: 5회 로그인 후 6번째 요청이 429 (실제 default `5/minute` 기준)
+
+### 6.19.4 Integration — `tests/integration/test_auth_security.py` (11 케이스)
+
+in-memory SQLite + StaticPool + TestClient + `app.dependency_overrides`. autouse conftest
+fixture 로 기본 비활성화, 개별 테스트가 상태 직접 제어.
+
+- 보안 헤더 — `/health` 4개 / `/api/auth/login` 에도 `X-Content-Type-Options` 존재
+- brute force 잠금 — 3회 실패 후 4번째 요청이 generic 401 (`"invalid username or password"`)
+- 잠금 응답 == 틀린 비밀번호 응답 (status_code + body.detail 동일 — user-existence leak 방지)
+- 성공 로그인 시 실패 카운터 초기화 (2회 실패 → 올바른 로그인 → 2회 추가 실패 후 잠금 미발생)
+- `LOCKOUT_REJECTED` 이벤트가 감사 로그에 기록
+- `source_ip` → 64자 SHA256 hex 저장 (`203.0.113.42` 원문 미저장)
+- `user_agent` → 64자 SHA256 hex 저장 (원문 미저장)
+- 로그인 성공 응답에 `password` / `scrypt$` / `password_hash` / `jwt_secret` 포함 0건
+- 변경(POST/PUT/DELETE) 엔드포인트 수 == 5 고정 (Phase A 신규 라우터 0건 단언)
+- 라우트 경로에 `order|broker|auto_trade|full_auto|approval|small_auto` 패턴 0건
+
+### 6.19.5 회귀 기준
+
+- backend pytest **808 → 845 passed (+37)** — 회귀 0건
+- frontend / build / e2e 변경 0건 (Phase A 는 백엔드 미들웨어 전용)
+- autouse conftest 로 기존 808 테스트 모두 rate limit / brute force 영향 없이 통과
 
 ## 7. 금지 사항
 

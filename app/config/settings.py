@@ -142,6 +142,41 @@ class Settings:
         default_factory=lambda: _as_int(os.getenv("PASSWORD_HASH_P"), 1),
     )
 
+    # v0.9 Phase A -- Security Hardening.
+    # Rate limiting via slowapi. Default ON; set RATE_LIMIT_ENABLED=false in dev
+    # to bypass without changing code. The conftest autouse fixture also disables
+    # it for the test suite so existing tests are never affected.
+    rate_limit_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("RATE_LIMIT_ENABLED"), True),
+    )
+    rate_limit_default: str = field(
+        default_factory=lambda: os.getenv("RATE_LIMIT_DEFAULT", "100/minute"),
+    )
+    rate_limit_auth: str = field(
+        default_factory=lambda: os.getenv("RATE_LIMIT_AUTH", "5/minute"),
+    )
+
+    # Security response headers middleware. Default ON.
+    security_headers_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SECURITY_HEADERS_ENABLED"), True),
+    )
+
+    # In-memory brute force protection for POST /api/auth/login.
+    # Tracks failures per (username + source_ip_hash) composite key.
+    # Plain IPs are NEVER stored -- only the SHA256 hash via hash_for_audit().
+    auth_bruteforce_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("AUTH_BRUTEFORCE_ENABLED"), True),
+    )
+    auth_bruteforce_max_failures: int = field(
+        default_factory=lambda: _as_int(os.getenv("AUTH_BRUTEFORCE_MAX_FAILURES"), 5),
+    )
+    auth_bruteforce_window_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("AUTH_BRUTEFORCE_WINDOW_SECONDS"), 300),
+    )
+    auth_bruteforce_lockout_seconds: int = field(
+        default_factory=lambda: _as_int(os.getenv("AUTH_BRUTEFORCE_LOCKOUT_SECONDS"), 900),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

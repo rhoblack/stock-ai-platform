@@ -914,17 +914,21 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0009`
 기준선 태그: `v0.8-final` / 회귀 게이트: pytest **808** / vitest **113** / e2e **19** / build 그린
 
-### Phase A: Security Hardening
+### Phase A: Security Hardening ✅ 완료
 
-- [ ] `app/middleware/security_headers.py` — `SecurityHeadersMiddleware` (X-Content-Type-Options / X-Frame-Options / Referrer-Policy / HSTS / CSP 기초)
-- [ ] `app/middleware/rate_limit.py` — `slowapi` rate limit (login 10/min / watchlist write 30/min)
-- [ ] `app/auth/brute_force.py` — LoginAuditLog 기반 brute force protection (5회 실패 → 15분 잠금)
-- [ ] `app/config.py` 환경 변수 추가 (`ALLOWED_ORIGINS`, `RATE_LIMIT_ENABLED`, `BRUTE_FORCE_ENABLED` 등)
-- [ ] `requirements.txt` — `slowapi>=0.1.9` 추가
-- [ ] `tests/unit/test_security_headers.py` 신규 (~8 tests)
-- [ ] `tests/unit/test_rate_limit.py` 신규 (~6 tests)
-- [ ] `tests/unit/test_brute_force.py` 신규 (~8 tests)
-- [ ] backend pytest ~830 passed / 4 게이트 그린
+- [x] `app/middleware/security_headers.py` — `SecurityHeadersMiddleware` (X-Content-Type-Options / X-Frame-Options / Referrer-Policy / Permissions-Policy; CSP는 Phase D+ 예정)
+- [x] `app/middleware/rate_limit.py` — `slowapi` rate limit (기본 100/min / 로그인 5/min; UUID 키 전략으로 disabled 시 no-op)
+- [x] `app/auth/brute_force.py` — 인메모리 brute force protection (5회 실패 → 15분 잠금; composite key: username+ip_hash)
+- [x] `app/config/settings.py` — 8개 보안 환경 변수 추가 (`RATE_LIMIT_ENABLED` / `RATE_LIMIT_AUTH` / `RATE_LIMIT_DEFAULT` / `SECURITY_HEADERS_ENABLED` / `AUTH_BRUTEFORCE_*`)
+- [x] `pyproject.toml` — `slowapi>=0.1.9,<1.0` 추가
+- [x] `app/api/auth_routes.py` — `@limiter.limit` 데코레이터 + brute force pre-check + LOCKOUT_REJECTED 감사 기록 + 항상 generic 401
+- [x] `app/main.py` — SecurityHeadersMiddleware + SlowAPIMiddleware + BruteForceGuard 와이어링
+- [x] `tests/conftest.py` — autouse fixture (rate limit + brute force 전체 테스트 비활성화)
+- [x] `tests/unit/test_security_headers.py` 신규 (8 tests)
+- [x] `tests/unit/test_rate_limit.py` 신규 (6 tests)
+- [x] `tests/unit/test_brute_force.py` 신규 (12 tests)
+- [x] `tests/integration/test_auth_security.py` 신규 (통합 보안 테스트: lockout / PII 해시 / 응답 유출 / endpoint count guard / auto-trade guard)
+- [x] backend pytest **845 passed** (기준선 808 + 37 신규) / 회귀 0건
 - [ ] tag `v0.9-security-hardening` + push
 
 ### Phase B: Error Monitoring + Structured Logging

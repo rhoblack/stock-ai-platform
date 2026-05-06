@@ -21,8 +21,12 @@ from app.db.models import LoginAuditLog
 EVENT_LOGIN_SUCCESS = "LOGIN_SUCCESS"
 EVENT_LOGIN_FAILED = "LOGIN_FAILED"
 EVENT_LOGOUT = "LOGOUT"
+# v0.9 Phase A: recorded when a login attempt is rejected by the in-memory
+# brute force guard before credentials are checked. The DB column is VARCHAR
+# so no migration is needed -- this is a new valid enum value only.
+EVENT_LOCKOUT_REJECTED = "LOCKOUT_REJECTED"
 
-EVENT_TYPES = (EVENT_LOGIN_SUCCESS, EVENT_LOGIN_FAILED, EVENT_LOGOUT)
+EVENT_TYPES = (EVENT_LOGIN_SUCCESS, EVENT_LOGIN_FAILED, EVENT_LOGOUT, EVENT_LOCKOUT_REJECTED)
 
 
 class LoginAuditLogRepository(BaseRepository[LoginAuditLog]):

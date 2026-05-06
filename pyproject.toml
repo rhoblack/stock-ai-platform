@@ -14,6 +14,7 @@ dependencies = [
     "uvicorn>=0.30,<1.0",
     "apscheduler>=3.10,<4.0",
     "PyJWT>=2.8,<3.0",
+    "slowapi>=0.1.9,<1.0",
     # Password hashing intentionally uses Python stdlib `hashlib.scrypt` rather
     # than bcrypt: scrypt is memory-hard, pure-Python (no C extension / wheel
     # constraints), and works on every supported Python version including MSYS2
