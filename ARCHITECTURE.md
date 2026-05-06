@@ -249,6 +249,50 @@ Route Handlers             (실제 비즈니스 로직)
 - 브루트포스 상태는 프로세스 인메모리 전용 — Alembic revision 불필요
 - `EVENT_LOCKOUT_REJECTED` 는 `login_audit_logs.event_type` VARCHAR 에 새 값 추가 (no migration)
 
+### 3.12 Observability Layer (v0.9 Phase B)
+
+`app/config/logging.py` / `app/middleware/request_id.py` / `app/monitoring/sentry.py` 신규.
+DB 스키마 / Alembic revision / API 라우터 변경 0건.
+
+```text
+Inbound Request
+    │
+    ▼
+SecurityHeadersMiddleware  (outermost — Phase A)
+    │
+    ▼
+RequestIDMiddleware        (Phase B 신규)
+    │  X-Request-ID: 있으면 보존 / 없으면 UUID4 생성
+    │  request.state.request_id 설정
+    │  request_id_var (ContextVar) 설정 → 모든 로그에 자동 포함
+    │  응답 헤더에 X-Request-ID 추가
+    ▼
+SlowAPIMiddleware           (Phase A)
+    │
+    ▼
+Route Handlers + Exception Handler
+    │  전역 Exception handler: generic 500 + request_id 응답 포함
+    │  stack trace → 로그 only (API 응답에 미노출)
+    ▼
+configure_logging()         (startup; app/config/logging.py)
+    │  structured_logging_enabled=False → text format (기본)
+    │  structured_logging_enabled=True  → pythonjsonlogger JSON
+    │  SensitiveFilter   — password/token/secret 계열 extra 필드 마스킹
+    │  RequestIDFilter   — 모든 로그 레코드에 request_id 주입
+    ▼
+Optional Sentry             (app/monitoring/sentry.py)
+    │  sentry_enabled=False (기본) — 완전 no-op
+    │  sentry_enabled=True + DSN 있음 → sentry_sdk.init (send_default_pii=False)
+    │  before_send hook — password / token / Authorization 헤더 마스킹 후 전송
+    │  sentry_enabled=True + DSN 없음 → WARNING 로그 후 skip (startup 차단 없음)
+```
+
+**비밀값 미노출 정책 (Phase B):**
+- 로그: `SensitiveFilter` 가 extra 키 이름 기반 redact
+- Sentry: `before_send` 가 extra / request.data / request.headers 스캔 후 redact
+- API 500 응답: `{"detail": "internal server error", "request_id": "..."}` — stack trace 미포함
+- frontend: `ErrorBoundary.componentDidCatch` → `console.error` only, 외부 전송 없음
+
 ## 4. Import Pipeline (v0.4)
 
 운영자가 직접 작성한 메타데이터 CSV 를 시스템에 적재하는 read-only 파이프라인.

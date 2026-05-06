@@ -931,17 +931,23 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] backend pytest **845 passed** (기준선 808 + 37 신규) / 회귀 0건
 - [ ] tag `v0.9-security-hardening` + push
 
-### Phase B: Error Monitoring + Structured Logging
+### Phase B: Error Monitoring + Structured Logging ✅ 완료
 
-- [ ] `app/logging_config.py` — 구조화 로깅 (`LOG_FORMAT=json` env / JSON vs text 포맷 분기)
-- [ ] `app/middleware/request_id.py` — `RequestIDMiddleware` (`X-Request-ID` 헤더 + 로그 컨텍스트)
-- [ ] `app/monitoring/sentry.py` — Sentry SDK 통합 (`SENTRY_ENABLED=false` 기본 / PII 필터링)
-- [ ] `/api/jobs` 라우터 — `failure_summary` 필드 보강 (최근 24h 실패 건수 + 오류 요약)
-- [ ] `frontend/src/components/ErrorBoundary.tsx` 신규 + 각 화면 wrap
-- [ ] `requirements.txt` — `sentry-sdk>=2.0` + `python-json-logger>=2.0` 추가
-- [ ] `tests/unit/test_logging_config.py` 신규 (~6 tests)
-- [ ] `tests/unit/test_request_id.py` 신규 (~4 tests)
-- [ ] backend pytest ~850 passed / 4 게이트 그린
+- [x] `app/config/logging.py` — 구조화 로깅 강화 (`STRUCTURED_LOGGING_ENABLED` 분기: text/JSON, `SensitiveFilter` + `RequestIDFilter` autouse)
+- [x] `app/middleware/request_id.py` — `RequestIDMiddleware` (`X-Request-ID` 생성/보존, `request.state.request_id`, `ContextVar` → 로그 자동 포함)
+- [x] `app/monitoring/sentry.py` — Optional Sentry SDK (`SENTRY_ENABLED=false` 기본 / DSN 미설정 시 WARNING 후 skip / `before_send` 비밀값 마스킹)
+- [x] `app/main.py` — RequestIDMiddleware 미들웨어 스택 삽입, 전역 exception handler (500 generic + request_id 포함), Sentry init 훅
+- [x] `app/config/settings.py` — 5개 신규 환경 변수 (`STRUCTURED_LOGGING_ENABLED` / `LOG_REQUEST_ID_ENABLED` / `SENTRY_ENABLED` / `SENTRY_DSN` / `SENTRY_ENVIRONMENT`)
+- [x] `pyproject.toml` — `python-json-logger>=2.0,<3.0` + `sentry-sdk>=2.0,<3.0` 추가
+- [x] `frontend/src/components/common/ErrorBoundary.tsx` 신규 (class component, 기본 fallback UI + 다시 시도 버튼 + custom fallback prop)
+- [x] `frontend/src/lib/logger.ts` 신규 (환경별 console 분기 유틸)
+- [x] `frontend/src/App.tsx` — ErrorBoundary로 전체 앱 root wrap
+- [x] `tests/unit/test_logging_config.py` 신규 (12 tests: SensitiveFilter 6 + configure_logging 5 + RequestIDFilter 1)
+- [x] `tests/unit/test_request_id.py` 신규 (5 tests: UUID 생성 / 보존 / 유니크 / auth / 429 헤더)
+- [x] `tests/unit/test_sentry.py` 신규 (7 tests: disabled / no-DSN warning / sdk init / before_send 마스킹 4종)
+- [x] `frontend/src/tests/ErrorBoundary.test.tsx` 신규 (4 tests)
+- [x] backend pytest **869 passed** (기준선 845 + 24 신규) / 회귀 0건
+- [x] frontend vitest **117 passed** (기준선 113 + 4 신규) / build 그린
 - [ ] tag `v0.9-monitoring` + push
 
 ### Phase C: Watchlist API 고도화 + UserPreference + Provider 회복성

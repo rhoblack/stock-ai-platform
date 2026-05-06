@@ -177,6 +177,28 @@ class Settings:
         default_factory=lambda: _as_int(os.getenv("AUTH_BRUTEFORCE_LOCKOUT_SECONDS"), 900),
     )
 
+    # v0.9 Phase B -- Structured logging + Request ID + optional Sentry.
+    # structured_logging_enabled=False keeps human-readable text format in dev.
+    # Set STRUCTURED_LOGGING_ENABLED=true in production for JSON log ingestion.
+    structured_logging_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("STRUCTURED_LOGGING_ENABLED"), False),
+    )
+    log_request_id_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("LOG_REQUEST_ID_ENABLED"), True),
+    )
+
+    # Optional Sentry integration. Disabled by default.
+    # sentry_enabled=True + sentry_dsn=None → WARNING logged, Sentry skipped.
+    sentry_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("SENTRY_ENABLED"), False),
+    )
+    sentry_dsn: str | None = field(
+        default_factory=lambda: os.getenv("SENTRY_DSN") or None,
+    )
+    sentry_environment: str | None = field(
+        default_factory=lambda: os.getenv("SENTRY_ENVIRONMENT") or None,
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

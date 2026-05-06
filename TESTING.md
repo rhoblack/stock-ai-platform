@@ -1,18 +1,18 @@
 # TESTING.md
 
-> 본 문서는 **v0.9 Phase A 시점** 기준으로 갱신된다 (`v0.9-security-hardening`
-> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4 / v0.5 / v0.6 /
-> v0.7 / v0.8 / v0.9 신규 테스트 카테고리를 반영한다.
+> 본 문서는 **v0.9 Phase B 시점** 기준으로 갱신된다 (`v0.9-monitoring`
+> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.9 신규 테스트 카테고리를
+> 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.9 Phase A 시점)
+## 1. 현재 회귀 게이트 (v0.9 Phase B 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **845 passed** (v0.8 808 → v0.9 Phase A 845; +37 신규 보안 테스트) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **113 passed** (16 파일, jsdom + msw v2) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **869 passed** (v0.9 Phase A 845 → Phase B 869; +24 신규) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **117 passed** (17 파일, jsdom + msw v2; +4 ErrorBoundary) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
 
@@ -776,6 +776,64 @@ fixture 로 기본 비활성화, 개별 테스트가 상태 직접 제어.
 - backend pytest **808 → 845 passed (+37)** — 회귀 0건
 - frontend / build / e2e 변경 0건 (Phase A 는 백엔드 미들웨어 전용)
 - autouse conftest 로 기존 808 테스트 모두 rate limit / brute force 영향 없이 통과
+
+## 6.20 v0.9 Phase B — Structured Logging & Monitoring 테스트
+
+총 **28 케이스 신규** (backend unit 24 + frontend vitest 4). RequestIDMiddleware /
+구조화 로깅 / optional Sentry / frontend ErrorBoundary를 다층 검증.
+
+### 6.20.1 Unit — `tests/unit/test_logging_config.py` (12 케이스)
+
+순수 단위 — DB / 네트워크 / FastAPI 호출 0건. root logger 상태를 autouse fixture로 격리.
+
+- `SensitiveFilter` 가 `password` / `password_hash` / `jwt_secret` / `access_token` extra 필드 `***` 치환
+- `SensitiveFilter` 가 `username` / `user_id` 같은 안전한 필드 유지
+- `SensitiveFilter` 가 표준 LogRecord 속성(`name`, `lineno` 등) 수정 않음
+- `RequestIDFilter` 가 request 컨텍스트 밖에서 `record.request_id = "-"` fallback
+- `configure_logging` 이 `SensitiveFilter` 를 최소 1개 핸들러에 설치
+- `configure_logging` 이 `log_request_id_enabled=True` (기본) 시 `RequestIDFilter` 설치
+- `configure_logging` 이 `log_request_id_enabled=False` 시 `RequestIDFilter` 미설치
+- `configure_logging` 이 idempotent (중복 핸들러 누적 없음)
+- `configure_logging` + `structured_logging_enabled=True` → `JsonFormatter` 계열 포매터 설치
+
+### 6.20.2 Unit — `tests/unit/test_request_id.py` (5 케이스)
+
+FastAPI TestClient + `/health` / `/api/auth/me` 엔드포인트 사용.
+
+- `X-Request-ID` 헤더 없음 → UUID4 형식 생성 후 응답 헤더 포함
+- `X-Request-ID` 헤더 있음 → 동일 값 응답 헤더에 보존
+- 연속 5회 요청 → 모두 서로 다른 id (고유성)
+- `/api/auth/me` 에도 `X-Request-ID` 존재
+- rate limit 429 응답에도 `X-Request-ID` 포함 (RequestIDMiddleware가 SlowAPI보다 외부에서 wrapping)
+
+### 6.20.3 Unit — `tests/unit/test_sentry.py` (7 케이스)
+
+순수 단위 — 실제 Sentry 서버 호출 0건 (patch 사용).
+
+- `sentry_enabled=False` → `init_sentry` 가 `False` 반환
+- `sentry_enabled=True` + `sentry_dsn=None` → WARNING 로그 + `False` 반환
+- `sentry_enabled=True` + dummy DSN → `sentry_sdk.init` 1회 호출 / `send_default_pii=False` 확인
+- `_before_send` — `event["extra"]["password"]` 마스킹
+- `_before_send` — `event["request"]["data"]["password_hash"]` / `access_token` 마스킹, 안전 필드 유지
+- `_before_send` — `Authorization` 헤더 마스킹, `Content-Type` 유지
+- `_before_send` — 민감 키 없는 이벤트 통과 (무손실)
+
+### 6.20.4 Frontend — `src/tests/ErrorBoundary.test.tsx` (4 케이스)
+
+jsdom + React Testing Library. console.error mock으로 테스트 출력 억제.
+
+- 자식 정상 렌더 → fallback UI 없음
+- 자식 throw → `role="alert"` fallback UI + 다시 시도 버튼 노출
+- `fallback` prop 제공 시 커스텀 fallback 렌더 (기본 UI 미노출)
+- 다시 시도 버튼 클릭 → 오류 상태 초기화 → non-throwing 자식 복구 렌더
+
+### 6.20.5 회귀 기준
+
+- backend pytest **845 → 869 passed (+24)** — 회귀 0건
+- frontend vitest **113 → 117 passed (+4)** — 회귀 0건
+- frontend build 그린
+- 기존 808 테스트 모두 configure_logging 변경(handlers.clear) 영향 없이 통과
+  (autouse conftest fixture가 root logger 상태를 각 test_logging_config.py 테스트에서 격리)
 
 ## 7. 금지 사항
 
