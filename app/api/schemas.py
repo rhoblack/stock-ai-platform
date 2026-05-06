@@ -116,6 +116,13 @@ class RecommendationItemSchema(_BaseSchema):
     # absent for v0.4 / pre-v0.5 runs that did not wire those producers.
     news_evidence: Optional[Dict[str, Any]] = None
     disclosure_risk_evidence: Optional[Dict[str, Any]] = None
+    # v0.6 Phase D — fundamental_evidence (RealFundamentalScoreProducer) and
+    # earnings_evidence (placeholder — always null on recommendation flow in
+    # Phase C, but kept for symmetry with HoldingCheckSchema and to stay
+    # forward-compatible if a future producer wires it on recommendations).
+    # Both whitelisted at the API layer; absent for pre-v0.6 runs.
+    fundamental_evidence: Optional[Dict[str, Any]] = None
+    earnings_evidence: Optional[Dict[str, Any]] = None
     results: List[RecommendationResultSchema] = []
 
 
@@ -188,6 +195,12 @@ class HoldingCheckSchema(_BaseSchema):
     risk_level: Optional[str] = None
     risk_flags: List[str] = []
     risk_summary: Optional[RiskSummarySchema] = None
+    # v0.6 Phase D — surface news/disclosure/earnings evidence stored inside
+    # the holding-check DataSnapshot.market_context_json. Whitelisted at the
+    # API layer; absent for pre-v0.5/v0.6 holding checks.
+    news_evidence: Optional[Dict[str, Any]] = None
+    disclosure_risk_evidence: Optional[Dict[str, Any]] = None
+    earnings_evidence: Optional[Dict[str, Any]] = None
 
 
 class HoldingChecksResponse(_BaseSchema):
@@ -352,6 +365,98 @@ class StockPriceSeriesResponse(_BaseSchema):
     days: int
     count: int
     prices: List[DailyPriceSchema] = []
+
+
+# ----- v0.6 Phase D — fundamentals / earnings / earnings calendar -----
+
+
+class FundamentalSnapshotSchema(_BaseSchema):
+    """One fundamental_snapshots row, safe numeric fields only.
+
+    Excludes: source_file_path, body / content / full_text / raw_text /
+    paragraph / 본문 / 원문 / 전문 (the model does not declare these — this is
+    additionally enforced by `_assert_no_source_file_path` API tests).
+    """
+
+    snapshot_date: date_type
+    fiscal_year: int
+    fiscal_quarter: Optional[int] = None
+    revenue: Optional[str] = None
+    operating_income: Optional[str] = None
+    net_income: Optional[str] = None
+    total_assets: Optional[str] = None
+    total_liabilities: Optional[str] = None
+    total_equity: Optional[str] = None
+    eps: Optional[str] = None
+    bps: Optional[str] = None
+    per: Optional[str] = None
+    pbr: Optional[str] = None
+    roe: Optional[str] = None
+    debt_ratio: Optional[str] = None
+    dividend_yield: Optional[str] = None
+    revenue_growth_yoy: Optional[str] = None
+    operating_income_growth_yoy: Optional[str] = None
+    source: Optional[str] = None
+
+
+class StockFundamentalsResponse(_BaseSchema):
+    symbol: str
+    latest: Optional[FundamentalSnapshotSchema] = None
+    history: List[FundamentalSnapshotSchema] = []
+    count: int
+
+
+class EarningsEventSchema(_BaseSchema):
+    """One earnings_events row, safe numeric fields only.
+
+    `memo` is allowed but capped to 500 chars by the model. `source_file_path`
+    / body / paragraph / 본문 are not stored on the model.
+    """
+
+    event_date: date_type
+    fiscal_year: int
+    fiscal_quarter: Optional[int] = None
+    event_type: str
+    company_name: Optional[str] = None
+    revenue_actual: Optional[str] = None
+    revenue_consensus: Optional[str] = None
+    operating_income_actual: Optional[str] = None
+    operating_income_consensus: Optional[str] = None
+    net_income_actual: Optional[str] = None
+    net_income_consensus: Optional[str] = None
+    eps_actual: Optional[str] = None
+    eps_consensus: Optional[str] = None
+    surprise_type: Optional[str] = None
+    surprise_pct: Optional[str] = None
+    source: Optional[str] = None
+    memo: Optional[str] = None
+
+
+class StockEarningsResponse(_BaseSchema):
+    symbol: str
+    latest: Optional[EarningsEventSchema] = None
+    events: List[EarningsEventSchema] = []
+    count: int
+
+
+class EarningsCalendarItemSchema(_BaseSchema):
+    symbol: str
+    company_name: Optional[str] = None
+    event_date: date_type
+    fiscal_year: int
+    fiscal_quarter: Optional[int] = None
+    event_type: str
+    surprise_type: Optional[str] = None
+    surprise_pct: Optional[str] = None
+
+
+class EarningsCalendarResponse(_BaseSchema):
+    items: List[EarningsCalendarItemSchema]
+    count: int
+    from_date: Optional[date_type] = None
+    to_date: Optional[date_type] = None
+    surprise_type: Optional[str] = None
+    limit: int
 
 
 class MarketCapRankingSchema(_BaseSchema):

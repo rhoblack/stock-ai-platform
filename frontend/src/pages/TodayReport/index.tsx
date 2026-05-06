@@ -1,12 +1,17 @@
 import { Link } from 'react-router-dom'
 import { useTodayReport } from '@/hooks/useTodayReport'
+import { useEarningsCalendar } from '@/hooks/useEarningsCalendar'
 import { GradePill } from '@/components/common/GradePill'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { DecisionPill } from '@/components/common/DecisionPill'
 import { ReturnRate } from '@/components/common/ReturnRate'
 import { DataStatusBadge } from '@/components/common/DataStatusBadge'
 import { MarketStatusBanner } from '@/components/common/MarketStatusBanner'
-import type { HoldingCheck, RecommendationItem } from '@/api/types'
+import type {
+  EarningsCalendarItem,
+  HoldingCheck,
+  RecommendationItem,
+} from '@/api/types'
 
 export function TodayReportPage() {
   const today = useTodayReport()
@@ -66,8 +71,80 @@ export function TodayReportPage() {
         <LatestRunCard latestRunStatus={latest_run?.status} telegramSent={latest_run?.telegram_sent} />
         <HoldingAlertsCard items={holding_alerts} />
         <HighRiskCard items={highRiskAlerts} />
+        <UpcomingEarningsCard />
       </div>
     </section>
+  )
+}
+
+function UpcomingEarningsCard() {
+  const calendar = useEarningsCalendar({ limit: 5 })
+
+  return (
+    <section
+      data-testid="today-upcoming-earnings"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-5"
+    >
+      <header className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">다가오는 실적 발표</h3>
+        <span className="text-xs text-muted-foreground">최대 5건 · upcoming</span>
+      </header>
+      {calendar.isLoading ? (
+        <p
+          data-testid="today-upcoming-earnings-loading"
+          className="text-sm text-muted-foreground"
+        >
+          실적 캘린더 로딩 중…
+        </p>
+      ) : calendar.isError ? (
+        <p
+          data-testid="today-upcoming-earnings-error"
+          className="text-sm text-red-700 dark:text-red-300"
+        >
+          실적 캘린더를 불러오지 못했습니다.
+        </p>
+      ) : !calendar.data || calendar.data.items.length === 0 ? (
+        <p
+          data-testid="today-upcoming-earnings-empty"
+          className="text-sm text-muted-foreground"
+        >
+          다가오는 실적 발표가 없습니다.
+        </p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-border">
+          {calendar.data.items.map(item => (
+            <UpcomingEarningsRow key={`${item.symbol}-${item.event_date}`} item={item} />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function UpcomingEarningsRow({ item }: { item: EarningsCalendarItem }) {
+  return (
+    <li
+      data-testid={`today-upcoming-earnings-${item.symbol}`}
+      className="flex items-center gap-3 py-2"
+    >
+      <span className="w-24 font-mono text-xs text-muted-foreground">
+        {item.event_date}
+      </span>
+      <Link
+        to={`/stocks/${item.symbol}`}
+        className="flex-1 truncate text-sm hover:underline"
+      >
+        <span className="font-medium">{item.company_name ?? item.symbol}</span>{' '}
+        <span className="text-muted-foreground">({item.symbol})</span>
+      </Link>
+      <span className="text-xs text-muted-foreground">
+        {item.fiscal_year}
+        {item.fiscal_quarter !== null ? ` Q${item.fiscal_quarter}` : ' 연간'}
+      </span>
+      <span className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+        {item.surprise_type ?? item.event_type}
+      </span>
+    </li>
   )
 }
 

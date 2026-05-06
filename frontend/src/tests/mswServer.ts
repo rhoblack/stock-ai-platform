@@ -65,6 +65,32 @@ export const handlers = [
       prices: [],
     }),
   ),
+  http.get('*/api/stocks/:symbol/fundamentals', ({ params }) =>
+    HttpResponse.json({
+      symbol: String(params.symbol ?? ''),
+      latest: null,
+      history: [],
+      count: 0,
+    }),
+  ),
+  http.get('*/api/stocks/:symbol/earnings', ({ params }) =>
+    HttpResponse.json({
+      symbol: String(params.symbol ?? ''),
+      latest: null,
+      events: [],
+      count: 0,
+    }),
+  ),
+  http.get('*/api/calendar/earnings', () =>
+    HttpResponse.json({
+      items: [],
+      count: 0,
+      from_date: null,
+      to_date: null,
+      surprise_type: null,
+      limit: 20,
+    }),
+  ),
   http.get('*/api/stocks/:symbol', () =>
     HttpResponse.json({ detail: 'not found' }, { status: 404 }),
   ),

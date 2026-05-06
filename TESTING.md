@@ -11,10 +11,10 @@
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **481 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 Phase A PR1 401 → PR2 406 → Phase B 440 → Phase C 470 → Phase D 481) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **68 passed** (13 파일, jsdom + msw v2) |
+| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **558 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 Phase C 544 → Phase D 558) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **77 passed** (13 파일, jsdom + msw v2) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, vendor-charts 청크 383 kB / gzip 105 kB) |
-| Playwright e2e | `cd frontend && npm run e2e` | **11 passed** (chromium + page.route mock) |
+| Playwright e2e | `cd frontend && npm run e2e` | **13 passed** (chromium + page.route mock) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
@@ -243,6 +243,55 @@ LLM / 주문 API 는 어떤 테스트에서도 호출하지 않는다.
 - `earnings_evidence` 는 `latest_event_date`, `fiscal_year`, `fiscal_quarter`, `event_type`, `surprise_type`, `surprise_pct`, `operating_income_actual`, `operating_income_consensus` 만 허용한다.
 - `source`, `source_file_path`, `memo`, `summary`, `body`, `content`, `full_text`, `paragraph`, `raw_text`, `html_body`, `본문`, `원문`, `전문` 계열은 evidence 에 포함하지 않는다.
 - ScoringEngine 본 weight 변경 0건 — recommendation 35/25/15/15/10, holding 35/20/20/15/10 회귀 테스트로 고정한다.
+
+## 6.11 v0.6 Phase D — 재무 / 실적 read-only API + 프런트 카드 + evidence 노출
+
+v0.6 Phase D 는 신규 read-only API 3종 (`/api/stocks/{symbol}/fundamentals`,
+`/api/stocks/{symbol}/earnings`, `/api/calendar/earnings`) + 기존 추천 / 보유
+점검 응답에 `fundamental_evidence` / `earnings_evidence` 필드를 추가한다. 본
+weight 산식 변경 0건, 신규 POST 0건, KIS / DART / Telegram 호출 0건.
+
+- `tests/integration/test_api_routes.py` 보강 — 신규 9 백엔드 케이스:
+  fundamentals happy / empty / 404 / limit clamp, earnings happy / empty / 404,
+  calendar happy + from/to 필터 + surprise_type 필터, calendar default 가
+  "오늘 이후" 만 반환, calendar limit clamp, recommendation `fundamental_evidence`
+  whitelist (forbidden 13종 strip 검증), recommendation pre-v0.6 → null,
+  holding check `earnings_evidence` whitelist + pre-v0.6 → null.
+- `frontend/src/tests/StockDetail.test.tsx` 보강 — Fundamentals 카드 happy /
+  empty / error 3건 + Earnings 카드 happy / empty / error 3건 + recent holding
+  check 의 earnings_evidence cell 1건. 모든 케이스에서 `source_file_path` /
+  `원문` / `본문` 미노출 단언.
+- `frontend/src/tests/Recommendations.test.tsx` 보강 — happy 시나리오에
+  `rec-fund-evidence-{symbol}` / `rec-earnings-evidence-{symbol}` 셀 단언 +
+  null fallback 시나리오에 두 cell 모두 "—" 단언 + forbidden 필드 미노출 단언.
+- `frontend/src/tests/TodayReport.test.tsx` 보강 — UpcomingEarnings 카드 happy
+  (calendar items 표시) + empty placeholder 케이스.
+- `frontend/src/tests/mswServer.ts` — 3 신규 default 핸들러 (fundamentals /
+  earnings / calendar) 모두 빈 응답 + Stock-NotFound 흐름 fallback.
+- `frontend/e2e/dashboard.spec.ts` 보강 — Recommendations evidence cell 셀에
+  fund / earnings 두 cell 추가 단언, StockDetail Fundamentals + Earnings 카드
+  visible + 원문 / 본문 / source_file_path 0건 단언, Today UpcomingEarnings 카드
+  visible 단언 (e2e fixture 의 calendar mock 사용).
+- `frontend/e2e/fixtures/apiMocks.ts` — `STOCK_FUNDAMENTALS_005930`,
+  `STOCK_EARNINGS_005930`, `EARNINGS_CALENDAR` 신규 + 라우터 패턴 추가.
+
+핵심 안전 가드:
+
+- API 라우터 레벨에서 `_whitelist_evidence(snapshot, key, allowed)` helper 가
+  `fundamental_evidence` / `earnings_evidence` dict 의 모든 키를 화이트리스트
+  검증 후 응답한다 — Phase C 의 score producer 단계 + Phase D 의 라우터 단계로
+  defense-in-depth 2 단 방어.
+- 모든 신규 API 케이스가 `_assert_no_source_file_path(body)` 로 `source_file_path`
+  문자열의 응답 트리 0건을 재귀 검증.
+- `body / content / full_text / raw_text / paragraph / html_body / 본문 / 원문 /
+  전문` 13종 forbidden 키워드는 응답 텍스트 변환 후 substring 검사로 0건 보장.
+- `RecommendationItemSchema.fundamental_evidence` / `earnings_evidence`,
+  `HoldingCheckSchema.fundamental_evidence` / `earnings_evidence` /
+  `news_evidence` / `disclosure_risk_evidence` 모두 nullable — pre-v0.6 snapshot
+  은 null 반환으로 호환성 유지.
+- 프런트 evidence cell 은 `reason: "no_fundamental_snapshot"` /
+  `"no_earnings_event"` 시그널을 명시적으로 검사해서 placeholder "—" 로 렌더 —
+  데이터 부족 시 빈 문자열 / 잘못된 숫자가 노출되지 않는다.
 
 ## 7. 금지 사항
 

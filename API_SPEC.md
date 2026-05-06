@@ -353,6 +353,160 @@ Query:
 
 - 404: 해당 `theme_id` 의 `report_themes` 레코드가 없음
 
+## 15. 재무 / 실적 (v0.6 Phase D)
+
+### GET /api/stocks/{symbol}/fundamentals
+
+종목별 최신 재무 스냅샷과 최근 재무 히스토리를 조회한다. v0.6 Phase A 의
+`fundamental_snapshots` 테이블에 적재된 정량 지표만 노출하며, 운영자 메모 /
+원문 / 본문 / `source_file_path` / PDF / Excel BLOB 은 응답·로그·프런트
+어디에도 절대 노출되지 않는다.
+
+Query:
+
+- `limit`: default 8, min 1, max 40
+
+오류:
+
+- 404: 해당 `symbol` 의 `stocks` 레코드가 없음
+
+응답 예시:
+
+```json
+{
+  "symbol": "005930",
+  "latest": {
+    "snapshot_date": "2026-05-01",
+    "fiscal_year": 2025,
+    "fiscal_quarter": 4,
+    "revenue": "100000.0000",
+    "operating_income": "20000.0000",
+    "net_income": "15000.0000",
+    "total_assets": "500000.0000",
+    "total_liabilities": "200000.0000",
+    "total_equity": "300000.0000",
+    "eps": "3500.0000",
+    "bps": "60000.0000",
+    "per": "12.0000",
+    "pbr": "1.2000",
+    "roe": "18.0000",
+    "debt_ratio": "40.0000",
+    "dividend_yield": "2.5000",
+    "revenue_growth_yoy": "12.0000",
+    "operating_income_growth_yoy": "18.0000",
+    "source": "MANUAL"
+  },
+  "history": [...],
+  "count": 4
+}
+```
+
+### GET /api/stocks/{symbol}/earnings
+
+종목별 최근 실적 이벤트(발표 + 컨센서스 surprise)를 조회한다. v0.6 Phase B 의
+`earnings_events` 테이블 데이터를 노출. `memo` 는 500자 이하만 노출하며 본문 /
+원문 / `source_file_path` 등은 0건.
+
+Query:
+
+- `limit`: default 8, min 1, max 40
+
+오류:
+
+- 404: 해당 `symbol` 의 `stocks` 레코드가 없음
+
+응답 예시:
+
+```json
+{
+  "symbol": "005930",
+  "latest": {
+    "event_date": "2026-05-01",
+    "fiscal_year": 2026,
+    "fiscal_quarter": 1,
+    "event_type": "REPORT",
+    "company_name": "삼성전자",
+    "revenue_actual": null,
+    "revenue_consensus": null,
+    "operating_income_actual": "110.0000",
+    "operating_income_consensus": "100.0000",
+    "net_income_actual": null,
+    "net_income_consensus": null,
+    "eps_actual": "3500.0000",
+    "eps_consensus": "3300.0000",
+    "surprise_type": "BEAT",
+    "surprise_pct": "10.0000",
+    "source": "MANUAL",
+    "memo": null
+  },
+  "events": [...],
+  "count": 4
+}
+```
+
+### GET /api/calendar/earnings
+
+최근 / 다가오는 실적 이벤트를 캘린더 형태로 조회한다. `from_date` 가
+생략되면 "오늘 (UTC) 이후"만 반환한다 (Today 카드 기본 use case).
+
+Query:
+
+- `from_date`: optional. ISO date (예: `2026-05-01`)
+- `to_date`: optional. ISO date
+- `surprise_type`: optional. `BEAT` / `MEET` / `MISS` / `UNKNOWN` 등 필터
+- `limit`: default 20, min 1, max 100
+
+응답 예시:
+
+```json
+{
+  "items": [
+    {
+      "symbol": "005930",
+      "company_name": "삼성전자",
+      "event_date": "2026-05-08",
+      "fiscal_year": 2026,
+      "fiscal_quarter": 1,
+      "event_type": "ANNOUNCEMENT",
+      "surprise_type": null,
+      "surprise_pct": null
+    }
+  ],
+  "count": 1,
+  "from_date": null,
+  "to_date": null,
+  "surprise_type": null,
+  "limit": 20
+}
+```
+
+### Recommendation / HoldingCheck evidence 확장 (v0.6 Phase D)
+
+기존 `RecommendationItemSchema` / `HoldingCheckSchema` 응답에 다음 nullable
+필드가 추가된다 (pre-v0.6 snapshot → null).
+
+- `RecommendationItemSchema.fundamental_evidence`: `RealFundamentalScoreProducer` 가
+  생성한 evidence dict. **whitelist**: `snapshot_date / fiscal_year /
+  fiscal_quarter / per / pbr / roe / debt_ratio / revenue_growth_yoy /
+  operating_income_growth_yoy / dividend_yield / reason`. 그 외 키는 라우터
+  레벨에서 즉시 제거.
+- `RecommendationItemSchema.earnings_evidence`: 현재는 항상 null (Phase C 에서
+  RealEarningsScoreProducer 는 holding 흐름에만 주입). 미래 호환을 위해 schema
+  필드는 유지.
+- `HoldingCheckSchema.fundamental_evidence`: 동일 whitelist.
+- `HoldingCheckSchema.earnings_evidence`: `RealEarningsScoreProducer` 가 생성한
+  evidence dict. **whitelist**: `latest_event_date / fiscal_year /
+  fiscal_quarter / event_type / surprise_type / surprise_pct /
+  operating_income_actual / operating_income_consensus / reason`.
+- `HoldingCheckSchema.news_evidence` / `disclosure_risk_evidence`: v0.5 Phase D 에서
+  recommendation 에만 노출되던 evidence 가 holding check 응답에도 동일 형식으로
+  노출 (Phase D 에서 이연 작업 흡수).
+
+`source_file_path` / `body` / `content` / `full_text` / `raw_text` /
+`paragraph` / `html_body` / `본문` / `원문` / `전문` 등 13종 forbidden 필드는
+어떤 evidence 응답에도 0건 노출 — `_assert_no_source_file_path` recursive
+helper 가 모든 신규 케이스에서 검증.
+
 ## 금지 API
 
 v0.1에서는 다음 API를 만들지 않는다.

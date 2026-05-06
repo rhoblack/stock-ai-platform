@@ -214,6 +214,48 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     await expect(page.getByTestId('rec-disclosure-evidence-005930')).toContainText(
       '—',
     )
+    // v0.6 Phase D — fundamental + earnings evidence cells exist (default
+    // fixture has no producer wired, so both render "—").
+    await expect(page.getByTestId('rec-fund-evidence-005930')).toBeVisible()
+    await expect(page.getByTestId('rec-fund-evidence-005930')).toContainText('—')
+    await expect(page.getByTestId('rec-earnings-evidence-005930')).toBeVisible()
+    await expect(page.getByTestId('rec-earnings-evidence-005930')).toContainText('—')
+  })
+
+  test('StockDetail surfaces v0.6 Fundamentals + Earnings cards (read-only)', async ({
+    page,
+  }) => {
+    await page.goto('/stocks/005930')
+    await expect(page.getByTestId('stock-detail-fundamentals')).toBeVisible()
+    await expect(page.getByTestId('stock-detail-fundamentals-latest')).toBeVisible()
+    await expect(page.getByTestId('stock-detail-earnings')).toBeVisible()
+    await expect(page.getByTestId('earnings-surprise-BEAT').first()).toBeVisible()
+    // Forbidden / source_file_path 0건 노출 — page text + raw payload
+    await expect(page.getByText(/source_file_path/)).toHaveCount(0)
+    await expect(page.getByText(/원문/)).toHaveCount(0)
+    await expect(page.getByText(/본문/)).toHaveCount(0)
+    const payload = await page.evaluate(async () => {
+      const fund = await fetch('/api/stocks/005930/fundamentals').then(r => r.json())
+      const earn = await fetch('/api/stocks/005930/earnings').then(r => r.json())
+      return { fund, earn }
+    })
+    const merged = JSON.stringify(payload)
+    expect(merged).not.toContain('source_file_path')
+    expect(merged).not.toContain('본문')
+    expect(merged).not.toContain('원문')
+  })
+
+  test('Today shows the upcoming earnings calendar card with mocked rows', async ({
+    page,
+  }) => {
+    await page.goto('/today')
+    await expect(page.getByTestId('today-upcoming-earnings')).toBeVisible()
+    await expect(
+      page.getByTestId('today-upcoming-earnings-005930'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('today-upcoming-earnings-000660'),
+    ).toBeVisible()
   })
 
   test('no automation / order UI is exposed anywhere in v0.2 frontend', async ({

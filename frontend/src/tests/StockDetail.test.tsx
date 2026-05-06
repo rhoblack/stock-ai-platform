@@ -398,4 +398,274 @@ describe('StockDetailPage', () => {
       'true',
     )
   })
+
+  // -------- v0.6 Phase D — Fundamentals card --------
+  it('renders FundamentalsCard latest + history when /fundamentals returns rows', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/stocks/005930/fundamentals', () =>
+        HttpResponse.json({
+          symbol: '005930',
+          latest: {
+            snapshot_date: '2026-05-01',
+            fiscal_year: 2025,
+            fiscal_quarter: 4,
+            revenue: '100000',
+            operating_income: '20000',
+            net_income: '15000',
+            total_assets: '500000',
+            total_liabilities: '200000',
+            total_equity: '300000',
+            eps: '3500',
+            bps: '60000',
+            per: '12.0000',
+            pbr: '1.2000',
+            roe: '18.0000',
+            debt_ratio: '40.0000',
+            dividend_yield: '2.5000',
+            revenue_growth_yoy: '12.0000',
+            operating_income_growth_yoy: '18.0000',
+            source: 'MANUAL',
+          },
+          history: [
+            {
+              snapshot_date: '2026-05-01',
+              fiscal_year: 2025,
+              fiscal_quarter: 4,
+              revenue: '100000',
+              operating_income: '20000',
+              net_income: '15000',
+              total_assets: '500000',
+              total_liabilities: '200000',
+              total_equity: '300000',
+              eps: '3500',
+              bps: '60000',
+              per: '12.0000',
+              pbr: '1.2000',
+              roe: '18.0000',
+              debt_ratio: '40.0000',
+              dividend_yield: '2.5000',
+              revenue_growth_yoy: '12.0000',
+              operating_income_growth_yoy: '18.0000',
+              source: 'MANUAL',
+            },
+            {
+              snapshot_date: '2025-11-14',
+              fiscal_year: 2025,
+              fiscal_quarter: 3,
+              revenue: null,
+              operating_income: null,
+              net_income: null,
+              total_assets: null,
+              total_liabilities: null,
+              total_equity: null,
+              eps: null,
+              bps: null,
+              per: '13.0000',
+              pbr: null,
+              roe: null,
+              debt_ratio: null,
+              dividend_yield: null,
+              revenue_growth_yoy: null,
+              operating_income_growth_yoy: null,
+              source: 'MANUAL',
+            },
+          ],
+          count: 2,
+        }),
+      ),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('stock-detail-fundamentals')).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByTestId('stock-detail-fundamentals-latest'),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('stock-detail-fundamentals-history')).toBeInTheDocument()
+    expect(screen.getByTestId('fund-row-2025-4')).toBeInTheDocument()
+    expect(screen.getByTestId('fund-row-2025-3')).toBeInTheDocument()
+    // forbidden / source_file_path 미노출
+    expect(screen.queryByText(/source_file_path/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/D:\/private/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/원문/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/본문/)).not.toBeInTheDocument()
+  })
+
+  it('shows the FundamentalsCard empty placeholder when /fundamentals returns count=0', async () => {
+    // default handler in mswServer returns count=0 for fundamentals.
+    server.use(http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)))
+    renderStockAt('/stocks/005930')
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('stock-detail-fundamentals-empty'),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('shows the FundamentalsCard error state when /fundamentals returns 500', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/stocks/005930/fundamentals', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    )
+    renderStockAt('/stocks/005930')
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId('stock-detail-fundamentals-error'),
+        ).toBeInTheDocument(),
+      { timeout: 4000 },
+    )
+  })
+
+  // -------- v0.6 Phase D — Earnings card --------
+  it('renders EarningsCard latest + history with surprise badge when events exist', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/stocks/005930/earnings', () =>
+        HttpResponse.json({
+          symbol: '005930',
+          latest: {
+            event_date: '2026-05-01',
+            fiscal_year: 2026,
+            fiscal_quarter: 1,
+            event_type: 'REPORT',
+            company_name: '삼성전자',
+            revenue_actual: null,
+            revenue_consensus: null,
+            operating_income_actual: '110.0000',
+            operating_income_consensus: '100.0000',
+            net_income_actual: null,
+            net_income_consensus: null,
+            eps_actual: '3500.0000',
+            eps_consensus: '3300.0000',
+            surprise_type: 'BEAT',
+            surprise_pct: '10.0000',
+            source: 'MANUAL',
+            memo: null,
+          },
+          events: [
+            {
+              event_date: '2026-05-01',
+              fiscal_year: 2026,
+              fiscal_quarter: 1,
+              event_type: 'REPORT',
+              company_name: '삼성전자',
+              revenue_actual: null,
+              revenue_consensus: null,
+              operating_income_actual: '110.0000',
+              operating_income_consensus: '100.0000',
+              net_income_actual: null,
+              net_income_consensus: null,
+              eps_actual: '3500.0000',
+              eps_consensus: '3300.0000',
+              surprise_type: 'BEAT',
+              surprise_pct: '10.0000',
+              source: 'MANUAL',
+              memo: null,
+            },
+            {
+              event_date: '2025-11-01',
+              fiscal_year: 2025,
+              fiscal_quarter: 3,
+              event_type: 'REPORT',
+              company_name: '삼성전자',
+              revenue_actual: null,
+              revenue_consensus: null,
+              operating_income_actual: '90.0000',
+              operating_income_consensus: '95.0000',
+              net_income_actual: null,
+              net_income_consensus: null,
+              eps_actual: null,
+              eps_consensus: null,
+              surprise_type: 'MISS',
+              surprise_pct: '-5.2632',
+              source: 'MANUAL',
+              memo: null,
+            },
+          ],
+          count: 2,
+        }),
+      ),
+    )
+
+    renderStockAt('/stocks/005930')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('stock-detail-earnings')).toBeInTheDocument(),
+    )
+    // BEAT badge for latest, MISS badge in history
+    expect(screen.getAllByTestId('earnings-surprise-BEAT').length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId('earnings-surprise-MISS').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('earnings-row-2026-1')).toBeInTheDocument()
+    expect(screen.getByTestId('earnings-row-2025-3')).toBeInTheDocument()
+    expect(screen.queryByText(/source_file_path/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/원문/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/본문/)).not.toBeInTheDocument()
+  })
+
+  it('shows the EarningsCard empty placeholder when /earnings returns count=0', async () => {
+    server.use(http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)))
+    renderStockAt('/stocks/005930')
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('stock-detail-earnings-empty'),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('shows the EarningsCard error state when /earnings returns 500', async () => {
+    server.use(
+      http.get('*/api/stocks/005930', () => HttpResponse.json(HAPPY)),
+      http.get('*/api/stocks/005930/earnings', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    )
+    renderStockAt('/stocks/005930')
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId('stock-detail-earnings-error'),
+        ).toBeInTheDocument(),
+      { timeout: 4000 },
+    )
+  })
+
+  // -------- v0.6 Phase D — earnings_evidence in recent holding checks --------
+  it('renders earnings_evidence cell on recent holding checks (whitelist only)', async () => {
+    const happyWithEarningsEvidence = {
+      ...HAPPY,
+      recent_holding_checks: [
+        {
+          ...HAPPY.recent_holding_checks[0],
+          earnings_evidence: {
+            latest_event_date: '2026-05-01',
+            fiscal_year: 2026,
+            fiscal_quarter: 1,
+            event_type: 'REPORT',
+            surprise_type: 'BEAT',
+            surprise_pct: '10.0000',
+            operating_income_actual: '110.0000',
+            operating_income_consensus: '100.0000',
+          },
+        },
+      ],
+    }
+    server.use(
+      http.get('*/api/stocks/005930', () =>
+        HttpResponse.json(happyWithEarningsEvidence),
+      ),
+    )
+    renderStockAt('/stocks/005930')
+    await waitFor(() =>
+      expect(screen.getByTestId('stock-detail-check-21')).toBeInTheDocument(),
+    )
+    const cell = screen.getByTestId('stock-detail-check-earnings-21')
+    expect(cell).toHaveTextContent('BEAT')
+    expect(cell).toHaveTextContent('10.0000')
+  })
 })

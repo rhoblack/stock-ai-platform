@@ -10,6 +10,8 @@ import { ReturnRate } from '@/components/common/ReturnRate'
 import { cn } from '@/lib/utils'
 import { PriceChart } from './PriceChart'
 import { AnalystReportsCard } from './AnalystReportsCard'
+import { FundamentalsCard } from './FundamentalsCard'
+import { EarningsCard } from './EarningsCard'
 import type {
   HoldingCheck,
   RecommendationItem,
@@ -114,6 +116,11 @@ function StockDetailContent({ data }: { data: StockDetailResponse }) {
       </div>
 
       <PriceChartCard symbol={stock.symbol} />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <FundamentalsCard symbol={stock.symbol} />
+        <EarningsCard symbol={stock.symbol} />
+      </div>
 
       <AnalystReportsCard data={analyst_reports} />
 
@@ -342,6 +349,18 @@ function RecentRecommendationsCard({ items }: { items: RecommendationItem[] }) {
   )
 }
 
+function summarizeEarningsEvidence(check: HoldingCheck): string {
+  const e = check.earnings_evidence
+  if (!e) return '—'
+  if (e.reason === 'no_earnings_event') return '—'
+  const parts: string[] = []
+  if (e.surprise_type) parts.push(e.surprise_type)
+  if (e.surprise_pct !== null && e.surprise_pct !== undefined)
+    parts.push(`${e.surprise_pct}%`)
+  if (e.latest_event_date) parts.push(e.latest_event_date)
+  return parts.length > 0 ? parts.join(' · ') : '—'
+}
+
 function RecentHoldingChecksCard({ items }: { items: HoldingCheck[] }) {
   return (
     <section
@@ -364,6 +383,7 @@ function RecentHoldingChecksCard({ items }: { items: HoldingCheck[] }) {
                 <th className="px-2 py-1 font-medium">risk</th>
                 <th className="px-2 py-1 font-medium">return</th>
                 <th className="px-2 py-1 font-medium">total_score</th>
+                <th className="px-2 py-1 font-medium">earnings evidence</th>
                 <th className="px-2 py-1 font-medium">alert</th>
               </tr>
             </thead>
@@ -389,6 +409,12 @@ function RecentHoldingChecksCard({ items }: { items: HoldingCheck[] }) {
                   </td>
                   <td className="px-2 py-1 font-mono tabular-nums">
                     {check.total_score ?? '—'}
+                  </td>
+                  <td
+                    data-testid={`stock-detail-check-earnings-${check.id}`}
+                    className="px-2 py-1 text-muted-foreground"
+                  >
+                    {summarizeEarningsEvidence(check)}
                   </td>
                   <td className="px-2 py-1">
                     {check.alert ? (

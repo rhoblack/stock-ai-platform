@@ -135,4 +135,67 @@ describe('TodayReportPage', () => {
       expect(screen.getByTestId('today-error')).toBeInTheDocument(),
     )
   })
+
+  // -------- v0.6 Phase D — UpcomingEarnings card --------
+  it('renders upcoming earnings card with calendar items (happy)', async () => {
+    server.use(
+      http.get('*/api/reports/today', () => HttpResponse.json(EMPTY_BODY)),
+      http.get('*/api/calendar/earnings', () =>
+        HttpResponse.json({
+          items: [
+            {
+              symbol: '005930',
+              company_name: '삼성전자',
+              event_date: '2026-05-08',
+              fiscal_year: 2026,
+              fiscal_quarter: 1,
+              event_type: 'ANNOUNCEMENT',
+              surprise_type: null,
+              surprise_pct: null,
+            },
+            {
+              symbol: '000660',
+              company_name: 'SK하이닉스',
+              event_date: '2026-05-10',
+              fiscal_year: 2026,
+              fiscal_quarter: 1,
+              event_type: 'ANNOUNCEMENT',
+              surprise_type: null,
+              surprise_pct: null,
+            },
+          ],
+          count: 2,
+          from_date: null,
+          to_date: null,
+          surprise_type: null,
+          limit: 5,
+        }),
+      ),
+    )
+
+    renderWithProviders(<TodayReportPage />, { initialEntries: ['/today'] })
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('today-upcoming-earnings-005930'),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByTestId('today-upcoming-earnings-000660'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('삼성전자')).toBeInTheDocument()
+    expect(screen.getByText('SK하이닉스')).toBeInTheDocument()
+  })
+
+  it('shows the upcoming earnings empty placeholder when calendar has no items', async () => {
+    server.use(http.get('*/api/reports/today', () => HttpResponse.json(EMPTY_BODY)))
+
+    renderWithProviders(<TodayReportPage />, { initialEntries: ['/today'] })
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('today-upcoming-earnings-empty'),
+      ).toBeInTheDocument(),
+    )
+  })
 })

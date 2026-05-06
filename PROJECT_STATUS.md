@@ -9,10 +9,11 @@
 
 ## 0. v0.6 진행 선언 — Fundamental & Earnings Intelligence
 
-**v0.6 cycle 진행 중 (Phase C 완료).** 기준선 `v0.5-final` (HEAD `9ccf0f8` 시점,
-origin/main 동기화 완료). v0.1 backend + v0.2 frontend + v0.3 분석·운영 +
-v0.4 Analyst & Theme Intelligence + v0.5 News·공시·테마 랭킹 모두 마감 위에
-**재무 / 실적 데이터 라인 + 어닝 인텔리전스 기초** 5 phase 를 진행한다. v0.1 의
+**v0.6 cycle 진행 중 (Phase D 완료, Phase E 마감 대기).** 기준선 `v0.5-final`
+(HEAD `9ccf0f8` 시점, origin/main 동기화 완료). v0.1 backend + v0.2 frontend +
+v0.3 분석·운영 + v0.4 Analyst & Theme Intelligence + v0.5 News·공시·테마
+랭킹 모두 마감 위에 **재무 / 실적 데이터 라인 + 어닝 인텔리전스 기초** 5
+phase 를 진행한다. v0.1 의
 read-only / 자동매매 부재 / 비밀 마스킹 / mock·DRY_RUN 정책 + v0.4 의 저작권 정책
 (본문 paragraph 미저장 / `source_file_path` 미노출) + v0.5 의 자동 fetch default
 OFF 정책 모두 그대로 유지한다.
@@ -39,7 +40,7 @@ API 구현체는 v0.7+ 로 이연 (FakeProvider 만 제공). 추천 산식 본 w
 | A | Fundamental data layer (`FundamentalProviderInterface` ABC + `FundamentalSnapshot` 24번째 테이블 + Repository + `scripts/import_fundamentals.py` argparse CLI + 8 지표 검증) | ✅ PR1+PR2 완료 / PR3 또는 Phase B 대기 | `v0.6-fundamental-data-layer` |
 | B | Earnings event layer + 어닝 캘린더 (`EarningsProviderInterface` ABC + `EarningsEvent` 25번째 테이블 + Repository + `scripts/import_earnings.py` + BEAT/MEET/MISS 분류 룰) | ✅ 완료 | `v0.6-earnings-event-pipeline` |
 | C | `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + RecommendationEngine·HoldingCheckEngine 통합 + decision evidence 기록 | ✅ 완료 | `v0.6-fundamental-score` |
-| D | 백엔드 read-only API 3종 (`/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`) + `RecommendationItemSchema` / `HoldingCheckSchema` evidence 필드 + 프런트 StockDetail 카드 + Today 다가오는 어닝 + Recommendations/Holdings evidence 통합 | ⏳ | `v0.6-frontend-fundamentals` |
+| D | 백엔드 read-only API 3종 (`/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`) + `RecommendationItemSchema` / `HoldingCheckSchema` evidence 필드 + 프런트 StockDetail 카드 + Today 다가오는 어닝 + Recommendations/Holdings evidence 통합 | ✅ 완료 | `v0.6-frontend-fundamentals` |
 | E | `RELEASE_NOTES_v0.6.md` + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE 마감 + tag `v0.6-final` | ⏳ | `v0.6-final` |
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0006`, 체크리스트는 [`TASKS.md`](./TASKS.md)
@@ -196,6 +197,67 @@ DB 마이그레이션 = `CREATE TABLE fundamental_snapshots ...; CREATE TABLE ea
 - 안전 범위: ScoringEngine 본 weight 변경 0건, DART / KIS / Telegram 호출 0건,
   API 라우터 0건, frontend 변경 0건, 자동매매/주문 코드 0건, 원문/본문/BLOB/파일 경로
   evidence 노출 0건.
+
+### v0.6 Phase D 결과 (요약) — 백엔드 read-only API 3종 + 프런트 카드 + evidence 노출
+
+> Phase A/B/C 의 데이터·점수 layer 위에 **read-only API 3종** + **프런트
+> 카드 / evidence cell** 만 추가. POST 라우터 / scheduler job / 자동매매 / DART
+> 자동 호출 / Telegram 발송 0건. ScoringEngine 본 weight 변경 0건.
+
+- `app/api/routes.py` — `GET /api/stocks/{symbol}/fundamentals?limit=`,
+  `GET /api/stocks/{symbol}/earnings?limit=`,
+  `GET /api/calendar/earnings?from_date=&to_date=&surprise_type=&limit=` 신규 3종.
+  Stock master 없으면 404 (기존 `/api/stocks/{symbol}/reports` 정책 재사용).
+  `from_date` 미지정 시 캘린더는 "오늘 (UTC) 이후" 만 반환.
+- `app/api/schemas.py` — `FundamentalSnapshotSchema` / `StockFundamentalsResponse` /
+  `EarningsEventSchema` / `StockEarningsResponse` / `EarningsCalendarItemSchema` /
+  `EarningsCalendarResponse` 6 신규 schema. 전부 numeric 필드는 Decimal-as-string
+  (`_BaseSchema` 의 `_decimal_to_str` validator). `memo` 는 500자 cap.
+- `app/api/schemas.py` — `RecommendationItemSchema` 에 `fundamental_evidence` +
+  `earnings_evidence` (Optional[Dict]) 추가, `HoldingCheckSchema` 에
+  `news_evidence` + `disclosure_risk_evidence` + `earnings_evidence` 3종 추가
+  (v0.5 Phase D 에서 이연된 holding evidence 노출 작업 흡수).
+- `app/api/routes.py` — `_whitelist_evidence(snapshot, key, allowed)` helper +
+  `_FUNDAMENTAL_EVIDENCE_FIELDS` / `_EARNINGS_EVIDENCE_FIELDS` set 신규.
+  Phase C 의 score producer 단계 + Phase D 의 라우터 단계로 **defense-in-depth
+  2 단 화이트리스트** — 비전제적 future producer 변경에도 forbidden 키 누설 0건.
+- `app/api/routes.py` — `_recommendation_to_schema` 가 `fundamental_evidence` /
+  `earnings_evidence` 두 키를 화이트리스트 후 schema 에 주입.
+  `_holding_check_to_schema` 도 동일 방식으로 `news_evidence` /
+  `disclosure_risk_evidence` / `earnings_evidence` 3종 주입.
+- `frontend/src/api/types.ts` — 6 response 타입 + `FundamentalEvidence` /
+  `EarningsEvidence` 신규. `RecommendationItem` / `HoldingCheck` 에 evidence
+  optional 필드 추가.
+- `frontend/src/hooks/useStockFundamentals.ts` /
+  `useStockEarnings.ts` / `useEarningsCalendar.ts` 신규 — TanStack Query, staleTime
+  60초 (StockDetail 계열과 동일).
+- `frontend/src/pages/StockDetail/FundamentalsCard.tsx` 신규 — 최근 fiscal
+  period KeyValueGrid (PER / PBR / ROE / 부채비율 / 배당수익률 / 매출 성장률 /
+  영업이익 성장률 / EPS / BPS) + history 시계열 테이블 (count > 1 시).
+- `frontend/src/pages/StockDetail/EarningsCard.tsx` 신규 — 최근 이벤트 +
+  BEAT/MEET/MISS/UNKNOWN tone-color badge (`SurpriseBadge` 인라인 컴포넌트) +
+  surprise_pct + actual vs consensus 3-tile + history 테이블.
+- `frontend/src/pages/StockDetail/index.tsx` — Fundamentals + Earnings 카드를
+  `lg:grid-cols-2` 한 행에 추가. `RecentHoldingChecksCard` 에 `earnings evidence`
+  컬럼 추가.
+- `frontend/src/pages/TodayReport/index.tsx` — `UpcomingEarningsCard` 인라인
+  컴포넌트 추가. `useEarningsCalendar({ limit: 5 })` 로 가까운 5건 표시.
+- `frontend/src/pages/Recommendations/RecommendationsTable.tsx` — `fund evidence`
+  + `earnings evidence` 두 cell 추가 (compact summary, null/reason sentinel → "—").
+- `frontend/src/tests/mswServer.ts` — 3 신규 default 핸들러 + `/api/stocks/:symbol`
+  catch-all 404 보다 앞에 배치.
+- `frontend/e2e/fixtures/apiMocks.ts` — `STOCK_FUNDAMENTALS_005930` /
+  `STOCK_EARNINGS_005930` / `EARNINGS_CALENDAR` fixture + 라우터 패턴 추가.
+- 회귀 게이트:
+  - backend pytest **544 → 558 passed (+14)**
+  - frontend vitest **68 → 77 passed (+9)**
+  - frontend build 그린 (`tsc --noEmit && vite build`, vendor-charts 383 kB / gzip 105 kB)
+  - Playwright e2e **11 → 13 passed (+2)** (chromium + page.route mock)
+- 안전 범위: KIS / DART / Telegram 호출 0건, POST/PUT/DELETE 라우터 0건, scheduler
+  job 0건, scoring engine weight 변경 0건, 자동매매/주문 코드 0건. 응답 트리에
+  `source_file_path` / `body` / `content` / `full_text` / `raw_text` /
+  `paragraph` / `html_body` / `본문` / `원문` / `전문` 13종 forbidden 키워드 0건
+  노출 (`_assert_no_source_file_path` recursive 가드 + 명시 substring 검사).
 
 ### v0.6 누적 태그 (예정)
 

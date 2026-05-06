@@ -24,6 +24,10 @@ from sqlalchemy.orm import Session
 from app.api.schemas import (
     AnalystReportSchema,
     DailyPriceSchema,
+    EarningsCalendarItemSchema,
+    EarningsCalendarResponse,
+    EarningsEventSchema,
+    FundamentalSnapshotSchema,
     HoldingCheckSchema,
     HoldingCheckSymbolMetrics,
     HoldingCheckSymbolResponse,
@@ -51,6 +55,8 @@ from app.api.schemas import (
     SettingsResponse,
     StockBriefSchema,
     StockDetailResponse,
+    StockEarningsResponse,
+    StockFundamentalsResponse,
     StockIndicatorSchema,
     StockPriceSeriesResponse,
     StockReportsResponse,
@@ -66,6 +72,8 @@ from app.data.repositories import (
     AnalystReportRepository,
     DailyPriceRepository,
     DataSnapshotRepository,
+    EarningsEventRepository,
+    FundamentalSnapshotRepository,
     HoldingCheckRepository,
     HoldingRepository,
     JobRunRepository,
@@ -153,6 +161,52 @@ def _evidence_from_snapshot(
     return value if isinstance(value, dict) else None
 
 
+# v0.6 Phase D — defense-in-depth evidence whitelists. The score producers
+# already constrain `fundamental_evidence` / `earnings_evidence` to the safe
+# field set, but the API layer also filters so any future producer change
+# cannot accidentally leak source_file_path / 본문 / 원문 / 전문 / memo / etc.
+_FUNDAMENTAL_EVIDENCE_FIELDS = {
+    "snapshot_date",
+    "fiscal_year",
+    "fiscal_quarter",
+    "per",
+    "pbr",
+    "roe",
+    "debt_ratio",
+    "revenue_growth_yoy",
+    "operating_income_growth_yoy",
+    "dividend_yield",
+    # `reason` is a producer-provided sentinel ("no_fundamental_snapshot");
+    # it carries no PII and is needed for downstream rendering.
+    "reason",
+}
+_EARNINGS_EVIDENCE_FIELDS = {
+    "latest_event_date",
+    "fiscal_year",
+    "fiscal_quarter",
+    "event_type",
+    "surprise_type",
+    "surprise_pct",
+    "operating_income_actual",
+    "operating_income_consensus",
+    "reason",
+}
+
+
+def _whitelist_evidence(
+    snapshot: Optional[DataSnapshot],
+    key: str,
+    allowed: set[str],
+) -> Optional[dict]:
+    raw = _evidence_from_snapshot(snapshot, key)
+    if raw is None:
+        return None
+    safe = {k: v for k, v in raw.items() if k in allowed}
+    # If every field was filtered out (e.g. malformed legacy snapshot), fall
+    # back to None so callers render the same "—" placeholder as missing data.
+    return safe or None
+
+
 def _recommendation_to_schema(
     rec: Recommendation,
     snapshot: Optional[DataSnapshot],
@@ -193,6 +247,12 @@ def _recommendation_to_schema(
         disclosure_risk_evidence=_evidence_from_snapshot(
             snapshot, "disclosure_risk_evidence",
         ),
+        fundamental_evidence=_whitelist_evidence(
+            snapshot, "fundamental_evidence", _FUNDAMENTAL_EVIDENCE_FIELDS,
+        ),
+        earnings_evidence=_whitelist_evidence(
+            snapshot, "earnings_evidence", _EARNINGS_EVIDENCE_FIELDS,
+        ),
         results=[_recommendation_result_to_schema(r) for r in results],
     )
 
@@ -224,6 +284,13 @@ def _holding_check_to_schema(
         risk_level=risk_summary.level if risk_summary is not None else None,
         risk_flags=risk_summary.flags if risk_summary is not None else [],
         risk_summary=risk_summary,
+        news_evidence=_evidence_from_snapshot(snapshot, "news_evidence"),
+        disclosure_risk_evidence=_evidence_from_snapshot(
+            snapshot, "disclosure_risk_evidence",
+        ),
+        earnings_evidence=_whitelist_evidence(
+            snapshot, "earnings_evidence", _EARNINGS_EVIDENCE_FIELDS,
+        ),
     )
 
 
@@ -822,6 +889,157 @@ def get_stock_price_series(
         days=days,
         count=len(rows),
         prices=[DailyPriceSchema.from_orm(row) for row in rows],
+    )
+
+
+# ---------- /api/stocks/{symbol}/fundamentals (v0.6 Phase D) ----------
+
+
+def _fundamental_to_schema(row) -> FundamentalSnapshotSchema:
+    return FundamentalSnapshotSchema(
+        snapshot_date=row.snapshot_date,
+        fiscal_year=row.fiscal_year,
+        fiscal_quarter=row.fiscal_quarter,
+        revenue=row.revenue,
+        operating_income=row.operating_income,
+        net_income=row.net_income,
+        total_assets=row.total_assets,
+        total_liabilities=row.total_liabilities,
+        total_equity=row.total_equity,
+        eps=row.eps,
+        bps=row.bps,
+        per=row.per,
+        pbr=row.pbr,
+        roe=row.roe,
+        debt_ratio=row.debt_ratio,
+        dividend_yield=row.dividend_yield,
+        revenue_growth_yoy=row.revenue_growth_yoy,
+        operating_income_growth_yoy=row.operating_income_growth_yoy,
+        source=row.source,
+    )
+
+
+@router.get(
+    "/api/stocks/{symbol}/fundamentals",
+    response_model=StockFundamentalsResponse,
+    tags=["stocks"],
+)
+def get_stock_fundamentals(
+    symbol: str,
+    limit: int = Query(8, ge=1, le=40),
+    session: Session = Depends(get_session),
+) -> StockFundamentalsResponse:
+    stock = StockRepository(session).get_by_symbol(symbol)
+    if stock is None:
+        raise HTTPException(status_code=404, detail=f"symbol {symbol} not found")
+    repo = FundamentalSnapshotRepository(session)
+    rows = repo.list_recent_by_symbol(symbol, limit=limit)
+    history = [_fundamental_to_schema(r) for r in rows]
+    return StockFundamentalsResponse(
+        symbol=symbol,
+        latest=history[0] if history else None,
+        history=history,
+        count=len(history),
+    )
+
+
+# ---------- /api/stocks/{symbol}/earnings (v0.6 Phase D) ----------
+
+
+def _earnings_to_schema(row) -> EarningsEventSchema:
+    memo = row.memo
+    if memo is not None and len(memo) > 500:
+        memo = memo[:500]
+    return EarningsEventSchema(
+        event_date=row.event_date,
+        fiscal_year=row.fiscal_year,
+        fiscal_quarter=row.fiscal_quarter,
+        event_type=row.event_type,
+        company_name=row.company_name,
+        revenue_actual=row.revenue_actual,
+        revenue_consensus=row.revenue_consensus,
+        operating_income_actual=row.operating_income_actual,
+        operating_income_consensus=row.operating_income_consensus,
+        net_income_actual=row.net_income_actual,
+        net_income_consensus=row.net_income_consensus,
+        eps_actual=row.eps_actual,
+        eps_consensus=row.eps_consensus,
+        surprise_type=row.surprise_type,
+        surprise_pct=row.surprise_pct,
+        source=row.source,
+        memo=memo,
+    )
+
+
+def _earnings_to_calendar_item(row) -> EarningsCalendarItemSchema:
+    return EarningsCalendarItemSchema(
+        symbol=row.symbol,
+        company_name=row.company_name,
+        event_date=row.event_date,
+        fiscal_year=row.fiscal_year,
+        fiscal_quarter=row.fiscal_quarter,
+        event_type=row.event_type,
+        surprise_type=row.surprise_type,
+        surprise_pct=row.surprise_pct,
+    )
+
+
+@router.get(
+    "/api/stocks/{symbol}/earnings",
+    response_model=StockEarningsResponse,
+    tags=["stocks"],
+)
+def get_stock_earnings(
+    symbol: str,
+    limit: int = Query(8, ge=1, le=40),
+    session: Session = Depends(get_session),
+) -> StockEarningsResponse:
+    stock = StockRepository(session).get_by_symbol(symbol)
+    if stock is None:
+        raise HTTPException(status_code=404, detail=f"symbol {symbol} not found")
+    repo = EarningsEventRepository(session)
+    rows = repo.list_recent_by_symbol(symbol, limit=limit)
+    events = [_earnings_to_schema(r) for r in rows]
+    return StockEarningsResponse(
+        symbol=symbol,
+        latest=events[0] if events else None,
+        events=events,
+        count=len(events),
+    )
+
+
+# ---------- /api/calendar/earnings (v0.6 Phase D) ----------
+
+
+@router.get(
+    "/api/calendar/earnings",
+    response_model=EarningsCalendarResponse,
+    tags=["calendar"],
+)
+def get_earnings_calendar(
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+    surprise_type: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_session),
+) -> EarningsCalendarResponse:
+    repo = EarningsEventRepository(session)
+    # When `from_date` is omitted the calendar defaults to "upcoming starting
+    # today" — the natural Today-card use case. Callers wanting historical
+    # rows pass an explicit older `from_date`.
+    today = datetime.now(timezone.utc).date()
+    since = from_date if from_date is not None else today
+    rows = repo.list_upcoming(since=since, until=to_date, limit=limit)
+    if surprise_type is not None:
+        rows = [r for r in rows if r.surprise_type == surprise_type]
+    items = [_earnings_to_calendar_item(r) for r in rows]
+    return EarningsCalendarResponse(
+        items=items,
+        count=len(items),
+        from_date=from_date,
+        to_date=to_date,
+        surprise_type=surprise_type,
+        limit=limit,
     )
 
 

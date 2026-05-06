@@ -8,6 +8,8 @@ import {
 } from '@tanstack/react-table'
 import type {
   DisclosureRiskEvidence,
+  EarningsEvidence,
+  FundamentalEvidence,
   NewsEvidence,
   RecommendationItem,
   RecommendationResult,
@@ -67,6 +69,39 @@ function disclosureEvidenceSummary(
   if (!count) return '0'
   const top = evidence.recent_risk_disclosures?.[0]?.title?.slice(0, 24) ?? null
   return top ? `${count} · ${top}` : String(count)
+}
+
+function fundamentalEvidenceSummary(
+  evidence: FundamentalEvidence | null | undefined,
+): string {
+  if (!evidence) return '—'
+  if (evidence.reason === 'no_fundamental_snapshot') return '—'
+  const parts: string[] = []
+  if (evidence.fiscal_year !== undefined) {
+    const q =
+      evidence.fiscal_quarter !== undefined && evidence.fiscal_quarter !== null
+        ? `Q${evidence.fiscal_quarter}`
+        : '연간'
+    parts.push(`${evidence.fiscal_year} ${q}`)
+  }
+  if (evidence.per !== null && evidence.per !== undefined)
+    parts.push(`PER ${evidence.per}`)
+  if (evidence.roe !== null && evidence.roe !== undefined)
+    parts.push(`ROE ${evidence.roe}`)
+  return parts.length > 0 ? parts.join(' · ') : '—'
+}
+
+function earningsEvidenceSummary(
+  evidence: EarningsEvidence | null | undefined,
+): string {
+  if (!evidence) return '—'
+  if (evidence.reason === 'no_earnings_event') return '—'
+  const parts: string[] = []
+  if (evidence.surprise_type) parts.push(evidence.surprise_type)
+  if (evidence.surprise_pct !== null && evidence.surprise_pct !== undefined)
+    parts.push(`${evidence.surprise_pct}%`)
+  if (evidence.latest_event_date) parts.push(evidence.latest_event_date)
+  return parts.length > 0 ? parts.join(' · ') : '—'
 }
 
 export function RecommendationsTable({ rows }: RecommendationsTableProps) {
@@ -165,6 +200,30 @@ export function RecommendationsTable({ rows }: RecommendationsTableProps) {
             className="text-xs text-muted-foreground"
           >
             {disclosureEvidenceSummary(row.original.disclosure_risk_evidence)}
+          </span>
+        ),
+      },
+      {
+        id: 'fundamental_evidence',
+        header: 'fund evidence',
+        cell: ({ row }) => (
+          <span
+            data-testid={`rec-fund-evidence-${row.original.symbol}`}
+            className="text-xs text-muted-foreground"
+          >
+            {fundamentalEvidenceSummary(row.original.fundamental_evidence)}
+          </span>
+        ),
+      },
+      {
+        id: 'earnings_evidence',
+        header: 'earnings evidence',
+        cell: ({ row }) => (
+          <span
+            data-testid={`rec-earnings-evidence-${row.original.symbol}`}
+            className="text-xs text-muted-foreground"
+          >
+            {earningsEvidenceSummary(row.original.earnings_evidence)}
           </span>
         ),
       },

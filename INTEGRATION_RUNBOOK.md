@@ -727,3 +727,46 @@ DB URL override:
 - `operating_income`, `net_income`, `eps` 계열 actual/consensus: 적자 기업을 위해 음수 허용
 - `body`, `content`, `full_text`, `paragraph`, `raw_text`, `html_body`, `본문`,
   `원문`, `전문`, `source_file_path`, PDF/Excel BLOB 계열 컬럼은 파일 단위로 거부
+
+## 15. 재무 / 실적 read-only API 확인 (v0.6 Phase D)
+
+v0.6 Phase D 가 backend 에 추가한 read-only API 3종은 외부 API 호출 0건 / POST
+0건 / DART 자동 호출 0건 / Telegram 발송 0건. 운영자가 health check 또는
+대시보드 검증 단계에서 다음 명령으로 응답 형식을 확인할 수 있다.
+
+### 15.1 신규 endpoint
+
+| 경로 | 목적 | 주요 query |
+|---|---|---|
+| `GET /api/stocks/{symbol}/fundamentals` | 종목별 최신 재무 + 최근 history | `limit` (기본 8, 최대 40) |
+| `GET /api/stocks/{symbol}/earnings` | 종목별 최근 실적 이벤트 + history | `limit` (기본 8, 최대 40) |
+| `GET /api/calendar/earnings` | 최근/다가오는 실적 캘린더 | `from_date` / `to_date` / `surprise_type` / `limit` (기본 20, 최대 100). `from_date` 미지정 시 "오늘 이후" |
+
+### 15.2 수동 응답 확인 (PowerShell)
+
+```powershell
+# 백엔드가 8000 포트에서 떠 있어야 한다 (uvicorn / docker-compose)
+Invoke-WebRequest http://127.0.0.1:8000/api/stocks/005930/fundamentals?limit=4 |
+  Select-Object -ExpandProperty Content
+Invoke-WebRequest http://127.0.0.1:8000/api/stocks/005930/earnings?limit=4 |
+  Select-Object -ExpandProperty Content
+Invoke-WebRequest "http://127.0.0.1:8000/api/calendar/earnings?from_date=2026-05-01&to_date=2026-05-31&limit=10" |
+  Select-Object -ExpandProperty Content
+```
+
+### 15.3 안전 가드
+
+- 응답 트리에 `source_file_path`, `body`, `content`, `full_text`, `raw_text`,
+  `paragraph`, `html_body`, `본문`, `원문`, `전문` 13종 forbidden 키워드 0건이어야
+  한다. backend pytest 의 `_assert_no_source_file_path` recursive helper +
+  명시 substring 검사가 자동 검증.
+- `RecommendationItemSchema.fundamental_evidence` /
+  `HoldingCheckSchema.earnings_evidence` 응답은 라우터 단계 화이트리스트
+  (`_FUNDAMENTAL_EVIDENCE_FIELDS` / `_EARNINGS_EVIDENCE_FIELDS`) 를 거친다.
+  수동으로 점검하려면 `set(payload["recommendations"][0]["fundamental_evidence"].keys())`
+  가 허용 키 집합의 부분집합인지 확인.
+- evidence 키가 모두 forbidden 이라 화이트리스트 후 빈 dict 가 되면 응답은
+  null 로 강등 — 프런트 placeholder ("—") 와 동일한 시그널.
+- `EarningsEventSchema.memo` 는 500자 초과 시 라우터에서 자동 truncate.
+- 자동매매 / 주문 / 신규 POST 라우터 / DART 자동 호출 / Telegram 자동 발송 0건
+  유지 (정책 v0.1 ~ v0.5 동일).

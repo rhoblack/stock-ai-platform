@@ -73,6 +73,19 @@ const HAPPY_LATEST = {
           },
         ],
       },
+      fundamental_evidence: {
+        snapshot_date: '2026-05-01',
+        fiscal_year: 2025,
+        fiscal_quarter: 4,
+        per: '12.0000',
+        pbr: '1.2000',
+        roe: '18.0000',
+        debt_ratio: '40.0000',
+        revenue_growth_yoy: '12.0000',
+        operating_income_growth_yoy: '18.0000',
+        dividend_yield: '2.5000',
+      },
+      earnings_evidence: null,
       results: [
         {
           days_after: 1,
@@ -140,6 +153,19 @@ describe('RecommendationsPage', () => {
     expect(screen.getByTestId('rec-disclosure-evidence-005930')).toHaveTextContent(
       '감사의견 비적정',
     )
+    // v0.6 Phase D — fundamental evidence cell
+    expect(screen.getByTestId('rec-fund-evidence-005930')).toHaveTextContent(
+      'PER 12.0000',
+    )
+    expect(screen.getByTestId('rec-fund-evidence-005930')).toHaveTextContent(
+      'ROE 18.0000',
+    )
+    // earnings evidence — null on recommendation flow → "—"
+    expect(screen.getByTestId('rec-earnings-evidence-005930')).toHaveTextContent('—')
+    // forbidden fields must not leak into the rendered table
+    expect(screen.queryByText(/source_file_path/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/원문/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/본문/)).not.toBeInTheDocument()
     // 1/3/5/20 day result columns: 1d → +1.50%, 5d → +3.00%, 3d/20d → "—"
     expect(screen.getAllByTestId('return-rate').length).toBeGreaterThanOrEqual(4)
   })
@@ -157,6 +183,8 @@ describe('RecommendationsPage', () => {
               report_evidence: null,
               news_evidence: null,
               disclosure_risk_evidence: null,
+              fundamental_evidence: null,
+              earnings_evidence: null,
             },
           ],
         }),
@@ -172,6 +200,8 @@ describe('RecommendationsPage', () => {
     expect(screen.getByTestId('rec-report-evidence-005930')).toHaveTextContent('—')
     expect(screen.getByTestId('rec-news-evidence-005930')).toHaveTextContent('—')
     expect(screen.getByTestId('rec-disclosure-evidence-005930')).toHaveTextContent('—')
+    expect(screen.getByTestId('rec-fund-evidence-005930')).toHaveTextContent('—')
+    expect(screen.getByTestId('rec-earnings-evidence-005930')).toHaveTextContent('—')
   })
 
   it('shows empty table when run has no recommendations', async () => {

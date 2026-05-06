@@ -12,6 +12,34 @@ export interface HealthResponse {
   env: string
 }
 
+// ----- v0.6 Phase D — fundamental / earnings evidence -----
+
+export interface FundamentalEvidence {
+  snapshot_date?: string
+  fiscal_year?: number
+  fiscal_quarter?: number | null
+  per?: string | null
+  pbr?: string | null
+  roe?: string | null
+  debt_ratio?: string | null
+  revenue_growth_yoy?: string | null
+  operating_income_growth_yoy?: string | null
+  dividend_yield?: string | null
+  reason?: string
+}
+
+export interface EarningsEvidence {
+  latest_event_date?: string
+  fiscal_year?: number
+  fiscal_quarter?: number | null
+  event_type?: string
+  surprise_type?: string | null
+  surprise_pct?: string | null
+  operating_income_actual?: string | null
+  operating_income_consensus?: string | null
+  reason?: string
+}
+
 // ----- shared sub-shapes -----
 
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH'
@@ -64,6 +92,11 @@ export interface RecommendationItem {
   // DisclosureRiskProducer ran for this run. Older snapshots → null.
   news_evidence?: NewsEvidence | null
   disclosure_risk_evidence?: DisclosureRiskEvidence | null
+  // v0.6 Phase D — set by RealFundamentalScoreProducer; null for older runs.
+  fundamental_evidence?: FundamentalEvidence | null
+  // Always null on the recommendation flow today (only HoldingCheckEngine
+  // wires earnings_evidence). Kept for symmetry with HoldingCheck.
+  earnings_evidence?: EarningsEvidence | null
   results?: RecommendationResult[]
 }
 
@@ -118,6 +151,10 @@ export interface HoldingCheck {
   risk_level?: string | null
   risk_flags?: string[]
   risk_summary?: RiskSummary | null
+  // v0.6 Phase D — surfaced from holding-check DataSnapshot.market_context_json.
+  news_evidence?: NewsEvidence | null
+  disclosure_risk_evidence?: DisclosureRiskEvidence | null
+  earnings_evidence?: EarningsEvidence | null
 }
 
 export interface MarketRegime {
@@ -358,6 +395,84 @@ export interface StockPriceSeriesResponse {
   days: number
   count: number
   prices: DailyPriceRow[]
+}
+
+// ----- v0.6 Phase D — fundamentals / earnings / earnings calendar -----
+
+export interface FundamentalSnapshot {
+  snapshot_date: string
+  fiscal_year: number
+  fiscal_quarter: number | null
+  revenue: string | null
+  operating_income: string | null
+  net_income: string | null
+  total_assets: string | null
+  total_liabilities: string | null
+  total_equity: string | null
+  eps: string | null
+  bps: string | null
+  per: string | null
+  pbr: string | null
+  roe: string | null
+  debt_ratio: string | null
+  dividend_yield: string | null
+  revenue_growth_yoy: string | null
+  operating_income_growth_yoy: string | null
+  source: string | null
+}
+
+export interface StockFundamentalsResponse {
+  symbol: string
+  latest: FundamentalSnapshot | null
+  history: FundamentalSnapshot[]
+  count: number
+}
+
+export interface EarningsEvent {
+  event_date: string
+  fiscal_year: number
+  fiscal_quarter: number | null
+  event_type: string
+  company_name: string | null
+  revenue_actual: string | null
+  revenue_consensus: string | null
+  operating_income_actual: string | null
+  operating_income_consensus: string | null
+  net_income_actual: string | null
+  net_income_consensus: string | null
+  eps_actual: string | null
+  eps_consensus: string | null
+  surprise_type: string | null
+  surprise_pct: string | null
+  source: string | null
+  memo: string | null
+}
+
+export interface StockEarningsResponse {
+  symbol: string
+  latest: EarningsEvent | null
+  events: EarningsEvent[]
+  count: number
+}
+
+export interface EarningsCalendarItem {
+  symbol: string
+  company_name: string | null
+  event_date: string
+  fiscal_year: number
+  fiscal_quarter: number | null
+  event_type: string
+  surprise_type: string | null
+  surprise_pct: string | null
+}
+
+export interface EarningsCalendarResponse {
+  items: EarningsCalendarItem[]
+  count: number
+  from_date: string | null
+  to_date: string | null
+  surprise_type: string | null
+  limit: number
 }
 
 // ----- /api/themes/* (v0.5 Phase D) -----

@@ -1751,3 +1751,426 @@ def test_health_endpoint_still_works(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+# ---------- v0.6 Phase D — fundamentals / earnings / calendar ----------
+
+def _seed_fundamental(session, **overrides):
+    from app.data.repositories import FundamentalSnapshotRepository
+
+    values = {
+        "symbol": "005930",
+        "snapshot_date": date(2026, 5, 1),
+        "fiscal_year": 2025,
+        "fiscal_quarter": 4,
+        "revenue": Decimal("100000"),
+        "operating_income": Decimal("20000"),
+        "net_income": Decimal("15000"),
+        "total_assets": Decimal("500000"),
+        "total_liabilities": Decimal("200000"),
+        "total_equity": Decimal("300000"),
+        "eps": Decimal("3500"),
+        "bps": Decimal("60000"),
+        "per": Decimal("12"),
+        "pbr": Decimal("1.2"),
+        "roe": Decimal("18"),
+        "debt_ratio": Decimal("40"),
+        "dividend_yield": Decimal("2.5"),
+        "revenue_growth_yoy": Decimal("12"),
+        "operating_income_growth_yoy": Decimal("18"),
+        "source": "MANUAL",
+    }
+    values.update(overrides)
+    return FundamentalSnapshotRepository(session).upsert_by_symbol_period(**values)
+
+
+def _seed_earnings(session, **overrides):
+    from app.data.repositories import EarningsEventRepository
+
+    values = {
+        "symbol": "005930",
+        "company_name": "삼성전자",
+        "event_date": date(2026, 5, 1),
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "event_type": "REPORT",
+        "operating_income_actual": Decimal("110"),
+        "operating_income_consensus": Decimal("100"),
+        "surprise_type": "BEAT",
+        "surprise_pct": Decimal("10"),
+        "source": "MANUAL",
+    }
+    values.update(overrides)
+    return EarningsEventRepository(session).upsert_by_symbol_event(**values)
+
+
+def test_get_stock_fundamentals_returns_latest_and_history(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    _seed_fundamental(session, snapshot_date=date(2025, 8, 14), fiscal_year=2025,
+                      fiscal_quarter=2, per=Decimal("11"))
+    _seed_fundamental(session, snapshot_date=date(2025, 11, 14), fiscal_year=2025,
+                      fiscal_quarter=3, per=Decimal("13"))
+    _seed_fundamental(session, snapshot_date=date(2026, 5, 1), fiscal_year=2025,
+                      fiscal_quarter=4, per=Decimal("12"))
+    session.commit()
+
+    response = client.get("/api/stocks/005930/fundamentals")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "005930"
+    assert body["count"] == 3
+    assert len(body["history"]) == 3
+    # ordered desc by (snapshot_date, fiscal_year, fiscal_quarter)
+    assert body["history"][0]["snapshot_date"] == "2026-05-01"
+    assert body["latest"]["fiscal_quarter"] == 4
+    assert body["latest"]["per"] == "12.0000"
+    assert body["latest"]["roe"] == "18.0000"
+    _assert_no_source_file_path(body)
+    # forbidden body / 본문 / 원문 / paragraph fields are not present
+    for forbidden in ("body", "content", "full_text", "raw_text", "paragraph",
+                      "html_body", "본문", "원문", "전문"):
+        assert forbidden not in str(body)
+
+
+def test_get_stock_fundamentals_empty_returns_count_zero(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    session.commit()
+
+    response = client.get("/api/stocks/005930/fundamentals")
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "symbol": "005930",
+        "latest": None,
+        "history": [],
+        "count": 0,
+    }
+
+
+def test_get_stock_fundamentals_unknown_symbol_returns_404(client, session):
+    response = client.get("/api/stocks/UNKNOWN/fundamentals")
+    assert response.status_code == 404
+
+
+def test_get_stock_fundamentals_limit_clamp(client, session):
+    response = client.get("/api/stocks/005930/fundamentals?limit=99")
+    # FastAPI validation rejects beyond the documented max=40
+    assert response.status_code == 422
+
+
+def test_get_stock_earnings_returns_latest_and_events(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    _seed_earnings(session, event_date=date(2025, 11, 1), fiscal_year=2025,
+                   fiscal_quarter=3, surprise_type="MEET",
+                   surprise_pct=Decimal("0.5"))
+    _seed_earnings(session, event_date=date(2026, 5, 1), fiscal_year=2026,
+                   fiscal_quarter=1, surprise_type="BEAT",
+                   surprise_pct=Decimal("10"))
+    session.commit()
+
+    response = client.get("/api/stocks/005930/earnings")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "005930"
+    assert body["count"] == 2
+    assert body["latest"]["event_date"] == "2026-05-01"
+    assert body["latest"]["surprise_type"] == "BEAT"
+    assert body["latest"]["surprise_pct"] == "10.0000"
+    assert body["events"][0]["surprise_type"] == "BEAT"
+    assert body["events"][1]["surprise_type"] == "MEET"
+    _assert_no_source_file_path(body)
+    for forbidden in ("body", "content", "full_text", "raw_text", "paragraph",
+                      "html_body", "본문", "원문", "전문"):
+        assert forbidden not in str(body)
+
+
+def test_get_stock_earnings_empty_returns_count_zero(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    session.commit()
+    response = client.get("/api/stocks/005930/earnings")
+    assert response.status_code == 200
+    assert response.json() == {
+        "symbol": "005930",
+        "latest": None,
+        "events": [],
+        "count": 0,
+    }
+
+
+def test_get_stock_earnings_unknown_symbol_returns_404(client, session):
+    response = client.get("/api/stocks/UNKNOWN/earnings")
+    assert response.status_code == 404
+
+
+def test_get_earnings_calendar_filters_from_to_and_surprise_type(client, session):
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    _seed_stock(session, symbol="000660", name="SK하이닉스")
+    _seed_earnings(session, symbol="005930", event_date=date(2026, 4, 30),
+                   fiscal_year=2026, fiscal_quarter=1, surprise_type="BEAT",
+                   surprise_pct=Decimal("10"))
+    _seed_earnings(session, symbol="005930", event_date=date(2026, 5, 10),
+                   fiscal_year=2026, fiscal_quarter=2, event_type="ANNOUNCEMENT",
+                   surprise_type=None, surprise_pct=None)
+    _seed_earnings(session, symbol="000660", event_date=date(2026, 5, 15),
+                   fiscal_year=2026, fiscal_quarter=1, surprise_type="MISS",
+                   surprise_pct=Decimal("-7"), company_name="SK하이닉스")
+    session.commit()
+
+    # default (no from_date) → only events from "today" (2026 fixtures may be
+    # past or future depending on real clock); we use explicit from_date in tests.
+    response = client.get(
+        "/api/calendar/earnings?from_date=2026-05-01&to_date=2026-05-31",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["from_date"] == "2026-05-01"
+    assert body["to_date"] == "2026-05-31"
+    assert body["limit"] == 20
+    symbols = {item["symbol"] for item in body["items"]}
+    assert symbols == {"005930", "000660"}
+    # ordered ascending by event_date
+    assert body["items"][0]["event_date"] == "2026-05-10"
+    assert body["items"][1]["event_date"] == "2026-05-15"
+    assert body["items"][1]["company_name"] == "SK하이닉스"
+    _assert_no_source_file_path(body)
+
+    # surprise_type filter
+    response = client.get(
+        "/api/calendar/earnings?from_date=2026-04-01&to_date=2026-05-31&surprise_type=BEAT",
+    )
+    body = response.json()
+    assert body["surprise_type"] == "BEAT"
+    assert all(item["surprise_type"] == "BEAT" for item in body["items"])
+    assert {item["event_date"] for item in body["items"]} == {"2026-04-30"}
+
+
+def test_get_earnings_calendar_default_uses_today_as_from_date(client, session):
+    """Without from_date, the calendar returns only events ≥ today."""
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    # Far past row should not appear; far future row should.
+    _seed_earnings(session, symbol="005930", event_date=date(1999, 1, 1),
+                   fiscal_year=1999, fiscal_quarter=1, event_type="REPORT")
+    _seed_earnings(session, symbol="005930", event_date=date(2099, 12, 31),
+                   fiscal_year=2099, fiscal_quarter=4, event_type="ANNOUNCEMENT")
+    session.commit()
+
+    response = client.get("/api/calendar/earnings")
+    assert response.status_code == 200
+    body = response.json()
+    event_dates = {item["event_date"] for item in body["items"]}
+    assert "1999-01-01" not in event_dates
+    assert "2099-12-31" in event_dates
+
+
+def test_get_earnings_calendar_limit_clamp(client):
+    response = client.get("/api/calendar/earnings?limit=999")
+    assert response.status_code == 422
+
+
+def test_recommendation_surfaces_fundamental_evidence_whitelist(client, session):
+    today = date(2026, 5, 4)
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    _seed_indicator(session, symbol="005930", indicator_date=today)
+
+    # Snapshot includes both safe + forbidden fields. The API whitelist must
+    # strip everything outside _FUNDAMENTAL_EVIDENCE_FIELDS.
+    snapshot = DataSnapshotRepository(session).add(
+        DataSnapshot(
+            snapshot_time=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+            symbol="005930",
+            snapshot_type="RECOMMENDATION",
+            indicator_data_json={"technical_score": "82"},
+            market_context_json={
+                "fundamental_evidence": {
+                    "snapshot_date": "2026-05-01",
+                    "fiscal_year": 2025,
+                    "fiscal_quarter": 4,
+                    "per": "12",
+                    "pbr": "1.2",
+                    "roe": "18",
+                    "debt_ratio": "40",
+                    "revenue_growth_yoy": "12",
+                    "operating_income_growth_yoy": "18",
+                    "dividend_yield": "2.5",
+                    # forbidden — must be stripped:
+                    "source_file_path": "D:/private/leak.csv",
+                    "body": "전문 본문",
+                    "raw_text": "원문",
+                    "html_body": "<p>...</p>",
+                },
+            },
+        ),
+    )
+    session.flush()
+
+    run = RecommendationRunRepository(session).add(
+        RecommendationRun(
+            run_date=today,
+            started_at=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+            status="SUCCESS",
+            telegram_sent=False,
+        ),
+    )
+    session.flush()
+    RecommendationRepository(session).add(
+        Recommendation(
+            run_id=run.run_id,
+            rank=1,
+            market="KOSPI",
+            symbol="005930",
+            name="삼성전자",
+            grade="A",
+            total_score=Decimal("82"),
+            fundamental_score=Decimal("65"),
+            risk_score=Decimal("0"),
+            reason="관찰 후보",
+            snapshot_id=snapshot.snapshot_id,
+        ),
+    )
+    session.commit()
+
+    response = client.get("/api/recommendations/latest")
+    assert response.status_code == 200
+    rec = response.json()["recommendations"][0]
+    assert rec["fundamental_evidence"] is not None
+    fund = rec["fundamental_evidence"]
+    assert fund["snapshot_date"] == "2026-05-01"
+    assert fund["per"] == "12"
+    assert fund["roe"] == "18"
+    # Whitelist enforcement
+    assert "source_file_path" not in fund
+    assert "body" not in fund
+    assert "raw_text" not in fund
+    assert "html_body" not in fund
+    assert set(fund.keys()).issubset({
+        "snapshot_date", "fiscal_year", "fiscal_quarter",
+        "per", "pbr", "roe", "debt_ratio",
+        "revenue_growth_yoy", "operating_income_growth_yoy", "dividend_yield",
+        "reason",
+    })
+    _assert_no_source_file_path(rec)
+
+
+def test_recommendation_fundamental_evidence_default_none_for_pre_v06(client, session):
+    _seed_full_dataset(session)
+    response = client.get("/api/recommendations/latest")
+    assert response.status_code == 200
+    rec = response.json()["recommendations"][0]
+    assert rec["fundamental_evidence"] is None
+
+
+def test_holding_check_surfaces_earnings_evidence_whitelist(client, session):
+    """earnings_evidence (and its forbidden siblings) must be whitelisted."""
+    _seed_stock(session, symbol="005930", name="삼성전자")
+    today = date(2026, 5, 4)
+    _seed_indicator(session, symbol="005930", indicator_date=today)
+
+    snapshot = DataSnapshotRepository(session).add(
+        DataSnapshot(
+            snapshot_time=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+            symbol="005930",
+            snapshot_type="HOLDING_CHECK",
+            indicator_data_json={"technical_score": "70"},
+            market_context_json={
+                "earnings_evidence": {
+                    "latest_event_date": "2026-05-01",
+                    "fiscal_year": 2026,
+                    "fiscal_quarter": 1,
+                    "event_type": "REPORT",
+                    "surprise_type": "BEAT",
+                    "surprise_pct": "10",
+                    "operating_income_actual": "110",
+                    "operating_income_consensus": "100",
+                    # forbidden:
+                    "source_file_path": "D:/private/earnings.csv",
+                    "memo": "내부 메모",
+                    "본문": "전문 본문 텍스트",
+                    "raw_text": "원문 텍스트",
+                },
+            },
+        ),
+    )
+    session.flush()
+
+    HoldingCheckRepository(session).upsert(
+        check_date=today,
+        check_type="PRE_MARKET",
+        symbol="005930",
+        current_price=Decimal("100"),
+        avg_buy_price=Decimal("95"),
+        return_rate=Decimal("5.2632"),
+        technical_score=Decimal("70"),
+        news_score=Decimal("50"),
+        earnings_score=Decimal("70"),
+        ai_score=Decimal("50"),
+        risk_score=Decimal("0"),
+        total_score=Decimal("70"),
+        grade="B",
+        decision="HOLD",
+        reason="관찰",
+        alert=False,
+        snapshot_id=snapshot.snapshot_id,
+    )
+    session.commit()
+
+    response = client.get("/api/holdings/checks/latest")
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    earn = items[0]["earnings_evidence"]
+    assert earn["latest_event_date"] == "2026-05-01"
+    assert earn["surprise_type"] == "BEAT"
+    assert "source_file_path" not in earn
+    assert "memo" not in earn
+    assert "본문" not in earn
+    assert "raw_text" not in earn
+    assert set(earn.keys()).issubset({
+        "latest_event_date", "fiscal_year", "fiscal_quarter",
+        "event_type", "surprise_type", "surprise_pct",
+        "operating_income_actual", "operating_income_consensus",
+        "reason",
+    })
+    _assert_no_source_file_path(items[0])
+
+
+def test_holding_check_earnings_evidence_default_none_for_pre_v06(client, session):
+    _seed_full_dataset(session)
+    # _seed_full_dataset adds no holding checks — call /api/holdings/checks/latest
+    # to confirm default-None handling on the standalone /api/holdings/{symbol}/checks
+    # path as well by inserting one HoldingCheck without evidence.
+    today = date(2026, 5, 4)
+    snapshot = DataSnapshotRepository(session).add(
+        DataSnapshot(
+            snapshot_time=datetime(2026, 5, 4, 6, 0, tzinfo=timezone.utc),
+            symbol="005930",
+            snapshot_type="HOLDING_CHECK",
+            market_context_json={"phase": "no_evidence"},
+        ),
+    )
+    session.flush()
+    HoldingCheckRepository(session).upsert(
+        check_date=today,
+        check_type="PRE_MARKET",
+        symbol="005930",
+        current_price=Decimal("70500"),
+        avg_buy_price=Decimal("70000"),
+        return_rate=Decimal("0.7"),
+        technical_score=Decimal("70"),
+        news_score=Decimal("50"),
+        earnings_score=Decimal("50"),
+        ai_score=Decimal("50"),
+        risk_score=Decimal("0"),
+        total_score=Decimal("60"),
+        grade="B",
+        decision="HOLD",
+        reason="관찰",
+        alert=False,
+        snapshot_id=snapshot.snapshot_id,
+    )
+    session.commit()
+    response = client.get("/api/holdings/checks/latest")
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert items[0]["earnings_evidence"] is None
+    assert items[0]["news_evidence"] is None
+    assert items[0]["disclosure_risk_evidence"] is None
