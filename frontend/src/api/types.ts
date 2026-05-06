@@ -730,3 +730,33 @@ export interface WatchlistsResponse {
 export interface WatchlistStatusResponse {
   status: string
 }
+
+// ----- v0.9 Phase C — WatchlistItemsResponse (paginated) -----
+
+export interface WatchlistItemsResponse {
+  items: WatchlistItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+// ----- v0.9 Phase D — UserPreference -----
+
+export interface UserPreference {
+  user_id: number
+  default_watchlist_id: number | null
+  default_market: string | null
+  default_strategy: string | null
+  dashboard_layout_json: unknown | null
+  notification_preferences_json: unknown | null
+  created_at: string
+  updated_at: string
+}
+
+export interface UserPreferenceUpdateRequest {
+  default_watchlist_id?: number | null
+  default_market?: string | null
+  default_strategy?: string | null
+  dashboard_layout_json?: unknown | null
+  notification_preferences_json?: unknown | null
+}

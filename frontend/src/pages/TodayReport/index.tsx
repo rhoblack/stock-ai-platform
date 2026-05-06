@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useTodayReport } from '@/hooks/useTodayReport'
 import { useEarningsCalendar } from '@/hooks/useEarningsCalendar'
-import { useDefaultWatchlistId, useWatchlist } from '@/hooks/useWatchlists'
+import { useWatchlist } from '@/hooks/useWatchlists'
+import { useEffectiveDefaultWatchlistId } from '@/hooks/useUserPreferences'
 import { GradePill } from '@/components/common/GradePill'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { DecisionPill } from '@/components/common/DecisionPill'
@@ -82,12 +83,12 @@ export function TodayReportPage() {
 }
 
 // ---------------------------------------------------------------------------
-// v0.8 Phase D — 내 관심종목 카드
-// Shows items from the user's default (or first) watchlist.
+// v0.9 Phase D — 내 관심종목 카드
+// Priority: preference.default_watchlist_id → watchlist default flag → first
 // ---------------------------------------------------------------------------
 
 function WatchlistCard() {
-  const defaultId = useDefaultWatchlistId()
+  const defaultId = useEffectiveDefaultWatchlistId()
   const { data, isLoading, isError } = useWatchlist(defaultId)
 
   return (

@@ -968,18 +968,22 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] backend pytest **916 passed** (기준선 869 + 47 신규) / 회귀 0건
 - [ ] tag `v0.9-watchlist-api` + push
 
-### Phase D: Frontend 관리 UI
+### Phase D: Frontend 관리 UI ✅ 인수
 
-- [ ] `frontend/src/pages/Watchlist.tsx` — 목록 rename (inline) + 목록 delete (확인 모달) + 기본 목록 설정 버튼
-- [ ] `frontend/src/pages/Watchlist.tsx` — WatchlistItem 메모 인라인 편집
-- [ ] `frontend/src/pages/Settings.tsx` 신규 또는 확장 — UserPreference GET/PUT (기본 시장/전략/watchlist 선택)
-- [ ] `frontend/src/store/watchlistSlice.ts` 확장 — rename/delete/setDefault/updateMemo action
-- [ ] ErrorBoundary 각 화면 라우터 wrap (Phase B 컴포넌트 활용)
-- [ ] `frontend/src/tests/WatchlistManage.test.tsx` 신규 (~20 tests)
-- [ ] `frontend/src/tests/Settings.test.tsx` 신규 (~10 tests)
-- [ ] `e2e/watchlist_manage.spec.ts` 신규 (5건 추가)
-- [ ] `e2e/settings.spec.ts` 신규 (3건 추가)
-- [ ] vitest ~130 passed / e2e ~27 passed / build 그린
+- [x] `frontend/src/api/client.ts` — `apiPatch` / `apiPut` 추가
+- [x] `frontend/src/api/types.ts` — `UserPreference`, `UserPreferenceUpdateRequest`, `WatchlistItemsResponse` 타입 추가
+- [x] `frontend/src/api/watchlists.ts` — `updateWatchlist`, `deleteWatchlist`, `updateWatchlistItemMemo`, `listWatchlistItems` 추가
+- [x] `frontend/src/api/preferences.ts` 신규 — `getMyPreferences`, `updateMyPreferences`
+- [x] `frontend/src/hooks/useWatchlists.ts` — `useUpdateWatchlist`, `useDeleteWatchlist`, `useUpdateWatchlistItemMemo` 추가
+- [x] `frontend/src/hooks/useUserPreferences.ts` 신규 — `useUserPreferences`, `useUpdateUserPreferences`, `useEffectiveDefaultWatchlistId`
+- [x] `frontend/src/pages/Watchlist/index.tsx` — rename(inline) + delete + set-default + memo edit + item filter
+- [x] `frontend/src/pages/Settings/index.tsx` 확장 — UserPreference 섹션 (GET/PUT: default_watchlist_id / default_market / default_strategy / notification on-off)
+- [x] `frontend/src/pages/TodayReport/index.tsx` — WatchlistCard가 `useEffectiveDefaultWatchlistId` 사용
+- [x] `frontend/src/pages/StockDetail/index.tsx` — FavoriteButton이 `useEffectiveDefaultWatchlistId` 사용
+- [x] `frontend/src/tests/mswServer.ts` — Phase C/D 핸들러 추가 (PATCH watchlist, DELETE watchlist, GET/PATCH items, GET/PUT preferences)
+- [x] `frontend/src/tests/WatchlistManage.test.tsx` 신규 (21 tests — rename/409/cancel, set-default, delete/404, memo/422/cancel, filter, forbidden fields)
+- [x] `frontend/src/tests/UserPreferences.test.tsx` 신규 (15 tests — Settings preference GET/PUT, TodayReport watchlist, FavoriteButton preference)
+- [x] vitest **146 passed** / build 그린 / tsc 오류 0건
 - [ ] tag `v0.9-frontend` + push
 
 ### Phase E: 마감 (문서)

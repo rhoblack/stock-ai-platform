@@ -187,6 +187,65 @@ export const handlers = [
   http.delete('*/api/watchlists/:id/items/:symbol', () =>
     HttpResponse.json({ status: 'removed' }),
   ),
+
+  // v0.9 Phase C/D — Watchlist PATCH / DELETE / items list / item PATCH
+  http.patch('*/api/watchlists/:id', ({ params }) =>
+    HttpResponse.json({
+      id: Number(params.id),
+      name: '관심종목',
+      is_default: true,
+      item_count: 0,
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-07T00:00:00',
+    }),
+  ),
+  http.delete('*/api/watchlists/:id', () =>
+    HttpResponse.json({ status: 'ok' }),
+  ),
+  http.get('*/api/watchlists/:id/items', () =>
+    HttpResponse.json({
+      items: [],
+      total: 0,
+      limit: 50,
+      offset: 0,
+    }),
+  ),
+  http.patch('*/api/watchlists/:id/items/:symbol', ({ params }) =>
+    HttpResponse.json({
+      id: 1,
+      symbol: String(params.symbol ?? ''),
+      memo: null,
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-07T00:00:00',
+    }),
+  ),
+
+  // v0.9 Phase D — UserPreference
+  http.get('*/api/users/me/preferences', () =>
+    HttpResponse.json({
+      user_id: 1,
+      default_watchlist_id: null,
+      default_market: null,
+      default_strategy: null,
+      dashboard_layout_json: null,
+      notification_preferences_json: null,
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-06T00:00:00',
+    }),
+  ),
+  http.put('*/api/users/me/preferences', async ({ request }) => {
+    const body = await request.json() as Record<string, unknown>
+    return HttpResponse.json({
+      user_id: 1,
+      default_watchlist_id: body.default_watchlist_id ?? null,
+      default_market: body.default_market ?? null,
+      default_strategy: body.default_strategy ?? null,
+      dashboard_layout_json: body.dashboard_layout_json ?? null,
+      notification_preferences_json: body.notification_preferences_json ?? null,
+      created_at: '2026-05-06T00:00:00',
+      updated_at: '2026-05-07T00:00:00',
+    })
+  }),
 ]
 
 export const server = setupServer(...handlers)

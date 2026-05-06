@@ -136,6 +136,42 @@ export async function apiPost<T, B = unknown>(path: string, body: B): Promise<T>
 }
 
 // ---------------------------------------------------------------------------
+// PUT client (v0.9 Phase D)
+// ---------------------------------------------------------------------------
+
+export async function apiPut<T, B = unknown>(path: string, body: B): Promise<T> {
+  const url = buildUrl(path)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...buildAuthHeaders(),
+    },
+    body: JSON.stringify(body),
+  })
+  return parseResponse<T>(res)
+}
+
+// ---------------------------------------------------------------------------
+// PATCH client (v0.9 Phase D)
+// ---------------------------------------------------------------------------
+
+export async function apiPatch<T, B = unknown>(path: string, body: B): Promise<T> {
+  const url = buildUrl(path)
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...buildAuthHeaders(),
+    },
+    body: JSON.stringify(body),
+  })
+  return parseResponse<T>(res)
+}
+
+// ---------------------------------------------------------------------------
 // DELETE client (v0.8 Phase D)
 // ---------------------------------------------------------------------------
 

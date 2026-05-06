@@ -1,18 +1,18 @@
 # TESTING.md
 
-> 본 문서는 **v0.9 Phase C 시점** 기준으로 갱신된다 (`v0.9-watchlist-api`
+> 본 문서는 **v0.9 Phase D 시점** 기준으로 갱신된다 (`v0.9-frontend`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.9 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.9 Phase C 시점)
+## 1. 현재 회귀 게이트 (v0.9 Phase D 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **916 passed** (v0.9 Phase B 869 → Phase C 916; +47 신규) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **117 passed** (17 파일, jsdom + msw v2; Phase C는 프론트 변경 없음) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **916 passed** (v0.9 Phase C 기준, 백엔드 변경 없음) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **146 passed** (19 파일, jsdom + msw v2; Phase C 117 → Phase D 146; +29 신규) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
 
@@ -87,6 +87,8 @@ frontend/
 │  ├─ Settings.test.tsx
 │  ├─ marketCalendar.test.tsx                 # v0.3 Phase C — 15 케이스
 │  ├─ MarketStatusBanner.test.tsx             # v0.3 Phase C — 4 케이스
+│  ├─ WatchlistManage.test.tsx                # v0.9 Phase D — 21 케이스 (rename/delete/set-default/memo/filter/forbidden fields)
+│  ├─ UserPreferences.test.tsx                # v0.9 Phase D — 15 케이스 (Settings 섹션/TodayReport/FavoriteButton preference)
 │  ├─ mswServer.ts
 │  └─ renderWithProviders.tsx
 └─ e2e/
@@ -898,6 +900,87 @@ Repository 단위 + API 통합 혼합. StaticPool SQLite.
 - frontend vitest **117 passed** — 변경 없음
 - frontend build 그린
 - alembic upgrade head + compare_metadata diff 0건 (0004_user_preferences 통과)
+
+## 6.22 v0.9 Phase D — Frontend 관리 UI + UserPreference 테스트
+
+총 **36 케이스 신규** (vitest). 백엔드 변경 0건. Watchlist 관리 UI /
+UserPreference 설정 / TodayReport + StockDetail preference 연동을 다층 검증.
+
+### 6.22.1 `tests/WatchlistManage.test.tsx` (21 케이스)
+
+MSW v2 + TanStack Query + renderWithProviders. 새 watchlist 관리 기능을 컴포넌트
+단위로 검증.
+
+**WatchlistListItem — rename (3)**
+- 인라인 rename → PATCH 호출 → 이름 업데이트 성공
+- 409 충돌 → "같은 이름이 이미 있습니다" 오류 표시
+- cancel (X 버튼) → 원래 이름 복원
+
+**WatchlistListItem — set default (2)**
+- set-default 버튼 클릭 → PATCH 호출 → 기본 목록 변경
+- 이미 기본 목록인 경우 set-default 버튼 미노출
+
+**WatchlistListItem — delete (3)**
+- 비기본 목록 삭제 → DELETE 호출 → 목록에서 제거
+- 기본 목록도 삭제 허용
+- 404 응답 → "목록을 찾을 수 없습니다" 오류 표시
+
+**WatchlistItemRow — memo edit (3)**
+- Pencil 버튼 → 인라인 form → memo 업데이트 성공
+- 422 서버 오류 → 오류 메시지 표시
+- cancel → 원래 memo 복원
+
+**WatchlistDetailPanel — item filter (2)**
+- symbol prefix 입력 → 일치 항목만 표시
+- 일치 항목 없음 → empty placeholder 표시
+
+**WatchlistPage — forbidden fields (8)**
+- broker / account / quantity / password / token / order / 주문 / 매수 / 매도 / 자동매매
+  0건 단언 (innerHTML 스캔)
+
+### 6.22.2 `tests/UserPreferences.test.tsx` (15 케이스)
+
+MSW v2 + TanStack Query + renderWithProviders + renderStockDetail() 헬퍼.
+
+**SettingsPage — UserPreference section (8)**
+- GET /api/users/me/preferences → 폼 렌더링 (default_watchlist_id / default_market /
+  default_strategy 셀렉트 + notification 체크박스)
+- 500 오류 → `pref-load-error` 노출
+- watchlist_id 변경 → PUT 호출 → `pref-save-success` 노출
+- market 변경 → 업데이트 성공
+- strategy 변경 → 업데이트 성공
+- notification toggle → `notification_preferences_json: {enabled: true}` 전송
+- 401 저장 실패 → `pref-save-error` 노출
+- user-preference-form innerHTML 에 forbidden 필드 0건 (broker / account / quantity /
+  password / token / 자동매매 / 주문)
+
+**TodayReport — WatchlistCard with preference (3)**
+- preference.default_watchlist_id 가 설정된 경우 해당 watchlist 아이템 표시
+- preference 미설정 시 watchlist is_default fallback 동작
+- preference API 500 오류 시 fallback 유지 (폼 자체 오류 아님)
+
+**StockDetailPage — FavoriteButton with preference (4)**
+- preference default watchlist 에 포함된 종목 → `data-active="true"`
+- 미포함 종목 → `data-active="false"`
+- 409 응답 → 오류 없이 idempotent 처리 (에러 미노출)
+- 500 응답 → 오류 표시
+
+### 6.22.3 회귀 기준
+
+- backend pytest **916 passed** — Phase D 는 프런트 전용, 백엔드 변경 0건
+- frontend vitest **117 → 146 passed (+29)** — 19 파일
+- frontend build 그린 (`tsc --noEmit && vite build`)
+- Playwright e2e **19 passed** — 변경 없음
+- `v0.9-frontend` 태그 생성 후 push
+
+핵심 안전 가드:
+- `user-preference-form` innerHTML 에 broker / account / quantity / password /
+  token / 자동매매 / 주문 0건 (컴포넌트 레벨 whitelist 가드)
+- FavoriteButton 409 → idempotent — 이미 목록에 있음 = silent success, 에러 0건
+- notification 설정은 UI 저장 전용 (`notification_preferences_json.enabled`) — 실
+  Telegram 발송 0건 (e2e + unit 모두 외부 호출 0건 확인)
+- `useUserPreferences` 는 `retry: false` 상속 (test QueryClient 의 `retry: false`
+  와 충돌 없음) — per-query retry override 없음
 
 ## 7. 금지 사항
 

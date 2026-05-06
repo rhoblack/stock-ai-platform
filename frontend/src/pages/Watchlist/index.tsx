@@ -1,23 +1,27 @@
-// v0.8 Phase D — Watchlist management page (/watchlist).
-// Shows user's watchlists, allows creating new lists, adding / removing
-// symbols. Mutations map to Phase C backend APIs.
+// Watchlist management page (/watchlist).
+// v0.8 Phase D: list/create/add item/remove item
+// v0.9 Phase D: rename, delete, set-default, item memo edit, item search filter
 //
 // Policy:
-//   • No order / buy / sell / auto-trading UI — watchlist is a bookmarks
-//     list only.
-//   • Forbidden fields (broker, account, quantity, order_*, source_file_path,
-//     password, token) are never rendered.
-//   • 401 / 404 / 409 / 422 errors are surfaced with plain text messages.
+//   • No order/buy/sell/auto-trading UI — watchlist is a bookmarks list only.
+//   • Forbidden fields never rendered (broker, account, quantity, order_*,
+//     source_file_path, password, token, jwt_secret, side).
+//   • 401/404/409/422 errors are surfaced with plain text messages.
+//   • Default watchlist deletion is allowed; API returns 200 and clears
+//     UserPreference.default_watchlist_id server-side via FK ON DELETE SET NULL.
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Star, Trash2, Plus, List } from 'lucide-react'
+import { Star, Trash2, Plus, List, Pencil, Check, X, ChevronDown } from 'lucide-react'
 import {
   useWatchlists,
   useWatchlist,
   useCreateWatchlist,
   useAddWatchlistItem,
   useRemoveWatchlistItem,
+  useUpdateWatchlist,
+  useDeleteWatchlist,
+  useUpdateWatchlistItemMemo,
 } from '@/hooks/useWatchlists'
 import { ApiError } from '@/api/client'
 import { cn } from '@/lib/utils'
@@ -27,7 +31,6 @@ export function WatchlistPage() {
   const { data, isLoading, isError } = useWatchlists()
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
-  // After watchlists load, default-select the first one if nothing is selected
   const watchlists = data?.watchlists ?? []
   const activeId =
     selectedId !== null
@@ -73,6 +76,9 @@ export function WatchlistPage() {
             watchlists={watchlists}
             activeId={activeId}
             onSelect={id => setSelectedId(id)}
+            onDeleted={deletedId => {
+              if (activeId === deletedId) setSelectedId(null)
+            }}
           />
           <CreateWatchlistPanel />
         </aside>
@@ -99,17 +105,19 @@ export function WatchlistPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Watchlist list panel
+// Watchlist list panel (with rename / set-default / delete)
 // ---------------------------------------------------------------------------
 
 function WatchlistListPanel({
   watchlists,
   activeId,
   onSelect,
+  onDeleted,
 }: {
   watchlists: Watchlist[]
   activeId: number | null
   onSelect: (id: number) => void
+  onDeleted: (id: number) => void
 }) {
   return (
     <section
@@ -131,34 +139,226 @@ function WatchlistListPanel({
       ) : (
         <ul className="flex flex-col gap-1">
           {watchlists.map(wl => (
-            <li key={wl.id}>
-              <button
-                type="button"
-                data-testid={`watchlist-row-${wl.id}`}
-                onClick={() => onSelect(wl.id)}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent',
-                  activeId === wl.id && 'bg-accent font-medium',
-                )}
-              >
-                <Star
-                  className={cn(
-                    'h-3 w-3 shrink-0',
-                    wl.is_default
-                      ? 'fill-yellow-400 text-yellow-400'
-                      : 'text-muted-foreground',
-                  )}
-                />
-                <span className="flex-1 truncate text-left">{wl.name}</span>
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                  {wl.item_count}
-                </span>
-              </button>
-            </li>
+            <WatchlistListItem
+              key={wl.id}
+              watchlist={wl}
+              isActive={activeId === wl.id}
+              onSelect={() => onSelect(wl.id)}
+              onDeleted={() => onDeleted(wl.id)}
+            />
           ))}
         </ul>
       )}
     </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Single watchlist row with inline rename + action menu
+// ---------------------------------------------------------------------------
+
+function WatchlistListItem({
+  watchlist,
+  isActive,
+  onSelect,
+  onDeleted,
+}: {
+  watchlist: Watchlist
+  isActive: boolean
+  onSelect: () => void
+  onDeleted: () => void
+}) {
+  const updateMutation = useUpdateWatchlist()
+  const deleteMutation = useDeleteWatchlist()
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(watchlist.name)
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const [showMenu, setShowMenu] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  async function handleRenameSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = renameValue.trim()
+    if (!trimmed || trimmed === watchlist.name) {
+      setIsRenaming(false)
+      return
+    }
+    setRenameError(null)
+    try {
+      await updateMutation.mutateAsync({ watchlistId: watchlist.id, payload: { name: trimmed } })
+      setIsRenaming(false)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 409) {
+          setRenameError('같은 이름이 이미 있습니다.')
+        } else {
+          setRenameError('이름 변경에 실패했습니다.')
+        }
+      } else {
+        setRenameError('이름 변경에 실패했습니다.')
+      }
+    }
+  }
+
+  async function handleSetDefault() {
+    setShowMenu(false)
+    setActionError(null)
+    try {
+      await updateMutation.mutateAsync({ watchlistId: watchlist.id, payload: { is_default: true } })
+    } catch {
+      setActionError('기본 목록 설정에 실패했습니다.')
+    }
+  }
+
+  async function handleDelete() {
+    setShowMenu(false)
+    setActionError(null)
+    try {
+      await deleteMutation.mutateAsync(watchlist.id)
+      onDeleted()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setActionError('목록을 찾을 수 없습니다.')
+      } else {
+        setActionError('삭제에 실패했습니다.')
+      }
+    }
+  }
+
+  return (
+    <li className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1">
+        {isRenaming ? (
+          <form onSubmit={handleRenameSubmit} className="flex flex-1 items-center gap-1">
+            <input
+              data-testid={`watchlist-rename-input-${watchlist.id}`}
+              type="text"
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              maxLength={64}
+              autoFocus
+              className="flex-1 rounded-md border border-primary bg-background px-2 py-1 text-sm outline-none"
+            />
+            <button
+              type="submit"
+              data-testid={`watchlist-rename-confirm-${watchlist.id}`}
+              disabled={updateMutation.isPending}
+              className="rounded-md p-1 text-green-600 hover:bg-green-50 disabled:opacity-50 dark:hover:bg-green-900/20"
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              data-testid={`watchlist-rename-cancel-${watchlist.id}`}
+              onClick={() => { setIsRenaming(false); setRenameError(null) }}
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            data-testid={`watchlist-row-${watchlist.id}`}
+            onClick={onSelect}
+            className={cn(
+              'flex flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent',
+              isActive && 'bg-accent font-medium',
+            )}
+          >
+            <Star
+              className={cn(
+                'h-3 w-3 shrink-0',
+                watchlist.is_default
+                  ? 'fill-yellow-400 text-yellow-400'
+                  : 'text-muted-foreground',
+              )}
+            />
+            <span className="flex-1 truncate text-left">{watchlist.name}</span>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {watchlist.item_count}
+            </span>
+          </button>
+        )}
+
+        {/* Action menu toggle */}
+        {!isRenaming && (
+          <div className="relative">
+            <button
+              type="button"
+              data-testid={`watchlist-menu-toggle-${watchlist.id}`}
+              onClick={() => setShowMenu(v => !v)}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent"
+              aria-label="목록 관리 메뉴"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            {showMenu && (
+              <div
+                data-testid={`watchlist-menu-${watchlist.id}`}
+                className="absolute right-0 z-10 mt-1 w-36 rounded-md border border-border bg-card py-1 shadow-md"
+              >
+                <button
+                  type="button"
+                  data-testid={`watchlist-rename-btn-${watchlist.id}`}
+                  onClick={() => {
+                    setRenameValue(watchlist.name)
+                    setRenameError(null)
+                    setIsRenaming(true)
+                    setShowMenu(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  이름 변경
+                </button>
+                {!watchlist.is_default && (
+                  <button
+                    type="button"
+                    data-testid={`watchlist-set-default-${watchlist.id}`}
+                    onClick={handleSetDefault}
+                    disabled={updateMutation.isPending}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+                  >
+                    <Star className="h-3.5 w-3.5" />
+                    기본 목록으로
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-testid={`watchlist-delete-btn-${watchlist.id}`}
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:hover:bg-red-900/20 dark:text-red-400"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  삭제
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {renameError && (
+        <p
+          data-testid={`watchlist-rename-error-${watchlist.id}`}
+          role="alert"
+          className="ml-3 text-xs text-red-600 dark:text-red-300"
+        >
+          {renameError}
+        </p>
+      )}
+      {actionError && (
+        <p
+          data-testid={`watchlist-action-error-${watchlist.id}`}
+          role="alert"
+          className="ml-3 text-xs text-red-600 dark:text-red-300"
+        >
+          {actionError}
+        </p>
+      )}
+    </li>
   )
 }
 
@@ -240,6 +440,7 @@ function CreateWatchlistPanel() {
 
 function WatchlistDetailPanel({ watchlistId }: { watchlistId: number }) {
   const { data, isLoading, isError } = useWatchlist(watchlistId)
+  const [filterQuery, setFilterQuery] = useState('')
 
   if (isLoading) {
     return (
@@ -262,6 +463,12 @@ function WatchlistDetailPanel({ watchlistId }: { watchlistId: number }) {
       </div>
     )
   }
+
+  const filteredItems = filterQuery
+    ? data.items.filter(i =>
+        i.symbol.toUpperCase().includes(filterQuery.toUpperCase()),
+      )
+    : data.items
 
   return (
     <section
@@ -286,6 +493,18 @@ function WatchlistDetailPanel({ watchlistId }: { watchlistId: number }) {
         </span>
       </header>
 
+      {/* Item filter/search */}
+      {data.items.length > 0 && (
+        <input
+          data-testid="watchlist-item-filter"
+          type="text"
+          placeholder="종목 코드 검색"
+          value={filterQuery}
+          onChange={e => setFilterQuery(e.target.value)}
+          className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+        />
+      )}
+
       {/* Item list */}
       {data.items.length === 0 ? (
         <p
@@ -294,9 +513,16 @@ function WatchlistDetailPanel({ watchlistId }: { watchlistId: number }) {
         >
           종목이 없습니다. 아래에서 종목을 추가해 주세요.
         </p>
+      ) : filteredItems.length === 0 ? (
+        <p
+          data-testid="watchlist-items-filter-empty"
+          className="text-sm text-muted-foreground"
+        >
+          검색 결과가 없습니다.
+        </p>
       ) : (
         <ul className="flex flex-col divide-y divide-border">
-          {data.items.map(item => (
+          {filteredItems.map(item => (
             <WatchlistItemRow
               key={item.symbol}
               watchlistId={watchlistId}
@@ -314,7 +540,7 @@ function WatchlistDetailPanel({ watchlistId }: { watchlistId: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// Watchlist item row
+// Watchlist item row (with inline memo edit)
 // ---------------------------------------------------------------------------
 
 function WatchlistItemRow({
@@ -327,7 +553,11 @@ function WatchlistItemRow({
   memo: string | null
 }) {
   const removeMutation = useRemoveWatchlistItem()
+  const memoMutation = useUpdateWatchlistItemMemo()
   const [removeError, setRemoveError] = useState<string | null>(null)
+  const [isEditingMemo, setIsEditingMemo] = useState(false)
+  const [memoValue, setMemoValue] = useState(memo ?? '')
+  const [memoError, setMemoError] = useState<string | null>(null)
 
   async function handleRemove() {
     setRemoveError(null)
@@ -338,40 +568,123 @@ function WatchlistItemRow({
     }
   }
 
+  async function handleMemoSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setMemoError(null)
+    const trimmed = memoValue.trim() || null
+    try {
+      await memoMutation.mutateAsync({ watchlistId, symbol, memo: trimmed })
+      setIsEditingMemo(false)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 422) {
+          setMemoError('메모는 최대 500자입니다.')
+        } else if (err.status === 404) {
+          setMemoError('종목을 찾을 수 없습니다.')
+        } else {
+          setMemoError('메모 저장에 실패했습니다.')
+        }
+      } else {
+        setMemoError('메모 저장에 실패했습니다.')
+      }
+    }
+  }
+
   return (
     <li
       data-testid={`watchlist-item-${symbol}`}
-      className="flex items-center gap-3 py-2.5"
+      className="flex flex-col gap-1 py-2.5"
     >
-      <Link
-        to={`/stocks/${symbol}`}
-        className="flex-1 text-sm font-medium hover:underline"
-        data-testid={`watchlist-item-link-${symbol}`}
-      >
-        {symbol}
-      </Link>
-      {memo && (
-        <span
-          data-testid={`watchlist-item-memo-${symbol}`}
-          className="max-w-[200px] truncate text-xs text-muted-foreground"
-          title={memo}
+      <div className="flex items-center gap-3">
+        <Link
+          to={`/stocks/${symbol}`}
+          className="flex-1 text-sm font-medium hover:underline"
+          data-testid={`watchlist-item-link-${symbol}`}
         >
-          {memo}
-        </span>
+          {symbol}
+        </Link>
+
+        {/* Memo display or edit */}
+        {isEditingMemo ? (
+          <form
+            onSubmit={handleMemoSubmit}
+            className="flex flex-1 items-center gap-1"
+            data-testid={`watchlist-memo-form-${symbol}`}
+          >
+            <input
+              data-testid={`watchlist-memo-input-${symbol}`}
+              type="text"
+              value={memoValue}
+              onChange={e => setMemoValue(e.target.value)}
+              maxLength={500}
+              placeholder="메모 (최대 500자)"
+              autoFocus
+              className="flex-1 rounded-md border border-primary bg-background px-2 py-0.5 text-xs outline-none"
+            />
+            <button
+              type="submit"
+              data-testid={`watchlist-memo-confirm-${symbol}`}
+              disabled={memoMutation.isPending}
+              className="rounded-md p-1 text-green-600 hover:bg-green-50 disabled:opacity-50 dark:hover:bg-green-900/20"
+            >
+              <Check className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              data-testid={`watchlist-memo-cancel-${symbol}`}
+              onClick={() => { setIsEditingMemo(false); setMemoError(null) }}
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </form>
+        ) : (
+          <>
+            {memo && (
+              <span
+                data-testid={`watchlist-item-memo-${symbol}`}
+                className="max-w-[180px] truncate text-xs text-muted-foreground"
+                title={memo}
+              >
+                {memo}
+              </span>
+            )}
+            <button
+              type="button"
+              data-testid={`watchlist-item-memo-edit-${symbol}`}
+              aria-label={`${symbol} 메모 편집`}
+              onClick={() => { setMemoValue(memo ?? ''); setIsEditingMemo(true) }}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          </>
+        )}
+
+        {removeError && (
+          <span className="text-xs text-red-600 dark:text-red-300">{removeError}</span>
+        )}
+        <button
+          type="button"
+          data-testid={`watchlist-item-remove-${symbol}`}
+          aria-label={`${symbol} 관심목록에서 제거`}
+          disabled={removeMutation.isPending}
+          onClick={handleRemove}
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {memoError && (
+        <p
+          data-testid={`watchlist-memo-error-${symbol}`}
+          role="alert"
+          className="text-xs text-red-600 dark:text-red-300"
+        >
+          {memoError}
+        </p>
       )}
-      {removeError && (
-        <span className="text-xs text-red-600 dark:text-red-300">{removeError}</span>
-      )}
-      <button
-        type="button"
-        data-testid={`watchlist-item-remove-${symbol}`}
-        aria-label={`${symbol} 관심목록에서 제거`}
-        disabled={removeMutation.isPending}
-        onClick={handleRemove}
-        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20 dark:hover:text-red-300"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
     </li>
   )
 }

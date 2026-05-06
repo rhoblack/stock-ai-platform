@@ -1,16 +1,14 @@
-// v0.8 Phase D — Watchlist API client.
-// Wraps the 5 watchlist endpoints introduced in Phase C:
-//   GET    /api/watchlists
-//   GET    /api/watchlists/:id
-//   POST   /api/watchlists
-//   POST   /api/watchlists/:id/items
-//   DELETE /api/watchlists/:id/items/:symbol
+// Watchlist API client.
+// v0.8 Phase D: GET list/detail, POST create/add item, DELETE item
+// v0.9 Phase D: PATCH watchlist (rename/setDefault), DELETE watchlist,
+//               GET items (paginated), PATCH item memo
 
-import { apiFetch, apiDelete, apiPost } from './client'
+import { apiFetch, apiDelete, apiPatch, apiPost } from './client'
 import type {
   Watchlist,
   WatchlistDetail,
   WatchlistItem,
+  WatchlistItemsResponse,
   WatchlistStatusResponse,
   WatchlistsResponse,
 } from './types'
@@ -48,4 +46,51 @@ export function removeWatchlistItem(
   return apiDelete<WatchlistStatusResponse>(
     `/api/watchlists/${watchlistId}/items/${symbol}`,
   )
+}
+
+// ---------------------------------------------------------------------------
+// v0.9 Phase C/D additions
+// ---------------------------------------------------------------------------
+
+export interface WatchlistUpdatePayload {
+  name?: string
+  is_default?: boolean
+}
+
+export function updateWatchlist(
+  watchlistId: number,
+  payload: WatchlistUpdatePayload,
+): Promise<Watchlist> {
+  return apiPatch<Watchlist, WatchlistUpdatePayload>(
+    `/api/watchlists/${watchlistId}`,
+    payload,
+  )
+}
+
+export function deleteWatchlist(watchlistId: number): Promise<WatchlistStatusResponse> {
+  return apiDelete<WatchlistStatusResponse>(`/api/watchlists/${watchlistId}`)
+}
+
+export function updateWatchlistItemMemo(
+  watchlistId: number,
+  symbol: string,
+  memo: string | null,
+): Promise<WatchlistItem> {
+  return apiPatch<WatchlistItem, { memo: string | null }>(
+    `/api/watchlists/${watchlistId}/items/${symbol}`,
+    { memo },
+  )
+}
+
+export function listWatchlistItems(
+  watchlistId: number,
+  params?: {
+    limit?: number
+    offset?: number
+    symbol_prefix?: string
+  },
+): Promise<WatchlistItemsResponse> {
+  return apiFetch<WatchlistItemsResponse>(`/api/watchlists/${watchlistId}/items`, {
+    searchParams: params,
+  })
 }

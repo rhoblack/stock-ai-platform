@@ -15,12 +15,12 @@ import { FundamentalsCard } from './FundamentalsCard'
 import { EarningsCard } from './EarningsCard'
 import {
   useCreateWatchlist,
-  useDefaultWatchlistId,
   useAddWatchlistItem,
-  useIsInWatchlist,
   useRemoveWatchlistItem,
   useWatchlists,
+  useWatchlist,
 } from '@/hooks/useWatchlists'
+import { useEffectiveDefaultWatchlistId } from '@/hooks/useUserPreferences'
 import { ApiError } from '@/api/client'
 import type {
   HoldingCheck,
@@ -151,8 +151,10 @@ function StockDetailContent({ data }: { data: StockDetailResponse }) {
 
 function FavoriteButton({ symbol }: { symbol: string }) {
   const { data: watchlistsData, isLoading: wlListLoading } = useWatchlists()
-  const defaultId = useDefaultWatchlistId()
-  const isInWl = useIsInWatchlist(symbol)
+  // Priority: preference.default_watchlist_id → watchlist default flag → first
+  const defaultId = useEffectiveDefaultWatchlistId()
+  const { data: wlDetail } = useWatchlist(defaultId)
+  const isInWl = wlDetail?.items.some(i => i.symbol === symbol) ?? false
   const addMutation = useAddWatchlistItem()
   const removeMutation = useRemoveWatchlistItem()
   const createMutation = useCreateWatchlist()
@@ -183,7 +185,8 @@ function FavoriteButton({ symbol }: { symbol: string }) {
         if (err.status === 404) {
           setFavError('이 종목은 관심종목에 추가할 수 없습니다.')
         } else if (err.status === 409) {
-          setFavError(null) // already in watchlist — ignore
+          // 409 = already in watchlist: treat as success (idempotent)
+          setFavError(null)
         } else {
           setFavError('관심종목 변경에 실패했습니다.')
         }

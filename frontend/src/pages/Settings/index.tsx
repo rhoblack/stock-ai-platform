@@ -1,22 +1,44 @@
-import { AlertTriangle } from 'lucide-react'
+// Settings page (/settings).
+// v0.1: read-only backend diagnostics
+// v0.9 Phase D: added UserPreference section (writable) above system section.
+//
+// Policy:
+//   - KIS keys / Telegram tokens / JWT secrets are NEVER shown in plain text
+//   - notification_preferences_json: UI-only on/off toggles, no live send
+//   - Forbidden fields (password, password_hash, access_token, jwt_secret,
+//     broker, account, quantity, order_*, source_file_path, side) never rendered
+
+import { useState } from 'react'
+import { AlertTriangle, Save } from 'lucide-react'
 import { useSettings } from '@/hooks/useSettings'
+import { useWatchlists } from '@/hooks/useWatchlists'
+import { useUserPreferences, useUpdateUserPreferences } from '@/hooks/useUserPreferences'
 import { KeyValueGrid } from '@/components/common/KeyValueGrid'
 import { SafetyFlagBadge } from '@/components/common/SafetyFlagBadge'
+import { ApiError } from '@/api/client'
 import type { SettingsResponse } from '@/api/types'
+
+const MARKET_OPTIONS = ['', 'KOSPI', 'KOSDAQ', 'NASDAQ', 'NYSE']
+const STRATEGY_OPTIONS = ['', 'momentum', 'value', 'growth', 'technical']
 
 export function SettingsPage() {
   const settings = useSettings()
 
   return (
-    <section className="flex flex-col gap-4">
+    <section data-testid="settings-page" className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h2 className="text-2xl font-semibold">설정</h2>
         <p className="text-sm text-muted-foreground">
-          현재 백엔드가 노출하는 설정 (read-only). 비밀값은 모두 백엔드에서 마스킹된
-          상태로 전달된다.
+          사용자 설정 및 백엔드 진단 정보
         </p>
       </header>
 
+      {/* User Preference section (writable) */}
+      <UserPreferenceSection />
+
+      <hr className="border-border" />
+
+      {/* System settings (read-only) */}
       <div
         data-testid="settings-freeze-banner"
         className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-900/40 dark:bg-amber-900/20"
@@ -30,9 +52,8 @@ export function SettingsPage() {
             v0.1 백엔드 동결 (`v0.1-backend-final`)
           </strong>
           <span className="text-xs text-amber-800 dark:text-amber-200">
-            본 화면은 백엔드 응답을 그대로 보여주는 read-only 진단 페이지입니다.
-            설정 변경은 <code>.env</code> 수정 후 백엔드 재시작으로만 가능하며,
-            대시보드에서 직접 수정하는 폼은 v0.2 범위 밖입니다.
+            아래 값은 백엔드 응답을 그대로 보여주는 read-only 진단 정보입니다.
+            변경은 <code>.env</code> 수정 후 백엔드 재시작으로만 가능합니다.
           </span>
         </div>
       </div>
@@ -57,9 +78,203 @@ export function SettingsPage() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// User Preference section (v0.9 Phase D)
+// ---------------------------------------------------------------------------
+
+function UserPreferenceSection() {
+  const { data: prefs, isLoading, isError } = useUserPreferences()
+  const { data: watchlistsData } = useWatchlists()
+  const updateMutation = useUpdateUserPreferences()
+
+  const [defaultWatchlistId, setDefaultWatchlistId] = useState<number | null | ''>('')
+  const [defaultMarket, setDefaultMarket] = useState('')
+  const [defaultStrategy, setDefaultStrategy] = useState('')
+  const [notifEnabled, setNotifEnabled] = useState(false)
+  const [initialized, setInitialized] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Sync form state once preferences load (only on first load)
+  if (prefs && !initialized) {
+    setDefaultWatchlistId(prefs.default_watchlist_id ?? '')
+    setDefaultMarket(prefs.default_market ?? '')
+    setDefaultStrategy(prefs.default_strategy ?? '')
+    const notifJson = prefs.notification_preferences_json
+    if (notifJson && typeof notifJson === 'object' && 'enabled' in (notifJson as object)) {
+      setNotifEnabled(Boolean((notifJson as Record<string, unknown>).enabled))
+    }
+    setInitialized(true)
+  }
+
+  const watchlists = watchlistsData?.watchlists ?? []
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    setSaveMsg(null)
+    setSaveError(null)
+    try {
+      await updateMutation.mutateAsync({
+        default_watchlist_id: defaultWatchlistId === '' ? null : Number(defaultWatchlistId),
+        default_market: defaultMarket || null,
+        default_strategy: defaultStrategy || null,
+        notification_preferences_json: { enabled: notifEnabled },
+      })
+      setSaveMsg('설정이 저장되었습니다.')
+      setTimeout(() => setSaveMsg(null), 3000)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setSaveError('로그인이 필요합니다.')
+        } else if (err.status === 404) {
+          setSaveError('선택한 관심목록을 찾을 수 없습니다.')
+        } else if (err.status === 422) {
+          setSaveError('입력값이 올바르지 않습니다.')
+        } else {
+          setSaveError('설정 저장에 실패했습니다.')
+        }
+      } else {
+        setSaveError('설정 저장에 실패했습니다.')
+      }
+    }
+  }
+
+  return (
+    <section data-testid="user-preference-section" className="flex flex-col gap-4">
+      <header className="flex flex-col gap-1">
+        <h3 className="text-base font-semibold">사용자 설정</h3>
+        <p className="text-xs text-muted-foreground">
+          대시보드 기본값을 설정합니다. 알림 설정은 저장만 됩니다 (실제 발송 없음).
+        </p>
+      </header>
+
+      {isLoading && (
+        <p className="text-sm text-muted-foreground">사용자 설정 로딩 중…</p>
+      )}
+
+      {isError && (
+        <div
+          data-testid="user-preference-error"
+          className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
+        >
+          사용자 설정을 불러오지 못했습니다.
+        </div>
+      )}
+
+      {!isLoading && !isError && (
+        <form
+          data-testid="user-preference-form"
+          onSubmit={handleSave}
+          className="flex flex-col gap-4 rounded-lg border border-border bg-card p-5"
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Default watchlist */}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">기본 관심목록</span>
+              <select
+                data-testid="pref-default-watchlist"
+                value={defaultWatchlistId === null ? '' : String(defaultWatchlistId)}
+                onChange={e => setDefaultWatchlistId(e.target.value === '' ? '' : Number(e.target.value))}
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">— 선택 안 함 —</option>
+                {watchlists.map(wl => (
+                  <option key={wl.id} value={wl.id}>
+                    {wl.name}{wl.is_default ? ' (기본)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Default market */}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">기본 시장</span>
+              <select
+                data-testid="pref-default-market"
+                value={defaultMarket}
+                onChange={e => setDefaultMarket(e.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+              >
+                {MARKET_OPTIONS.map(m => (
+                  <option key={m} value={m}>{m || '— 선택 안 함 —'}</option>
+                ))}
+              </select>
+            </label>
+
+            {/* Default strategy */}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">기본 전략</span>
+              <select
+                data-testid="pref-default-strategy"
+                value={defaultStrategy}
+                onChange={e => setDefaultStrategy(e.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+              >
+                {STRATEGY_OPTIONS.map(s => (
+                  <option key={s} value={s}>{s || '— 선택 안 함 —'}</option>
+                ))}
+              </select>
+            </label>
+
+            {/* Notification on/off (UI-only, no live send) */}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">알림 (저장 전용)</span>
+              <div className="flex items-center gap-2 py-1.5">
+                <input
+                  data-testid="pref-notification-enabled"
+                  type="checkbox"
+                  id="notif-enabled"
+                  checked={notifEnabled}
+                  onChange={e => setNotifEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <label htmlFor="notif-enabled" className="text-sm">
+                  알림 활성화
+                </label>
+                <span className="text-xs text-muted-foreground">(실제 발송 없음)</span>
+              </div>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              data-testid="pref-save-btn"
+              disabled={updateMutation.isPending}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {updateMutation.isPending ? '저장 중…' : '저장'}
+            </button>
+            {saveMsg && (
+              <span
+                data-testid="pref-save-success"
+                className="text-sm text-green-600 dark:text-green-400"
+              >
+                {saveMsg}
+              </span>
+            )}
+            {saveError && (
+              <span
+                data-testid="pref-save-error"
+                role="alert"
+                className="text-sm text-red-600 dark:text-red-300"
+              >
+                {saveError}
+              </span>
+            )}
+          </div>
+        </form>
+      )}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// System settings (read-only) — unchanged from v0.1
+// ---------------------------------------------------------------------------
+
 function SettingsContent({ data }: { data: SettingsResponse }) {
-  // Any "ON" of these v0.1 안전 플래그 should highlight in red — they all
-  // must be `false` while the backend is frozen at v0.1-backend-final.
   const dangerCount = [
     data.feature_real_order_execution,
     data.feature_full_auto,
@@ -235,8 +450,6 @@ function SettingsContent({ data }: { data: SettingsResponse }) {
 }
 
 function MaskedSecret({ label, value }: { label: string; value: string }) {
-  // 백엔드가 이미 마스킹한 값을 그대로 표시한다. 평문 비밀이 들어오면 즉시
-  // 시각적으로 드러나도록 unmasked 마커도 노출.
   const isMasked = value.includes('*')
   return (
     <span

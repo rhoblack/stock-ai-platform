@@ -82,6 +82,50 @@ Watchlist API 고도화(PUT rename/DELETE list/default/memo) + UserPreference(32
 - `GET /api/health` 상세 응답 확장 (uptime_seconds / db_connected / version)
 - `Settings` 3 필드 추가 (`sentry_enabled` / `sentry_dsn` / `log_format`)
 
+### v0.9 Phase D 결과 (요약) — Frontend Watchlist/Settings 관리 UI
+
+- 마감 게이트: frontend vitest **146 passed** (기준선 113 + 33 신규) / build 그린 / tsc 오류 0건
+- 백엔드 변경 0건 (backend pytest 916 유지)
+- 산출 태그: `v0.9-frontend` (미push)
+
+산출물:
+
+**API 클라이언트 보강**
+- `apiPatch` / `apiPut` — `client.ts` 추가
+- `UserPreference`, `UserPreferenceUpdateRequest`, `WatchlistItemsResponse` — `types.ts` 추가
+- `api/preferences.ts` 신규 — `getMyPreferences`, `updateMyPreferences`
+- `api/watchlists.ts` 보강 — `updateWatchlist` (PATCH), `deleteWatchlist` (DELETE), `updateWatchlistItemMemo` (PATCH item), `listWatchlistItems` (GET paginated)
+
+**Hooks 보강**
+- `hooks/useWatchlists.ts` — `useUpdateWatchlist`, `useDeleteWatchlist`, `useUpdateWatchlistItemMemo` 추가
+- `hooks/useUserPreferences.ts` 신규 — `useUserPreferences`, `useUpdateUserPreferences`, `useEffectiveDefaultWatchlistId`
+  - preference priority: `preference.default_watchlist_id` → watchlist `is_default` flag → first watchlist
+
+**Watchlist 관리 UI 고도화**
+- `pages/Watchlist/index.tsx` — 목록 rename(inline) / delete / set-default(메뉴 드롭다운) + item memo 인라인 편집 + item 필터/검색 + 에러별 분기(409/422/404)
+- 기본 목록 삭제 허용 (API ON DELETE SET NULL 정책 반영), 삭제 후 deselect
+
+**UserPreference Settings UI**
+- `pages/Settings/index.tsx` — 기존 read-only 진단 위에 UserPreference 섹션(writable) 추가
+  - default_watchlist_id 선택(watchlist 목록 연동) / default_market / default_strategy / notification on-off (UI 저장 전용, 실제 발송 없음)
+  - 저장 성공 메시지 / 401/404/422 에러 분기
+
+**TodayReport / StockDetail 연동**
+- `WatchlistCard` — `useEffectiveDefaultWatchlistId` 사용 (preference → fallback)
+- `FavoriteButton` — `useEffectiveDefaultWatchlistId` 사용 (preference → fallback), 409 idempotent 처리
+
+**테스트**
+- `tests/WatchlistManage.test.tsx` 신규 — 21 tests (rename/409/cancel, set-default, delete/404, memo/422/cancel, item filter, forbidden fields)
+- `tests/UserPreferences.test.tsx` 신규 — 15 tests (Settings GET/PUT, TodayReport preference priority, FavoriteButton preference, 409 idempotent, 500 error)
+- `tests/mswServer.ts` — PATCH/DELETE watchlist, PATCH item, GET/PUT preferences 핸들러 추가
+- 기존 테스트 회귀 0건
+
+**보안 / forbidden field**
+- UserPreference 폼에 password/token/jwt_secret/broker/quantity/order_price/자동매매/매수/매도 미노출 검증
+- 알림 설정: UI 저장 전용, Telegram/실 발송 연결 0건
+
+---
+
 ### v0.9 Phase C 결과 (요약) — Watchlist 고도화 + UserPreference + Provider 회복성
 
 - 마감 게이트: backend pytest **916 passed** (1 deselected) — 47건 순증
