@@ -9,7 +9,7 @@
 
 ## 0. v0.7 진행 선언 — Strategy & Backtest Foundation
 
-**v0.7 cycle 진행 중 (Phase C 완료).** 기준선 `v0.6-final`
+**v0.7 cycle 진행 중 (Phase D 완료).** 기준선 `v0.6-final`
 (HEAD `e729d60` 시점, origin/main 동기화 완료, 5 누적 태그
 `v0.6-fundamental-data-layer` → `v0.6-earnings-event-pipeline` →
 `v0.6-fundamental-score` → `v0.6-frontend-fundamentals` → `v0.6-final` 모두
@@ -37,7 +37,7 @@ v0.7 에서도 추가하지 않는다.
 | A | Strategy interface + 룰 기반 전략 정의 (`StrategyInterface` ABC + `TopGradeStrategy` / `HighScoreStrategy` / `MultiSignalStrategy` + 단위 테스트) | ✅ 완료 | `v0.7-strategy-interface` |
 | B | Backtest engine + 신규 테이블 2개 (`BacktestRun` 26번째 + `BacktestResult` 27번째) + `scripts/run_backtest.py` argparse CLI (default dry-run) + 통합 테스트 | ✅ 완료 | `v0.7-backtest-engine` |
 | C | 비용 모델 (`CostModel` placeholder 0.33% 차감) + 시장 국면별 분리 (`MarketRegime` at-or-before 매칭) + cost_adjusted_return_5d / regime 컬럼 | ✅ 완료 | `v0.7-backtest-cost-regime` |
-| D | 백엔드 read-only API 3종 (`/api/strategies` + `/api/backtest/runs` + `/api/backtest/runs/{run_id}`) + 프런트 10번째 화면 `/backtest` + Sidebar `백테스트 (β)` 메뉴 | ⏳ | `v0.7-frontend-backtest` |
+| D | 백엔드 read-only API 3종 (`/api/strategies` + `/api/backtest/runs` + `/api/backtest/runs/{run_id}`) + 프런트 10번째 화면 `/backtest` + Sidebar `백테스트 (β)` 메뉴 | ✅ 완료 | `v0.7-frontend-backtest` |
 | E | `RELEASE_NOTES_v0.7.md` + README / PROJECT_STATUS / TASKS / ROADMAP / ARCHITECTURE 마감 + tag `v0.7-final` | ⏳ | `v0.7-final` |
 
 세부 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0007`, 체크리스트는 [`TASKS.md`](./TASKS.md)
@@ -295,6 +295,83 @@ DB 마이그레이션 = `CREATE TABLE backtest_runs ...; CREATE TABLE backtest_r
   broker / 주문 / 계좌 / 가격 / 수량 컬럼 부재. CostModel 은 placeholder
   constant 만 — 실 broker fee schedule fetch / 종목별 stamp duty / tick-size
   슬리피지 모델링은 v0.8+ 후보로 명시 (cost_model.py docstring + DB_SCHEMA).
+
+### v0.7 Phase D 결과 (요약) — read-only API 3종 + 10번째 화면 `/backtest`
+
+> Phase D 는 read-only API + UI 만 추가. BacktestEngine 산식 / CostModel /
+> regime_split / DB 모델 변경 0건. POST 라우터 / 자동매매 / 외부 호출 / Telegram
+> 0건. Sidebar 9 → 10 메뉴.
+
+- `app/api/schemas.py` — 7 신규 schema:
+  - `StrategySchema` (name / version / description) + `StrategiesResponse`
+  - `BacktestRunSchema` (15 metric + cost_model_version + total_cost) +
+    `BacktestRunsResponse` (items + count + strategy + limit)
+  - `BacktestResultSchema` (signal + horizon + cost_adjusted + regime +
+    evidence_json) + `RegimeBreakdownSchema` + `BacktestRunDetailResponse`.
+    Decimal-as-string 패턴 유지. broker / order / quantity / account 필드 0건.
+- `app/api/routes.py` — 3 신규 GET 라우터:
+  - `GET /api/strategies` — `KNOWN_STRATEGIES` 순회 + `get_strategy(name)` 호출.
+    DB 접근 0건. `description` 은 `_strategy_description(strategy)` helper 가
+    docstring 첫 줄 추출.
+  - `GET /api/backtest/runs?strategy=&limit=` — `BacktestRunRepository.list_recent`
+    또는 `list_by_strategy`. `_backtest_run_to_schema` 가 `summary_json` 의
+    `cost_model_version` / `total_cost` / `cost_adjusted_avg_return_5d` 를 응답
+    최상위 필드로 추출. `limit` Query 검증 1~100.
+  - `GET /api/backtest/runs/{run_id}` — `BacktestRunRepository.get_by_id` (없으면
+    404) + `BacktestResultRepository.list_by_run` + `_regime_breakdown_from_summary`
+    helper. `summary_json` 의 `regime_breakdown` list 를 `RegimeBreakdownSchema` 로
+    변환 (malformed 방어 — list / dict 가 아니면 빈 list 반환).
+- `app/data/repositories/backtest_results.py` `create()` — `cost_adjusted_return_5d`
+  + `regime` keyword 추가 (Phase C 컬럼 호환). 기존 호출자 회귀 0건 (keyword 만 추가).
+- `tests/integration/test_api_routes.py` 보강 — **9 신규 케이스**:
+  `_BACKTEST_FORBIDDEN_FIELDS` (16종: source_file_path / body / content /
+  full_text / raw_text / paragraph / html_body / 본문 / 원문 / 전문 / broker /
+  account / quantity / order_price / order_type / side) + `_seed_backtest_run` /
+  `_seed_backtest_result` 헬퍼. 케이스: strategies 3종 노출 + version /
+  description 단언 / runs empty / runs happy 정렬 + cost meta / strategy filter /
+  limit clamp 422 / detail happy + regime_breakdown + cost_adjusted + BUY-only
+  notes / detail 404 / forbidden tokens 미노출 가드 / `_assert_no_source_file_path`
+  recursive 가드.
+- `frontend/src/api/types.ts` — 7 신규 type. broker / order / account 필드 부재.
+- `frontend/src/hooks/useStrategies.ts` (staleTime 5분) +
+  `useBacktestRuns.ts` (60초, strategy/limit 파라미터) +
+  `useBacktestRunDetail.ts` (60초, runId enabled gate) 신규.
+- `frontend/src/pages/Backtest/index.tsx` 신규 — 10번째 화면, 단일 파일에 3
+  서브컴포넌트:
+  - `StrategyListSection` — 3 카드 grid (`md:grid-cols-3`), description
+    `line-clamp-3`, version 모노스페이스
+  - `RunsTableSection` — strategy filter radiogroup (ALL + N strategies) +
+    클릭 가능한 run 표 (strategy / run_date / signals / B/P/A / win_rate_5d /
+    avg_return_5d / cost_adj_5d / max_dd / status). 선택 row 하이라이트.
+  - `RunDetailSection` — selected run 의 detail. cost_model_version / total_cost
+    헤더 + BUY-only note (amber 배경) + regime_breakdown 표 + 신호 row 표
+    (`ActionBadge` BUY/PASS/AVOID tone-color + cost_adjusted 컬럼)
+- `frontend/src/components/layout/Sidebar.tsx` — `FlaskConical` 아이콘 + 8번째
+  위치에 `백테스트 (β)` 메뉴 추가. `NAV_ITEMS` 9 → 10. 주석 갱신
+  (`v0.7 Phase D adds 백테스트`).
+- `frontend/src/router.tsx` — `BacktestPage` lazy import + `/backtest` Route 추가.
+- `frontend/src/tests/mswServer.ts` — 3 default 핸들러 (모두 빈 응답 / 404).
+- `frontend/src/tests/Backtest.test.tsx` 신규 — **7 케이스**: happy / empty /
+  runs 500 / detail 클릭 시 로드 + regime + BUY-only note + cost_model badge /
+  detail 500 / strategy filter URL 변경 단언 / 자동매매·order UI + forbidden
+  토큰 미노출 (form / submit / 실거래 / 자동매매 / 주문 실행 / source_file_path /
+  원문 / 본문 모두 0건).
+- `frontend/e2e/fixtures/apiMocks.ts` — `STRATEGIES` + `BACKTEST_RUNS_LIST` +
+  `BACKTEST_RUN_DETAIL_42` fixture + 라우터 패턴 추가 (specific runs/42 가
+  generic /runs 보다 앞에 위치).
+- `frontend/e2e/dashboard.spec.ts` — sidebar nav 테스트에 `백테스트 (β)` 추가 +
+  신규 `Backtest screen surfaces strategies + runs + detail` 테스트 (전략 3종 +
+  run row + 클릭 시 detail + regime + cost_model + forbidden 토큰 가드 + raw
+  JSON `order_type` / `quantity` / `source_file_path` 0건) + `no automation /
+  order UI` targets 에 `/backtest` 추가.
+- 회귀: backend pytest **673 → 682 passed (+9)**, frontend vitest **77 → 84
+  passed (+7)**, e2e **13 → 14 passed (+1)**, build 그린 (vendor-charts 383 kB /
+  gzip 105 kB). BacktestEngine 산식 / CostModel / regime_split / DB 모델 / 자동매매 /
+  POST / 외부 호출 / Telegram 0건. ScoringEngine 본 weight 변경 0건.
+- 안전 범위: `BacktestResultSchema` / `BacktestRunSchema` / `BacktestRunDetailResponse`
+  어디에도 broker / account / quantity / order_price / order_type / side 필드
+  0건. e2e 테스트가 raw JSON 트리에서 forbidden 토큰 0건을 단언. v0.6 의
+  `_assert_no_source_file_path` recursive 가드 그대로 새 응답 트리 적용.
 
 ### v0.7 누적 태그 (예정)
 

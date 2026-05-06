@@ -37,6 +37,9 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     await nav.getByRole('link', { name: '테마 (β)' }).click()
     await expect(page.getByTestId('theme-row-41')).toBeVisible()
 
+    await nav.getByRole('link', { name: '백테스트 (β)' }).click()
+    await expect(page.getByTestId('backtest-strategies')).toBeVisible()
+
     await nav.getByRole('link', { name: '시스템 로그 / 잡' }).click()
     await expect(page.getByTestId('job-row-101')).toBeVisible()
 
@@ -258,6 +261,52 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     ).toBeVisible()
   })
 
+  test('Backtest screen surfaces strategies + runs + detail (read-only)', async ({
+    page,
+  }) => {
+    await page.goto('/backtest')
+    // strategies (3 from mocked /api/strategies)
+    await expect(
+      page.getByTestId('backtest-strategy-TopGradeStrategy'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('backtest-strategy-HighScoreStrategy'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('backtest-strategy-MultiSignalStrategy'),
+    ).toBeVisible()
+    // runs table
+    await expect(page.getByTestId('backtest-runs-table')).toBeVisible()
+    await expect(page.getByTestId('backtest-run-row-42')).toBeVisible()
+    // click → detail loads from /api/backtest/runs/42
+    await page.getByTestId('backtest-run-row-42').click()
+    await expect(page.getByTestId('backtest-detail')).toBeVisible()
+    await expect(page.getByTestId('backtest-detail-cost-model')).toContainText(
+      'constant-v1',
+    )
+    await expect(
+      page.getByTestId('backtest-regime-UPTREND_EARLY'),
+    ).toBeVisible()
+    await expect(page.getByTestId('backtest-result-1001')).toBeVisible()
+    await expect(page.getByTestId('backtest-detail-notes')).toContainText(
+      'BUY signals only',
+    )
+    // forbidden tokens absent
+    await expect(page.getByText(/source_file_path/)).toHaveCount(0)
+    await expect(page.getByText(/원문/)).toHaveCount(0)
+    await expect(page.getByText(/본문/)).toHaveCount(0)
+    // raw API payload guard
+    const payload = await page.evaluate(async () => {
+      const list = await fetch('/api/backtest/runs').then(r => r.json())
+      const detail = await fetch('/api/backtest/runs/42').then(r => r.json())
+      return { list, detail }
+    })
+    const merged = JSON.stringify(payload)
+    expect(merged).not.toContain('source_file_path')
+    expect(merged).not.toContain('order_type')
+    expect(merged).not.toContain('quantity')
+  })
+
   test('no automation / order UI is exposed anywhere in v0.2 frontend', async ({
     page,
   }) => {
@@ -271,6 +320,7 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
       '/universe/market-cap-top',
       '/themes',
       '/themes/41',
+      '/backtest',
       '/jobs',
       '/jobs/101',
       '/settings',

@@ -511,6 +511,123 @@ Query:
 어떤 evidence 응답에도 0건 노출 — `_assert_no_source_file_path` recursive
 helper 가 모든 신규 케이스에서 검증.
 
+## 16. 백테스트 / 전략 (v0.7 Phase D)
+
+### GET /api/strategies
+
+등록된 룰 기반 전략 목록을 조회한다. 데이터는 backend 의 `app/strategy/registry.py`
+의 `KNOWN_STRATEGIES` / `STRATEGY_REGISTRY` 에서 직접 빌드 — DB 접근 0건, 외부
+API 호출 0건. 응답 항목의 `description` 은 전략 클래스 docstring 의 첫 줄.
+
+응답 예시:
+
+```json
+{
+  "items": [
+    {
+      "name": "TopGradeStrategy",
+      "version": "v1.0.0",
+      "description": "Trade on the recommendation grade alone."
+    }
+  ],
+  "count": 3
+}
+```
+
+### GET /api/backtest/runs
+
+`BacktestRunRepository` 가 적재한 최근 백테스트 실행 목록. 정렬은 `run_date desc`.
+`summary_json` 에 들어 있는 `cost_model_version` / `total_cost` /
+`cost_adjusted_avg_return_5d` 는 라우터에서 추출해 응답 최상위 필드로 노출.
+
+Query:
+
+- `strategy`: optional. 전략 short name (`top_grade` / `high_score` / `multi_signal` 등)
+- `limit`: default 20, min 1, max 100
+
+응답 예시:
+
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "strategy_name": "top_grade",
+      "strategy_version": "v1.0.0",
+      "run_date": "2026-05-06",
+      "start_date": "2026-04-01",
+      "end_date": "2026-05-04",
+      "signal_count": 5,
+      "buy_count": 2,
+      "pass_count": 2,
+      "avoid_count": 1,
+      "win_rate_5d": "0.5000",
+      "avg_return_5d": "1.5000",
+      "cost_adjusted_avg_return_5d": "1.1700",
+      "max_drawdown": "-2.5000",
+      "status": "SUCCESS",
+      "cost_model_version": "constant-v1",
+      "total_cost": "0.00330"
+    }
+  ],
+  "count": 1,
+  "strategy": null,
+  "limit": 20
+}
+```
+
+### GET /api/backtest/runs/{run_id}
+
+특정 백테스트 실행의 상세 — run 헤더 + 신호 row 전체 + regime breakdown +
+cost model 메타.
+
+오류:
+
+- 404: 해당 `run_id` 의 `backtest_runs` 행이 없음
+
+응답 예시:
+
+```json
+{
+  "run": { "...BacktestRunSchema..." },
+  "results": [
+    {
+      "id": 1001,
+      "symbol": "005930",
+      "recommendation_id": 71,
+      "signal_action": "BUY",
+      "confidence": "0.7500",
+      "reason": "grade=A",
+      "grade": "A",
+      "total_score": "80.0000",
+      "return_5d": "1.5000",
+      "cost_adjusted_return_5d": "1.1700",
+      "max_drawdown": "-2.5000",
+      "result_status": "SUCCESS",
+      "regime": "UPTREND_EARLY",
+      "evidence_json": { "grade": "A" }
+    }
+  ],
+  "regime_breakdown": [
+    {
+      "regime": "UPTREND_EARLY",
+      "buy_count": 2,
+      "win_rate_5d": "0.5000",
+      "avg_return_5d": "1.5000",
+      "cost_adjusted_avg_return_5d": "1.1700"
+    }
+  ],
+  "cost_model_version": "constant-v1",
+  "total_cost": "0.00330",
+  "summary_json": { "...": "..." },
+  "notes": "win_rate / avg_return / max_drawdown are computed over BUY signals only."
+}
+```
+
+**금지 필드**: `backtest_results` ORM 자체에 broker / account / quantity /
+order_price / order_type / side 컬럼이 없으므로 응답에도 0건. e2e 테스트가 raw
+JSON 트리에서 `source_file_path` / `order_type` / `quantity` 0건을 단언한다.
+
 ## 금지 API
 
 v0.1에서는 다음 API를 만들지 않는다.

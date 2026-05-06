@@ -35,6 +35,8 @@ class BacktestResultRepository(BaseRepository[BacktestResult]):
         return_20d: Decimal | None = None,
         max_drawdown: Decimal | None = None,
         result_status: str | None = None,
+        cost_adjusted_return_5d: Decimal | None = None,
+        regime: str | None = None,
         evidence_json: dict[str, Any] | None = None,
     ) -> BacktestResult:
         return self.add(
@@ -54,6 +56,8 @@ class BacktestResultRepository(BaseRepository[BacktestResult]):
                 return_20d=return_20d,
                 max_drawdown=max_drawdown,
                 result_status=result_status,
+                cost_adjusted_return_5d=cost_adjusted_return_5d,
+                regime=regime,
                 evidence_json=evidence_json,
             ),
         )

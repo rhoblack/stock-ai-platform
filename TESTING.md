@@ -11,10 +11,10 @@
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **673 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 final 558 → v0.7 Phase A 614 → Phase B 652 → Phase C 673) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **77 passed** (13 파일, jsdom + msw v2) |
+| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **682 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 final 558 → v0.7 Phase A 614 → Phase B 652 → Phase C 673 → Phase D 682) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **84 passed** (14 파일, jsdom + msw v2) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, vendor-charts 청크 383 kB / gzip 105 kB) |
-| Playwright e2e | `cd frontend && npm run e2e` | **13 passed** (chromium + page.route mock) |
+| Playwright e2e | `cd frontend && npm run e2e` | **14 passed** (chromium + page.route mock) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
@@ -440,6 +440,62 @@ v0.8+ 후보.
   Phase B 테스트가 회귀 0건으로 통과.
 - `app/backtest/cost_model.py` + `regime_split.py` 어디에도 외부 HTTP / KIS / DART /
   Telegram / `BrokerInterface` import 0건 (grep 검증).
+
+## 6.15 v0.7 Phase D — Backtest read-only API + 10번째 화면
+
+v0.7 Phase D 는 read-only API 3종 + 프런트 10번째 화면만 추가한다. BacktestEngine
+산식 / CostModel / regime_split / DB 모델 변경 0건. POST 라우터 / 자동매매 /
+외부 호출 / Telegram 0건.
+
+- `tests/integration/test_api_routes.py` 보강 — **9 신규 케이스**:
+  - `_BACKTEST_FORBIDDEN_FIELDS` (16종): `source_file_path` / `body` /
+    `content` / `full_text` / `raw_text` / `paragraph` / `html_body` / `본문` /
+    `원문` / `전문` + 주문 계열 `broker` / `account` / `quantity` /
+    `order_price` / `order_type` / `side`
+  - `/api/strategies` 가 3 룰 기반 전략 (TopGradeStrategy / HighScoreStrategy /
+    MultiSignalStrategy) 노출 + `version` + 비어 있지 않은 `description`
+  - `/api/backtest/runs` empty (모든 필드 default) / happy 정렬 (run_date desc) +
+    `cost_model_version` / `total_cost` / `cost_adjusted_avg_return_5d` 응답
+    최상위 노출 / strategy filter 정확성 / `limit=999` → 422 clamp
+  - `/api/backtest/runs/{run_id}` happy + regime_breakdown + cost_adjusted +
+    BUY-only notes / 9999 → 404 / forbidden tokens 16종 미노출 가드 (raw JSON
+    substring 검사) / `_assert_no_source_file_path` recursive 가드
+- `frontend/src/tests/Backtest.test.tsx` 신규 — **7 케이스**:
+  - happy: 3 strategy 카드 + run row 표시
+  - empty: msw default 가 빈 응답이라 `backtest-strategies-empty` /
+    `backtest-runs-empty` placeholder 노출
+  - error: `/api/backtest/runs` 500 → `backtest-runs-error`
+  - detail 클릭: row 클릭 → detail 패널 로드 + cost_model badge + regime_breakdown
+    + BUY-only note + BUY/PASS 양쪽 ActionBadge
+  - detail 500: `backtest-detail-error` 노출
+  - strategy filter URL 변경: 필터 클릭 → `/api/backtest/runs?strategy=...` 호출
+  - 자동매매 / order UI 부재: form / submit / "실거래" / "자동매매" / "주문 실행" /
+    `source_file_path` / `원문` / `본문` 모두 0건 단언
+- `frontend/e2e/dashboard.spec.ts` 보강:
+  - sidebar nav 테스트에 `백테스트 (β)` 메뉴 클릭 + `backtest-strategies` visible
+    (Sidebar 9 → 10 메뉴)
+  - 신규 `Backtest screen surfaces strategies + runs + detail (read-only)` 테스트:
+    3 strategy + run row + 클릭 시 detail + regime + cost_model + raw JSON
+    payload (`/api/backtest/runs` + `/api/backtest/runs/42`) 에 `source_file_path` /
+    `order_type` / `quantity` 0건 단언
+  - `no automation / order UI` targets 에 `/backtest` 추가 (form / submit / CTA
+    label 0건 가드)
+
+핵심 안전 가드:
+
+- `BacktestRunSchema` / `BacktestResultSchema` / `BacktestRunDetailResponse` /
+  `RegimeBreakdownSchema` / `StrategySchema` 어디에도 broker / account /
+  quantity / order_price / order_type / side 필드 0건. e2e + backend 통합 양쪽
+  에서 forbidden 토큰 16종 미노출 단언.
+- `GET /api/strategies` 는 DB 접근 0건 — `KNOWN_STRATEGIES` 순회 + 인스턴스화
+  후 `name` / `version` / docstring 첫 줄을 응답. 외부 API 호출 0건.
+- `GET /api/backtest/runs` 의 limit Query 는 1~100 으로 FastAPI 자동 검증
+  (limit=999 → 422). strategy filter 는 partial match 가 아니라 exact equality
+  (`BacktestRunRepository.list_by_strategy`).
+- BacktestPage UI 에 form / submit / 주문 실행 / 자동매매 시작 같은 CTA 라벨
+  0건 — `no automation / order UI` e2e 가 `/backtest` targets 에 포함되어 가드.
+- 새로 추가된 evidence_json 등 dict 응답에서도 `_assert_no_source_file_path`
+  recursive 가드가 그대로 작동.
 
 ## 7. 금지 사항
 

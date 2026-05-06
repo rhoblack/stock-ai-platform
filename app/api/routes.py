@@ -23,6 +23,10 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import (
     AnalystReportSchema,
+    BacktestResultSchema,
+    BacktestRunDetailResponse,
+    BacktestRunSchema,
+    BacktestRunsResponse,
     DailyPriceSchema,
     EarningsCalendarItemSchema,
     EarningsCalendarResponse,
@@ -48,6 +52,7 @@ from app.api.schemas import (
     RecommendationResultSchema,
     RecommendationRunDetailResponse,
     RecommendationRunSchema,
+    RegimeBreakdownSchema,
     RelatedThemeSchema,
     ReportConsensusSchema,
     ReportSignalEventSchema,
@@ -60,6 +65,8 @@ from app.api.schemas import (
     StockIndicatorSchema,
     StockPriceSeriesResponse,
     StockReportsResponse,
+    StrategiesResponse,
+    StrategySchema,
     ThemeDetailResponse,
     ThemeRankingItemSchema,
     ThemeRankingResponse,
@@ -70,6 +77,8 @@ from app.config.settings import Settings, get_settings
 from app.data.collectors.kis_client import mask_sensitive_value
 from app.data.repositories import (
     AnalystReportRepository,
+    BacktestResultRepository,
+    BacktestRunRepository,
     DailyPriceRepository,
     DataSnapshotRepository,
     EarningsEventRepository,
@@ -1293,6 +1302,169 @@ def get_theme_detail(
             _mapping_to_theme_stock_schema(m) for m in all_mappings[:mapping_limit]
         ],
         signal_events=[ReportSignalEventSchema.from_orm(e) for e in events],
+    )
+
+
+# ---------- /api/strategies + /api/backtest (v0.7 Phase D) ----------
+
+
+def _strategy_description(strategy) -> str | None:
+    """First non-blank line of the strategy class docstring."""
+
+    raw = type(strategy).__doc__
+    if not raw:
+        return None
+    for line in raw.splitlines():
+        cleaned = line.strip()
+        if cleaned:
+            return cleaned
+    return None
+
+
+@router.get(
+    "/api/strategies",
+    response_model=StrategiesResponse,
+    tags=["backtest"],
+)
+def get_strategies() -> StrategiesResponse:
+    """List registered rule-based strategies (read from registry, no DB)."""
+
+    from app.strategy.registry import KNOWN_STRATEGIES, get_strategy
+
+    items: list[StrategySchema] = []
+    for name in KNOWN_STRATEGIES:
+        strategy = get_strategy(name)
+        items.append(
+            StrategySchema(
+                name=strategy.name,
+                version=strategy.version,
+                description=_strategy_description(strategy),
+            ),
+        )
+    return StrategiesResponse(items=items, count=len(items))
+
+
+def _backtest_run_to_schema(row, *, summary: dict | None = None) -> BacktestRunSchema:
+    summary = summary if summary is not None else (row.summary_json or {})
+    return BacktestRunSchema(
+        id=row.id,
+        strategy_name=row.strategy_name,
+        strategy_version=row.strategy_version,
+        run_date=row.run_date,
+        start_date=row.start_date,
+        end_date=row.end_date,
+        signal_count=row.signal_count,
+        buy_count=row.buy_count,
+        pass_count=row.pass_count,
+        avoid_count=row.avoid_count,
+        win_rate_1d=row.win_rate_1d,
+        win_rate_3d=row.win_rate_3d,
+        win_rate_5d=row.win_rate_5d,
+        win_rate_20d=row.win_rate_20d,
+        avg_return_1d=row.avg_return_1d,
+        avg_return_3d=row.avg_return_3d,
+        avg_return_5d=row.avg_return_5d,
+        avg_return_20d=row.avg_return_20d,
+        cost_adjusted_avg_return_5d=summary.get("cost_adjusted_avg_return_5d"),
+        max_drawdown=row.max_drawdown,
+        status=row.status,
+        cost_model_version=summary.get("cost_model_version"),
+        total_cost=summary.get("total_cost"),
+    )
+
+
+@router.get(
+    "/api/backtest/runs",
+    response_model=BacktestRunsResponse,
+    tags=["backtest"],
+)
+def get_backtest_runs(
+    strategy: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_session),
+) -> BacktestRunsResponse:
+    repo = BacktestRunRepository(session)
+    rows = (
+        repo.list_by_strategy(strategy, limit=limit)
+        if strategy
+        else repo.list_recent(limit=limit)
+    )
+    items = [_backtest_run_to_schema(row) for row in rows]
+    return BacktestRunsResponse(
+        items=items,
+        count=len(items),
+        strategy=strategy,
+        limit=limit,
+    )
+
+
+def _backtest_result_to_schema(row) -> BacktestResultSchema:
+    return BacktestResultSchema(
+        id=row.id,
+        symbol=row.symbol,
+        recommendation_id=row.recommendation_id,
+        signal_action=row.signal_action,
+        confidence=row.confidence,
+        reason=row.reason,
+        grade=row.grade,
+        total_score=row.total_score,
+        return_1d=row.return_1d,
+        return_3d=row.return_3d,
+        return_5d=row.return_5d,
+        return_20d=row.return_20d,
+        cost_adjusted_return_5d=row.cost_adjusted_return_5d,
+        max_drawdown=row.max_drawdown,
+        result_status=row.result_status,
+        regime=row.regime,
+        evidence_json=row.evidence_json if isinstance(row.evidence_json, dict) else None,
+    )
+
+
+def _regime_breakdown_from_summary(summary: dict | None) -> list[RegimeBreakdownSchema]:
+    if not isinstance(summary, dict):
+        return []
+    raw = summary.get("regime_breakdown")
+    if not isinstance(raw, list):
+        return []
+    out: list[RegimeBreakdownSchema] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        out.append(
+            RegimeBreakdownSchema(
+                regime=str(entry.get("regime") or "UNCLASSIFIED"),
+                buy_count=int(entry.get("buy_count") or 0),
+                win_rate_5d=entry.get("win_rate_5d"),
+                avg_return_5d=entry.get("avg_return_5d"),
+                cost_adjusted_avg_return_5d=entry.get("cost_adjusted_avg_return_5d"),
+            ),
+        )
+    return out
+
+
+@router.get(
+    "/api/backtest/runs/{run_id}",
+    response_model=BacktestRunDetailResponse,
+    tags=["backtest"],
+)
+def get_backtest_run_detail(
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> BacktestRunDetailResponse:
+    run_repo = BacktestRunRepository(session)
+    run = run_repo.get_by_id(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"backtest run {run_id} not found")
+    summary = run.summary_json or {}
+    results = BacktestResultRepository(session).list_by_run(run.id)
+    return BacktestRunDetailResponse(
+        run=_backtest_run_to_schema(run, summary=summary),
+        results=[_backtest_result_to_schema(r) for r in results],
+        regime_breakdown=_regime_breakdown_from_summary(summary),
+        cost_model_version=summary.get("cost_model_version"),
+        total_cost=summary.get("total_cost"),
+        summary_json=summary if summary else None,
+        notes=summary.get("notes"),
     )
 
 

@@ -590,6 +590,98 @@ const THEME_DETAIL_41 = {
   ],
 }
 
+const STRATEGIES = {
+  count: 3,
+  items: [
+    {
+      name: 'TopGradeStrategy',
+      version: 'v1.0.0',
+      description: 'Trade on the recommendation grade alone.',
+    },
+    {
+      name: 'HighScoreStrategy',
+      version: 'v1.0.0',
+      description: "Trade on the recommendation's total_score alone.",
+    },
+    {
+      name: 'MultiSignalStrategy',
+      version: 'v1.0.0',
+      description: 'Multi-factor rule combining v0.4~v0.6 signals.',
+    },
+  ],
+}
+
+const BACKTEST_RUNS_LIST = {
+  count: 1,
+  strategy: null,
+  limit: 20,
+  items: [
+    {
+      id: 42,
+      strategy_name: 'top_grade',
+      strategy_version: 'v1.0.0',
+      run_date: '2026-05-06',
+      start_date: '2026-04-01',
+      end_date: '2026-05-04',
+      signal_count: 5,
+      buy_count: 2,
+      pass_count: 2,
+      avoid_count: 1,
+      win_rate_1d: '0.5000',
+      win_rate_3d: null,
+      win_rate_5d: '0.5000',
+      win_rate_20d: null,
+      avg_return_1d: '1.0000',
+      avg_return_3d: null,
+      avg_return_5d: '1.5000',
+      avg_return_20d: null,
+      cost_adjusted_avg_return_5d: '1.1700',
+      max_drawdown: '-2.5000',
+      status: 'SUCCESS',
+      cost_model_version: 'constant-v1',
+      total_cost: '0.00330',
+    },
+  ],
+}
+
+const BACKTEST_RUN_DETAIL_42 = {
+  run: BACKTEST_RUNS_LIST.items[0],
+  results: [
+    {
+      id: 1001,
+      symbol: '005930',
+      recommendation_id: 71,
+      signal_action: 'BUY',
+      confidence: '0.7500',
+      reason: 'grade=A',
+      grade: 'A',
+      total_score: '80.0000',
+      return_1d: '1.0000',
+      return_3d: null,
+      return_5d: '1.5000',
+      return_20d: null,
+      cost_adjusted_return_5d: '1.1700',
+      max_drawdown: '-2.5000',
+      result_status: 'SUCCESS',
+      regime: 'UPTREND_EARLY',
+      evidence_json: { grade: 'A' },
+    },
+  ],
+  regime_breakdown: [
+    {
+      regime: 'UPTREND_EARLY',
+      buy_count: 2,
+      win_rate_5d: '0.5000',
+      avg_return_5d: '1.5000',
+      cost_adjusted_avg_return_5d: '1.1700',
+    },
+  ],
+  cost_model_version: 'constant-v1',
+  total_cost: '0.00330',
+  summary_json: { notes: 'BUY signals only' },
+  notes: 'win_rate / avg_return / max_drawdown are computed over BUY signals only.',
+}
+
 const SETTINGS_SAFE = {
   app_env: 'e2e',
   app_name: 'stock_ai_platform',
@@ -630,6 +722,9 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number }> = 
   { pattern: /\/api\/jobs(\?|$)/, payload: JOBS_LIST },
   { pattern: /\/api\/themes\/ranking(\?|$)/, payload: THEME_RANKING },
   { pattern: /\/api\/themes\/41(\?|$)/, payload: THEME_DETAIL_41 },
+  { pattern: /\/api\/strategies(\?|$)/, payload: STRATEGIES },
+  { pattern: /\/api\/backtest\/runs\/42(\?|$)/, payload: BACKTEST_RUN_DETAIL_42 },
+  { pattern: /\/api\/backtest\/runs(\?|$)/, payload: BACKTEST_RUNS_LIST },
   { pattern: /\/api\/market-regime\/latest/, payload: TODAY.market_regime },
   { pattern: /\/api\/news/, payload: { items: [], limit: 20, offset: 0 } },
   { pattern: /\/api\/settings$/, payload: SETTINGS_SAFE },

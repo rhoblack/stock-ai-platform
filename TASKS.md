@@ -737,27 +737,27 @@ read-only 화면** 을 도입한다. 다음 자연 질문 "이 추천이 돈이 
 - 안전 범위: 라우터 0건, frontend 0건, 외부 호출 0건. `app/backtest/` 어디에도 `requests` / `httpx` / `aiohttp` / `urllib` / KIS / DART / Telegram / `BrokerInterface` import 0건 (grep 검증). ScoringEngine 본 weight 변경 0건
 - 완료 기준: backend pytest **652 → 673 passed (+21)**, 회귀 0건. 태그 `v0.7-backtest-cost-regime`.
 
-### Phase D — read-only API 3종 + 프런트 백테스트 화면
+### Phase D — read-only API 3종 + 프런트 백테스트 화면 ✅ 인수
 
-- [ ] `app/api/routes.py` — `GET /api/strategies` 신규 (정의된 전략 목록, `app.strategy.rule_based` 모듈에서 자동 수집)
-- [ ] `app/api/routes.py` — `GET /api/backtest/runs?strategy=&limit=` 신규 (목록, 정렬 started_at desc)
-- [ ] `app/api/routes.py` — `GET /api/backtest/runs/{run_id}` 신규 (상세 + 신호 결과 목록 + regime breakdown)
-- [ ] `app/api/schemas.py` — `StrategySchema` / `BacktestRunSchema` / `BacktestResultSchema` / `BacktestRunDetailResponse` / `BacktestRunsResponse` 4 신규
-- [ ] `tests/integration/test_api_routes.py` 보강 ~10 케이스 (`/api/strategies` happy / `/api/backtest/runs` happy / 빈 결과 / strategy filter / `/api/backtest/runs/{run_id}` happy / 404 / regime breakdown / cost_adjusted 표시 / source_file_path 가드 / pre-v0.7 backward compat)
-- [ ] `frontend/src/api/types.ts` — `Strategy` / `BacktestRun` / `BacktestResult` / `BacktestRunDetailResponse` / `BacktestRunsResponse` 타입 신규 (~8 타입)
-- [ ] `frontend/src/hooks/useStrategies.ts` 신규 (TanStack Query, staleTime 5분 — 전략 정의는 거의 변하지 않음)
-- [ ] `frontend/src/hooks/useBacktestRuns.ts` 신규
-- [ ] `frontend/src/hooks/useBacktestRunDetail.ts` 신규
-- [ ] `frontend/src/pages/Backtest/index.tsx` 신규 — 10번째 화면 (상단 전략 목록 + 중단 최근 run 표 + 하단 run 상세 패널)
-- [ ] `frontend/src/pages/Backtest/StrategyList.tsx` / `BacktestRunsTable.tsx` / `BacktestRunDetail.tsx` 신규
-- [ ] `frontend/src/components/Sidebar.tsx` (또는 동등) — `백테스트 (β)` 메뉴 추가 (10번째)
-- [ ] `frontend/src/router.tsx` (또는 동등) — `/backtest` lazy route + `/backtest/runs/:runId` 추가
-- [ ] `frontend/src/tests/mswServer.ts` — `/api/strategies` / `/api/backtest/runs` / `/api/backtest/runs/:runId` 기본 핸들러
-- [ ] `frontend/src/tests/Backtest.test.tsx` 신규 (~8 케이스: happy / 빈 결과 / 전략 필터 / regime breakdown 표시 / cost_adjusted 표시 / 500 에러 / 404 / loading)
-- [ ] `frontend/e2e/fixtures/apiMocks.ts` — `STRATEGIES` / `BACKTEST_RUNS_LIST` / `BACKTEST_RUN_DETAIL_42` fixture 추가
-- [ ] `frontend/e2e/dashboard.spec.ts` — Sidebar 9 → 10 메뉴 + 백테스트 화면 happy 보강 (e2e 13 → 15)
-- 안전 범위: POST 0건, 외부 호출 0건, scheduler 0건, 자동매매 0건
-- 완료 기준: backend pytest **~625 → ~640 passed (+~15)**, frontend vitest **77 → ~88 passed (+~11)**, e2e **13 → 15 passed (+2)**, build 그린, 회귀 0건. source_file_path 0건 노출 가드. 태그 `v0.7-frontend-backtest`.
+- [x] `app/api/routes.py` — `GET /api/strategies` 신규 (registry 기반 / DB 0건 / docstring 첫 줄을 description 으로 노출)
+- [x] `app/api/routes.py` — `GET /api/backtest/runs?strategy=&limit=` 신규 (목록, run_date desc 정렬, `summary_json` 의 cost/regime 메타를 응답 최상위로 추출)
+- [x] `app/api/routes.py` — `GET /api/backtest/runs/{run_id}` 신규 (상세 + results + regime_breakdown + cost_model_version + total_cost + notes). 404 정책
+- [x] `app/api/schemas.py` — `StrategySchema` / `StrategiesResponse` / `BacktestRunSchema` / `BacktestRunsResponse` / `BacktestResultSchema` / `RegimeBreakdownSchema` / `BacktestRunDetailResponse` 7 신규. Decimal-as-string 패턴 유지
+- [x] `app/data/repositories/backtest_results.py` `create()` 시그니처에 `cost_adjusted_return_5d` + `regime` keyword 추가 (Phase C 컬럼 호환성). 기존 호출자 회귀 0건 — keyword 만 추가
+- [x] `tests/integration/test_api_routes.py` 보강 9 케이스 (`/api/strategies` 3 룰 노출 + version + description / `/api/backtest/runs` empty / happy 정렬 + cost meta / strategy filter / limit clamp / detail happy + regime breakdown + cost_adjusted / 404 / forbidden 키 (broker / quantity / order_type / source_file_path) 미노출 가드 / 모든 응답 `_assert_no_source_file_path`)
+- [x] `frontend/src/api/types.ts` — `StrategyItem` / `StrategiesResponse` / `BacktestRunItem` / `BacktestRunsResponse` / `BacktestResultItem` / `RegimeBreakdownItem` / `BacktestRunDetailResponse` 7 신규
+- [x] `frontend/src/hooks/useStrategies.ts` 신규 (staleTime 5분)
+- [x] `frontend/src/hooks/useBacktestRuns.ts` 신규 (staleTime 60초, strategy/limit 파라미터)
+- [x] `frontend/src/hooks/useBacktestRunDetail.ts` 신규 (staleTime 60초, runId enabled gate)
+- [x] `frontend/src/pages/Backtest/index.tsx` 신규 — 10번째 화면. 상단 `StrategyListSection` (3 카드 grid) + 중단 `RunsTableSection` (전략 filter radiogroup + 클릭 가능한 run 표) + 하단 `RunDetailSection` (선택 시 노출, regime_breakdown 표 + 신호 row 표 + cost_model_version / total_cost / BUY-only note). `ActionBadge` (BUY/PASS/AVOID tone-color)
+- [x] `frontend/src/components/layout/Sidebar.tsx` — `FlaskConical` 아이콘 import + 8번째 위치에 `백테스트 (β)` 메뉴 추가 (Sidebar 9 → 10 메뉴, 주석 갱신)
+- [x] `frontend/src/router.tsx` — `BacktestPage` lazy import + `/backtest` route 추가
+- [x] `frontend/src/tests/mswServer.ts` — `/api/strategies` / `/api/backtest/runs` / `/api/backtest/runs/:runId` 3 default 핸들러 (모두 빈 응답 / 404)
+- [x] `frontend/src/tests/Backtest.test.tsx` 신규 — **7 케이스** (happy / empty / runs 500 / detail 클릭 시 로드 + regime + BUY-only note / detail 500 / strategy filter URL 변경 / 자동매매·order UI + forbidden 토큰 미노출)
+- [x] `frontend/e2e/fixtures/apiMocks.ts` — `STRATEGIES` + `BACKTEST_RUNS_LIST` + `BACKTEST_RUN_DETAIL_42` fixture + 라우터 패턴 추가
+- [x] `frontend/e2e/dashboard.spec.ts` — sidebar nav 테스트에 `백테스트 (β)` 추가 + 신규 `Backtest screen surfaces strategies + runs + detail` e2e (전략 3종 + run 행 + 클릭 시 detail + regime + cost_model + forbidden 토큰 가드 + raw JSON `order_type`/`quantity` 0건) + `no automation / order UI` 테스트의 targets 에 `/backtest` 추가. e2e 13 → 14 (+1)
+- 안전 범위: POST 0건, 외부 호출 0건, scheduler 0건, 자동매매 0건. BacktestEngine 산식 / CostModel / regime_split / DB 모델 변경 0건 (read-only API + UI 만 추가)
+- 완료 기준: backend pytest **673 → 682 passed (+9)**, frontend vitest **77 → 84 passed (+7)**, e2e **13 → 14 passed (+1)**, build 그린, 회귀 0건. source_file_path / 주문 관련 필드 0건 노출 가드. 태그 `v0.7-frontend-backtest`.
 
 ### Phase E — v0.7 릴리스 문서 / 마감
 

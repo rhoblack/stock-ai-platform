@@ -459,6 +459,100 @@ class EarningsCalendarResponse(_BaseSchema):
     limit: int
 
 
+# ----- v0.7 Phase D — Strategy / Backtest read-only API -----
+
+
+class StrategySchema(_BaseSchema):
+    """Read-only view of a registered StrategyInterface implementation."""
+
+    name: str
+    version: str
+    description: Optional[str] = None
+
+
+class StrategiesResponse(_BaseSchema):
+    items: List[StrategySchema]
+    count: int
+
+
+class BacktestRunSchema(_BaseSchema):
+    """Read-only view of a BacktestRun row.
+
+    Decimal-valued metrics are exposed as strings via the parent ``_BaseSchema``
+    pre-validator. No broker / order / account / quantity fields exist on the
+    underlying ORM table — see ``_assert_no_order_fields`` API guard.
+    """
+
+    id: int
+    strategy_name: str
+    strategy_version: str
+    run_date: date_type
+    start_date: Optional[date_type] = None
+    end_date: Optional[date_type] = None
+    signal_count: int
+    buy_count: int
+    pass_count: int
+    avoid_count: int
+    win_rate_1d: Optional[str] = None
+    win_rate_3d: Optional[str] = None
+    win_rate_5d: Optional[str] = None
+    win_rate_20d: Optional[str] = None
+    avg_return_1d: Optional[str] = None
+    avg_return_3d: Optional[str] = None
+    avg_return_5d: Optional[str] = None
+    avg_return_20d: Optional[str] = None
+    cost_adjusted_avg_return_5d: Optional[str] = None
+    max_drawdown: Optional[str] = None
+    status: str
+    cost_model_version: Optional[str] = None
+    total_cost: Optional[str] = None
+
+
+class BacktestRunsResponse(_BaseSchema):
+    items: List[BacktestRunSchema]
+    count: int
+    strategy: Optional[str] = None
+    limit: int
+
+
+class BacktestResultSchema(_BaseSchema):
+    id: int
+    symbol: str
+    recommendation_id: Optional[int] = None
+    signal_action: str
+    confidence: Optional[str] = None
+    reason: Optional[str] = None
+    grade: Optional[str] = None
+    total_score: Optional[str] = None
+    return_1d: Optional[str] = None
+    return_3d: Optional[str] = None
+    return_5d: Optional[str] = None
+    return_20d: Optional[str] = None
+    cost_adjusted_return_5d: Optional[str] = None
+    max_drawdown: Optional[str] = None
+    result_status: Optional[str] = None
+    regime: Optional[str] = None
+    evidence_json: Optional[Dict[str, Any]] = None
+
+
+class RegimeBreakdownSchema(_BaseSchema):
+    regime: str
+    buy_count: int
+    win_rate_5d: Optional[str] = None
+    avg_return_5d: Optional[str] = None
+    cost_adjusted_avg_return_5d: Optional[str] = None
+
+
+class BacktestRunDetailResponse(_BaseSchema):
+    run: BacktestRunSchema
+    results: List[BacktestResultSchema]
+    regime_breakdown: List[RegimeBreakdownSchema]
+    cost_model_version: Optional[str] = None
+    total_cost: Optional[str] = None
+    summary_json: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = None
+
+
 class MarketCapRankingSchema(_BaseSchema):
     rank_date: date_type
     market: str

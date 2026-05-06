@@ -103,6 +103,15 @@ export const handlers = [
   http.get('*/api/themes/:themeId', () =>
     HttpResponse.json({ detail: 'not found' }, { status: 404 }),
   ),
+  http.get('*/api/strategies', () =>
+    HttpResponse.json({ items: [], count: 0 }),
+  ),
+  http.get('*/api/backtest/runs/:runId', () =>
+    HttpResponse.json({ detail: 'not found' }, { status: 404 }),
+  ),
+  http.get('*/api/backtest/runs', () =>
+    HttpResponse.json({ items: [], count: 0, strategy: null, limit: 20 }),
+  ),
   http.get('*/api/settings', () =>
     HttpResponse.json({
       app_env: 'test',

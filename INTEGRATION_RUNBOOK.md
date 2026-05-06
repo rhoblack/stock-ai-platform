@@ -866,7 +866,39 @@ CLI 출력에 다음 필드가 추가된다:
   CREATE INDEX ix_backtest_results_regime ON backtest_results (regime);
   ```
 
-### 16.7 안전 가드
+### 16.7 read-only API + 프런트 화면 (v0.7 Phase D)
+
+Phase D 부터는 백테스트 결과를 read-only API + 10번째 화면 `/backtest` 로 직접
+조회 가능. 외부 호출 / POST / Telegram / 자동매매 0건.
+
+API 3종:
+
+| 경로 | 목적 | 주요 query |
+|---|---|---|
+| `GET /api/strategies` | 룰 기반 전략 목록 (registry 기반 / DB 0건) | (없음) |
+| `GET /api/backtest/runs` | 최근 BacktestRun 목록 (run_date desc) | `strategy` (`top_grade` 등) / `limit` (1~100, 기본 20) |
+| `GET /api/backtest/runs/{run_id}` | 상세 + results + regime_breakdown + cost_model_version + total_cost + BUY-only notes | (없음) |
+
+수동 응답 확인 (PowerShell):
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8000/api/strategies | Select-Object -ExpandProperty Content
+Invoke-WebRequest "http://127.0.0.1:8000/api/backtest/runs?strategy=top_grade&limit=10" | Select-Object -ExpandProperty Content
+Invoke-WebRequest http://127.0.0.1:8000/api/backtest/runs/42 | Select-Object -ExpandProperty Content
+```
+
+프런트 화면 (`/backtest`, Sidebar 10번째 `백테스트 (β)`):
+
+- 상단: 등록된 전략 카드 grid (name + version + description)
+- 중단: 최근 BacktestRun 표 (run row 클릭 가능, 전략 filter radiogroup)
+- 하단: 선택한 run 의 상세 (regime_breakdown 표 + 신호 row 표 +
+  cost_model_version / total_cost / BUY-only note)
+
+**run 트리거는 화면에 없다** — 운영자가 `scripts/run_backtest.py --commit` 으로
+적재한 결과만 화면이 read-only 로 노출. POST 라우터 / 자동매매 / Broker 호출
+0건은 v0.1 ~ v0.7 일관 정책.
+
+### 16.8 안전 가드
 
 - `BacktestEngine` / 전략 / CLI 어디에도 `requests` / `httpx` / `aiohttp` /
   `urllib` / KIS / DART / Telegram / `BrokerInterface` import 0건. 외부 호출

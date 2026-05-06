@@ -576,6 +576,90 @@ export interface JobsResponse {
   offset: number
 }
 
+// ----- v0.7 Phase D — Strategy / Backtest read-only API -----
+
+export interface StrategyItem {
+  name: string
+  version: string
+  description: string | null
+}
+
+export interface StrategiesResponse {
+  items: StrategyItem[]
+  count: number
+}
+
+export interface BacktestRunItem {
+  id: number
+  strategy_name: string
+  strategy_version: string
+  run_date: string
+  start_date: string | null
+  end_date: string | null
+  signal_count: number
+  buy_count: number
+  pass_count: number
+  avoid_count: number
+  win_rate_1d: string | null
+  win_rate_3d: string | null
+  win_rate_5d: string | null
+  win_rate_20d: string | null
+  avg_return_1d: string | null
+  avg_return_3d: string | null
+  avg_return_5d: string | null
+  avg_return_20d: string | null
+  cost_adjusted_avg_return_5d: string | null
+  max_drawdown: string | null
+  status: string
+  cost_model_version: string | null
+  total_cost: string | null
+}
+
+export interface BacktestRunsResponse {
+  items: BacktestRunItem[]
+  count: number
+  strategy: string | null
+  limit: number
+}
+
+export interface BacktestResultItem {
+  id: number
+  symbol: string
+  recommendation_id: number | null
+  signal_action: 'BUY' | 'PASS' | 'AVOID' | string
+  confidence: string | null
+  reason: string | null
+  grade: string | null
+  total_score: string | null
+  return_1d: string | null
+  return_3d: string | null
+  return_5d: string | null
+  return_20d: string | null
+  cost_adjusted_return_5d: string | null
+  max_drawdown: string | null
+  result_status: string | null
+  regime: string | null
+  evidence_json: Record<string, unknown> | null
+}
+
+export interface RegimeBreakdownItem {
+  regime: string
+  buy_count: number
+  win_rate_5d: string | null
+  avg_return_5d: string | null
+  cost_adjusted_avg_return_5d: string | null
+}
+
+export interface BacktestRunDetailResponse {
+  run: BacktestRunItem
+  results: BacktestResultItem[]
+  regime_breakdown: RegimeBreakdownItem[]
+  cost_model_version: string | null
+  total_cost: string | null
+  summary_json: Record<string, unknown> | null
+  notes: string | null
+}
+
 // Convenience: keys we expect inside result_summary (rendered by the
 // JobsTable + TodayReport summaries). All optional — different jobs
 // surface different subsets.

@@ -2133,6 +2133,253 @@ def test_holding_check_surfaces_earnings_evidence_whitelist(client, session):
     _assert_no_source_file_path(items[0])
 
 
+# ---------- v0.7 Phase D — /api/strategies + /api/backtest/runs ----------
+
+
+_BACKTEST_FORBIDDEN_FIELDS = (
+    "source_file_path",
+    "body",
+    "content",
+    "full_text",
+    "raw_text",
+    "paragraph",
+    "html_body",
+    "본문",
+    "원문",
+    "전문",
+    "broker",
+    "account",
+    "quantity",
+    "order_price",
+    "order_type",
+    "side",
+)
+
+
+def _seed_backtest_run(session, *, strategy_name: str = "top_grade", **overrides):
+    from app.data.repositories import BacktestRunRepository
+    from app.data.repositories.backtest_runs import STATUS_SUCCESS
+
+    repo = BacktestRunRepository(session)
+    run = repo.create(
+        strategy_name=strategy_name,
+        strategy_version="v1.0.0",
+        run_date=overrides.get("run_date", date(2026, 5, 6)),
+        start_date=overrides.get("start_date"),
+        end_date=overrides.get("end_date"),
+    )
+    repo.mark_finished(
+        run,
+        signal_count=overrides.get("signal_count", 5),
+        buy_count=overrides.get("buy_count", 2),
+        avoid_count=overrides.get("avoid_count", 1),
+        pass_count=overrides.get("pass_count", 2),
+        win_rate_1d=overrides.get("win_rate_1d"),
+        win_rate_3d=overrides.get("win_rate_3d"),
+        win_rate_5d=Decimal("0.5000"),
+        win_rate_20d=overrides.get("win_rate_20d"),
+        avg_return_1d=overrides.get("avg_return_1d"),
+        avg_return_3d=overrides.get("avg_return_3d"),
+        avg_return_5d=Decimal("1.5000"),
+        avg_return_20d=overrides.get("avg_return_20d"),
+        max_drawdown=Decimal("-2.5"),
+        summary_json=overrides.get(
+            "summary_json",
+            {
+                "cost_model_version": "constant-v1",
+                "total_cost": "0.00330",
+                "cost_adjusted_avg_return_5d": "1.1700",
+                "regime_breakdown": [
+                    {
+                        "regime": "UPTREND_EARLY",
+                        "buy_count": 2,
+                        "win_rate_5d": "0.5000",
+                        "avg_return_5d": "1.5000",
+                        "cost_adjusted_avg_return_5d": "1.1700",
+                    },
+                ],
+                "missing_result_count_per_horizon": {1: 0, 3: 1, 5: 0, 20: 2},
+                "notes": "win_rate / avg_return / max_drawdown are computed over BUY signals only.",
+            },
+        ),
+    )
+    return run
+
+
+def _seed_backtest_result(session, run, **overrides):
+    from app.data.repositories import BacktestResultRepository
+
+    return BacktestResultRepository(session).create(
+        backtest_run_id=run.id,
+        symbol=overrides.get("symbol", "005930"),
+        signal_action=overrides.get("signal_action", "BUY"),
+        recommendation_id=overrides.get("recommendation_id"),
+        confidence=overrides.get("confidence", Decimal("0.75")),
+        reason=overrides.get("reason", "grade=A"),
+        grade=overrides.get("grade", "A"),
+        total_score=overrides.get("total_score", Decimal("80")),
+        return_5d=overrides.get("return_5d", Decimal("1.5")),
+        cost_adjusted_return_5d=overrides.get("cost_adjusted_return_5d", Decimal("1.17")),
+        max_drawdown=overrides.get("max_drawdown", Decimal("-2.5")),
+        result_status=overrides.get("result_status", "SUCCESS"),
+        regime=overrides.get("regime", "UPTREND_EARLY"),
+        evidence_json=overrides.get("evidence_json", {"grade": "A"}),
+    )
+
+
+def _assert_no_forbidden_backtest_fields(value) -> None:
+    text = str(value)
+    for forbidden in _BACKTEST_FORBIDDEN_FIELDS:
+        assert forbidden not in text, f"forbidden token {forbidden!r} present"
+
+
+def test_get_strategies_returns_three_known_rule_based(client):
+    response = client.get("/api/strategies")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 3
+    names = {item["name"] for item in body["items"]}
+    assert names == {"TopGradeStrategy", "HighScoreStrategy", "MultiSignalStrategy"}
+    for item in body["items"]:
+        assert item["version"]
+        assert isinstance(item.get("description"), str)
+        assert len(item["description"]) > 0
+
+
+def test_get_backtest_runs_empty(client):
+    response = client.get("/api/backtest/runs")
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "count": 0, "strategy": None, "limit": 20}
+
+
+def test_get_backtest_runs_happy_orders_recent_first(client, session):
+    _seed_backtest_run(session, strategy_name="top_grade", run_date=date(2026, 5, 1))
+    _seed_backtest_run(session, strategy_name="high_score", run_date=date(2026, 5, 5))
+    _seed_backtest_run(session, strategy_name="top_grade", run_date=date(2026, 5, 3))
+    session.commit()
+
+    response = client.get("/api/backtest/runs")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 3
+    # ordered by run_date desc
+    assert [it["run_date"] for it in body["items"]] == [
+        "2026-05-05",
+        "2026-05-03",
+        "2026-05-01",
+    ]
+    # surfaces cost / regime metadata pulled from summary_json
+    first = body["items"][0]
+    assert first["cost_model_version"] == "constant-v1"
+    assert first["total_cost"] == "0.00330"
+    assert first["cost_adjusted_avg_return_5d"] == "1.1700"
+    _assert_no_forbidden_backtest_fields(body)
+
+
+def test_get_backtest_runs_filters_by_strategy(client, session):
+    _seed_backtest_run(session, strategy_name="top_grade", run_date=date(2026, 5, 1))
+    _seed_backtest_run(session, strategy_name="high_score", run_date=date(2026, 5, 2))
+    _seed_backtest_run(session, strategy_name="top_grade", run_date=date(2026, 5, 3))
+    session.commit()
+
+    response = client.get("/api/backtest/runs?strategy=top_grade")
+    body = response.json()
+    assert body["strategy"] == "top_grade"
+    assert body["count"] == 2
+    assert all(it["strategy_name"] == "top_grade" for it in body["items"])
+
+
+def test_get_backtest_runs_limit_clamp(client):
+    response = client.get("/api/backtest/runs?limit=999")
+    assert response.status_code == 422
+
+
+def test_get_backtest_run_detail_happy(client, session):
+    run = _seed_backtest_run(session)
+    _seed_backtest_result(session, run, symbol="005930", signal_action="BUY")
+    _seed_backtest_result(
+        session,
+        run,
+        symbol="000660",
+        signal_action="PASS",
+        cost_adjusted_return_5d=None,
+        regime="UPTREND_EARLY",
+    )
+    session.commit()
+
+    response = client.get(f"/api/backtest/runs/{run.id}")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["run"]["id"] == run.id
+    assert body["run"]["cost_model_version"] == "constant-v1"
+    assert body["run"]["total_cost"] == "0.00330"
+    assert body["run"]["cost_adjusted_avg_return_5d"] == "1.1700"
+
+    assert len(body["results"]) == 2
+    actions = {r["signal_action"] for r in body["results"]}
+    assert actions == {"BUY", "PASS"}
+    buy_row = next(r for r in body["results"] if r["signal_action"] == "BUY")
+    assert buy_row["cost_adjusted_return_5d"] == "1.1700"
+    assert buy_row["regime"] == "UPTREND_EARLY"
+    pass_row = next(r for r in body["results"] if r["signal_action"] == "PASS")
+    assert pass_row["cost_adjusted_return_5d"] is None
+
+    assert len(body["regime_breakdown"]) == 1
+    assert body["regime_breakdown"][0]["regime"] == "UPTREND_EARLY"
+    assert body["regime_breakdown"][0]["buy_count"] == 2
+
+    assert body["cost_model_version"] == "constant-v1"
+    assert body["total_cost"] == "0.00330"
+    assert "BUY signals only" in (body.get("notes") or "")
+    _assert_no_forbidden_backtest_fields(body)
+
+
+def test_get_backtest_run_detail_404(client):
+    response = client.get("/api/backtest/runs/9999")
+    assert response.status_code == 404
+
+
+def test_get_backtest_run_detail_forbidden_evidence_keys_pass_through_safely(client, session):
+    """If a malformed legacy run carries forbidden keys inside summary_json,
+    the response should still load — but we still verify no order-side keys
+    like ``broker``/``quantity`` leak by construction (we never persist them)."""
+
+    bad_summary = {
+        "cost_model_version": "constant-v1",
+        "total_cost": "0.00330",
+        "cost_adjusted_avg_return_5d": "1.1700",
+        "regime_breakdown": [
+            {
+                "regime": "UPTREND_EARLY",
+                "buy_count": 1,
+                "win_rate_5d": "1.0000",
+                "avg_return_5d": "3.0000",
+                "cost_adjusted_avg_return_5d": "2.6700",
+            },
+        ],
+        "notes": "BUY signals only",
+        # Hostile (but not forbidden-keyword) extra blob — survives, but
+        # forbidden tokens below should still be absent from the response.
+        "extra_metadata": {"sample": "value"},
+    }
+    run = _seed_backtest_run(session, summary_json=bad_summary)
+    session.commit()
+    response = client.get(f"/api/backtest/runs/{run.id}")
+    assert response.status_code == 200
+    _assert_no_forbidden_backtest_fields(response.json())
+
+
+def test_backtest_endpoints_never_expose_source_file_path(client, session):
+    run = _seed_backtest_run(session)
+    _seed_backtest_result(session, run, symbol="005930", signal_action="BUY")
+    session.commit()
+    list_body = client.get("/api/backtest/runs").json()
+    detail_body = client.get(f"/api/backtest/runs/{run.id}").json()
+    _assert_no_source_file_path(list_body)
+    _assert_no_source_file_path(detail_body)
+
+
 def test_holding_check_earnings_evidence_default_none_for_pre_v06(client, session):
     _seed_full_dataset(session)
     # _seed_full_dataset adds no holding checks — call /api/holdings/checks/latest

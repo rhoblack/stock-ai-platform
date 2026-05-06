@@ -38,6 +38,9 @@ const ThemesPage = lazy(() =>
 const ThemeDetailPage = lazy(() =>
   import('./pages/ThemeDetail').then(m => ({ default: m.ThemeDetailPage })),
 )
+const BacktestPage = lazy(() =>
+  import('./pages/Backtest').then(m => ({ default: m.BacktestPage })),
+)
 
 export function AppRoutes() {
   return (
@@ -55,6 +58,7 @@ export function AppRoutes() {
         <Route path="universe/market-cap-top" element={<MarketCapTopPage />} />
         <Route path="themes" element={<ThemesPage />} />
         <Route path="themes/:themeId" element={<ThemeDetailPage />} />
+        <Route path="backtest" element={<BacktestPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:jobId" element={<JobsPage />} />
         <Route path="settings" element={<SettingsPage />} />

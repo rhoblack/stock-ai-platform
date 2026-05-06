@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   Activity,
   BarChart3,
+  FlaskConical,
   History,
   LayoutDashboard,
   ListTree,
@@ -20,7 +21,7 @@ interface NavItem {
   matchPrefix?: string
 }
 
-// 9 dashboard menus (v0.5 Phase D adds 테마).
+// 10 dashboard menus (v0.5 Phase D adds 테마, v0.7 Phase D adds 백테스트).
 const NAV_ITEMS: NavItem[] = [
   { to: '/today', label: '오늘의 리포트', Icon: LayoutDashboard },
   { to: '/recommendations', label: '추천 종목', Icon: BarChart3 },
@@ -29,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/stocks', label: '종목 상세', Icon: Search, matchPrefix: '/stocks' },
   { to: '/universe/market-cap-top', label: '시가총액 TOP', Icon: Activity },
   { to: '/themes', label: '테마 (β)', Icon: Tags, matchPrefix: '/themes' },
+  { to: '/backtest', label: '백테스트 (β)', Icon: FlaskConical },
   { to: '/jobs', label: '시스템 로그 / 잡', Icon: ScrollText, matchPrefix: '/jobs' },
   { to: '/settings', label: '설정', Icon: SettingsIcon },
 ]
