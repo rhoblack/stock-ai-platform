@@ -1000,19 +1000,76 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 
 ---
 
-## v0.10+ — Backlog (v0.9 마감 후 검토 대기)
+## v0.10 — Real Provider Readiness & Resilience (진행 중)
 
-자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) §9 / [`PLANS.md`](./PLANS.md) `PLAN-0009` "v0.10+ 후보" 참조. 한 줄 요약:
+기준선: `v0.9-final`. 회귀 게이트: pytest 916 / vitest 146 / e2e 19 / build 그린.
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0010`
 
-- **사용자 설정** — 관심 시장 / 기본 필터 / 기본 전략 / 알림 선호도 (인증 후 자연 확장)
-- **운영 모니터링** — Sentry / Prometheus / Grafana, 외부 노출 시점에 함께
-- **실 DART / 실 RSS provider** — v0.5/v0.6 ABC 위에 추가, 라이선스 / 스로틀링 / CI 외부 호출 차단 정책 동반
-- **백테스트 고도화** — 다중 전략 / walk-forward / 종목별 stamp duty / 호가 단위 슬리피지 (v0.7 placeholder 검증 후)
-- **LLM 보강** — News sentiment / 재무 분석 / 자동 전략 생성, 룰 기반 검증 후
-- **WebSocket / SSE** — 실시간 잡 / 백테스트 진행, 인증 + 모니터링 후
+### Phase A: Provider Resilience 실 적용
+
+- [ ] `ProviderHealthMonitor` 클래스 구현 (`app/data/provider_health_monitor.py`)
+- [ ] `KisDataProvider` 핵심 외부 호출에 `retry_with_backoff()` 데코레이터 적용
+- [ ] `CircuitBreaker` → `KisDataProvider` 연결
+- [ ] 단위 테스트 ~25건 (`tests/data/test_provider_health_monitor.py`)
+- [ ] 기존 KIS provider 회귀 테스트 0건 추가 실패 확인
+- [ ] `tag v0.10-provider-resilience + push`
+
+### Phase B: DART Provider 구현
+
+- [ ] `app/config.py` 에 `DART_ENABLED: bool = False` / `DART_API_KEY: str = ""` 추가
+- [ ] `DartFundamentalProvider` 구현 (`app/data/dart_provider.py`)
+- [ ] `DartEarningsProvider` 구현
+- [ ] `DartDisclosureProvider` 구현
+- [ ] `retry_with_backoff()` + `CircuitBreaker` Phase A 것 적용
+- [ ] `DART_ENABLED=false` 시 graceful skip 검증
+- [ ] 단위 테스트 ~20건 (`tests/data/test_dart_provider.py`)
+- [ ] `SensitiveFilter` 에 `DART_API_KEY` 마스킹 패턴 추가
+- [ ] `tag v0.10-dart-provider + push`
+
+### Phase C: RSS/News Provider 준비
+
+- [ ] `app/config.py` 에 `RSS_NEWS_ENABLED: bool = False` / `RSS_FEED_URLS: str = ""` 추가
+- [ ] `RssNewsProvider` 구현 (`app/data/rss_provider.py`)
+- [ ] body/paragraph 저장 차단 (strip_body 강제)
+- [ ] URL dedup (UNIQUE 충돌 skip)
+- [ ] `retry_with_backoff()` 적용
+- [ ] 단위 테스트 ~15건 (`tests/data/test_rss_provider.py`)
+- [ ] `tag v0.10-rss-provider + push`
+
+### Phase D: 운영 모니터링 강화
+
+- [ ] `GET /api/health/providers` 라우터 구현
+- [ ] `GET /api/health/jobs` 라우터 구현
+- [ ] `frontend/src/api/health.ts` + `hooks/useHealthStatus.ts` 신규
+- [ ] Jobs 화면에 `HealthPanel` 컴포넌트 추가
+- [ ] pytest ~10건 (`tests/routers/test_health.py`)
+- [ ] vitest ~5건 (`frontend/src/tests/HealthPanel.test.tsx`)
+- [ ] `tag v0.10-health-api + push`
+
+### Phase E: 마감 (문서)
+
+- [ ] `RELEASE_NOTES_v0.10.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.11 후보)
+- [ ] `README.md` v0.10 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
+- [ ] `PROJECT_STATUS.md` §0 v0.10 마감 선언으로 교체
+- [ ] `ROADMAP.md` v0.10 행 ✅ 마감
+- [ ] `TESTING.md` 기준선 갱신 (~986 pytest / ~151 vitest / 19 e2e)
+- [ ] `ARCHITECTURE.md` v0.10 마감 시점 반영
+- [ ] `tag v0.10-final + push`
+
+---
+
+## v0.11+ — Backlog
+
+자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) §9 / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) §0 v0.11 후보 참조. 한 줄 요약:
+
+- **Prometheus/Grafana** — 운영 모니터링 인프라 (v0.10 health API 검증 후)
+- **백테스트 고도화** — walk-forward / 실 비용 모델 (recommendation_results 3~6개월 누적 후)
+- **DART/RSS score 반영** — ScoringEngine weight 보강 (v0.10 provider 안정화 후)
+- **인증 고도화** — 다중 사용자 / OAuth / SSO / refresh token (단일 사용자 운영 검증 후)
+- **LLM 보강** — News sentiment / 재무 분석 / 자동 전략 생성 (룰 기반 검증 후)
+- **WebSocket / SSE** — 실시간 잡 / 백테스트 진행 (인증 + 모니터링 후)
 - **모바일 / 태블릿 / lightweight-charts 마이그레이션** — UX 고도화
-- **Watchlist 가격 알림 / target return alert** — 알림 시스템 변경 = 별도 cycle
-- **인증 고도화 (다중 사용자 / OAuth / SSO / refresh token)** — 단일 사용자 검증 후
+- **Watchlist 가격 알림 / target return alert** — 알림 시스템 별도 cycle
 - **Future Backlog (자동매매)** — MockBroker / ReplayBroker / APPROVAL / SMALL_AUTO / FULL_AUTO 모두 별도 보안·컴플라이언스 사이클 선행 필수
 
 ## 완료 기준

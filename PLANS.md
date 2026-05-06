@@ -2192,3 +2192,308 @@ Scenario X 의 Security + Monitoring 기반 위에 Scenario Y 의 Watchlist Poli
 - `AUTH_ENABLED=false` 모드에서 v0.8 회귀 테스트 100% 그대로 통과
 - 실 DART / 실 RSS / 실 News API 자동 호출 0건 — provider_status + retry interface 만 추가
 - 자동매매 / BrokerInterface 구현 0건
+
+---
+
+## PLAN-0010: v0.10 Real Provider Readiness & Resilience (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.9-final`
+- 회귀 게이트: pytest 916 / vitest 146 / e2e 19 / build 그린
+- Alembic head: `0004_user_preferences` (**신규 revision 없음** — DART/RSS 기존 테이블 재사용)
+- Provider resilience skeleton 준비 완료: `ProviderCallResult` / `ProviderErrorKind` / `retry_with_backoff()` / `CircuitBreaker` (CLOSED/OPEN/HALF_OPEN)
+
+### 목표
+
+v0.9 Provider resilience skeleton 위에 실 Provider 구현을 추가하고, KIS/DART/RSS 래핑 + 운영 모니터링 API 로 실제 운영 가능한 데이터 인프라를 완성한다.
+
+### 채택 결론 (시나리오 비교)
+
+4 시나리오 비교 후 채택: **Modified X + light Z = "Real Provider Readiness & Resilience"**
+
+| 시나리오 | 내용 | 결정 |
+|---|---|---|
+| X | DART/RSS Provider 구현 + Provider resilience 실 적용 | ✅ **핵심 채택** |
+| Y | 백테스트 고도화 (walk-forward / 실 비용 모델) | ❌ v0.11 연기 (recommendation_results 데이터 3~6개월 누적 필요) |
+| Z | 운영 모니터링 고도화 (Prometheus/Grafana) | ⚠️ **부분 채택** — Sentry 가이드 + job/provider health API 만. Prometheus/Grafana v0.11 |
+| W | 복합 (X+Y+Z) | ❌ 범위 과다, 리스크 관리 곤란 |
+
+### 범위 (5 Phase)
+
+- Phase A — Provider Resilience 실 적용 (`KisDataProvider` 래핑 + `ProviderHealthMonitor`)
+- Phase B — DART Provider 구현 (`DartFundamentalProvider` / `DartEarningsProvider` / `DartDisclosureProvider`, `DART_ENABLED=false` 기본)
+- Phase C — RSS/News Provider 준비 (`RssNewsProvider`, `RSS_NEWS_ENABLED=false` 기본, 메타데이터만)
+- Phase D — 운영 모니터링 강화 (`GET /api/health/providers` + `GET /api/health/jobs` + 프런트 패널)
+- Phase E — 마감 (`RELEASE_NOTES_v0.10.md` + 문서 갱신 + `v0.10-final` 태그)
+
+### 제외 범위 (v0.10 에서 절대 하지 않을 것)
+
+- ❌ 자동매매 / 실 KIS 주문 / BrokerInterface 구현 — v0.1~v0.9 와 동일
+- ❌ 백테스트 고도화 (walk-forward / 실 비용 모델) — v0.11 연기
+- ❌ Prometheus exporter / Grafana 대시보드 — v0.11 연기 (외부 인프라 필요)
+- ❌ Alembic 새 revision — DART/RSS 기존 `news_items` / `disclosures` / `financial_statements` 테이블 재사용
+- ❌ RSS 본문(body/paragraph) 저장 — 메타데이터 (title/url/published_at/source/category) 만
+- ❌ 운영자가 미설정한 RSS feed URL 자동 크롤링 — `RSS_FEED_URLS` env 에 명시된 URL 만
+- ❌ DART 전체 공시 자동 폴링 — 지정 종목만, `DART_ENABLED=false` 기본
+- ❌ ScoringEngine / HoldingCheckEngine 본 weight 변경
+- ❌ 인증 고도화 (다중 사용자 / OAuth / refresh token) — v0.11+ 후보
+- ❌ CSP / rate limit 고도화 — 운영 트래픽 수집 후
+- ❌ 실 News API 외 제3자 뉴스 provider — RSS metadata-only 범위 외
+- ❌ LLM 보강 — 룰 기반 검증 후
+
+### 예상 테스트 증가
+
+| Phase | pytest 증가 | vitest 증가 |
+|---|---|---|
+| A | +25 | 0 |
+| B | +20 | 0 |
+| C | +15 | 0 |
+| D | +10 | +5 |
+| E | 0 | 0 |
+| **합계** | **+70 (→ ~986)** | **+5 (→ ~151)** |
+
+---
+
+### Phase A — Provider Resilience 실 적용
+
+**목표:** v0.9 skeleton (`ProviderCallResult` / `retry_with_backoff()` / `CircuitBreaker`) 을 실제 `KisDataProvider` 호출에 적용하고, `ProviderHealthMonitor` 로 in-memory 상태를 추적한다.
+
+**수정할 파일:**
+
+- `app/data/kis_provider.py` — `retry_with_backoff()` 데코레이터 적용
+- `app/data/provider_health_monitor.py` (신규) — `ProviderHealthMonitor` (register / record_call / get_status / reset)
+- `tests/data/test_provider_health_monitor.py` (신규)
+
+**수정하지 않을 파일:**
+
+- `app/data/provider_resilience.py` — v0.9 skeleton 변경 0건
+- 라우터 / DB / Alembic
+
+**단계:**
+
+1. `ProviderHealthMonitor` 클래스 구현 (register / record_call / get_status / get_all_status / reset)
+2. `KisDataProvider` 핵심 외부 호출 메서드에 `retry_with_backoff()` 적용
+3. `CircuitBreaker` 를 `KisDataProvider` 에 연결 (CLOSED 기본 — KIS unreachable 시 OPEN)
+4. 단위 테스트 ~25건 (monitor 상태 전이 / retry 횟수 / circuit breaker trip)
+5. e2e mock 환경에서 KIS → OPEN → HALF_OPEN 시나리오 단언
+
+**테스트:**
+
+- `pytest tests/data/test_provider_health_monitor.py` (신규 ~25건)
+- `pytest tests/data/test_kis_provider.py` (기존 회귀 — retry 적용 후)
+
+**완료 기준:**
+
+- `KisDataProvider` 호출이 `retry_with_backoff()` 로 감싸져 있음
+- `ProviderHealthMonitor.get_status("kis")` 가 CLOSED/OPEN/HALF_OPEN 반환
+- pytest +25, 기존 회귀 0건 추가 실패
+- `DART_ENABLED=false` 상태에서 DART import 에러 0건
+
+**위험 요소:**
+
+- `CircuitBreaker` HALF_OPEN → CLOSED 전이 타이머 — 테스트에서 `time.sleep()` 대신 monkeypatch
+- KIS mock fixture 가 retry 횟수를 카운트하는 방식 — `MagicMock.call_count` 로 검증
+
+**태그:** `v0.10-provider-resilience`
+
+---
+
+### Phase B — DART Provider 구현
+
+**목표:** v0.6 `FundamentalProviderInterface` / `EarningsProviderInterface` + v0.5 `DisclosureProviderInterface` ABC 위에 실 DART OpenAPI 구현체를 추가한다. `DART_ENABLED=false` 기본.
+
+**라이선스 메모:**
+
+DART OpenAPI (금융감독원 공공데이터): 개인/연구/비상업적 목적 공개 API Key. 상업 목적은 별도 약관 확인 필수. 본 시스템은 개인 포트폴리오 분석 용도 — 내부 private 운영만, 외부 서비스 불허. `DART_API_KEY` 환경변수 필수; 미설정 시 `DartNotConfiguredError` — 폴백 없음.
+
+**수정할 파일:**
+
+- `app/data/dart_provider.py` (신규) — `DartFundamentalProvider` / `DartEarningsProvider` / `DartDisclosureProvider`
+- `app/config.py` — `DART_ENABLED: bool = False`, `DART_API_KEY: str = ""`
+- `app/data/provider_factory.py` (또는 `__init__`) — `DART_ENABLED` 조건 분기
+- `tests/data/test_dart_provider.py` (신규) — mock HTTP 응답 기반
+
+**수정하지 않을 파일:**
+
+- DB / Alembic — `financial_statements` / `disclosures` 테이블 그대로
+- 라우터 / scoring engine — score 반영은 v0.11+ 후보
+
+**단계:**
+
+1. `app/config.py` 에 `DART_ENABLED` / `DART_API_KEY` 추가
+2. `DartFundamentalProvider` — `GET /api/fnlttSinglAcnt` (단일 재무제표) mock 구현
+3. `DartEarningsProvider` — 동일 API 실적 subset
+4. `DartDisclosureProvider` — `GET /api/list` (공시 목록) mock 구현
+5. `retry_with_backoff()` + `CircuitBreaker` Phase A 것 적용
+6. `DART_ENABLED=false` 시 graceful skip (provider 인스턴스화 없음)
+7. 단위 테스트 ~20건 (mock HTTP / error kind / config 분기)
+8. `SensitiveFilter` 에 `DART_API_KEY` 마스킹 패턴 추가
+
+**테스트:**
+
+- `pytest tests/data/test_dart_provider.py` (신규 ~20건)
+- `DART_ENABLED=false` 환경에서 기존 916+α 회귀 0건 실패
+
+**완료 기준:**
+
+- `DART_ENABLED=false` (기본) 시 외부 HTTP 호출 0건
+- `DART_ENABLED=true` + `DART_API_KEY` 설정 시 mock 응답 정상 파싱
+- `ProviderCallResult` + `ProviderErrorKind` 반환 일관성 확인
+- pytest +20
+
+**위험 요소:**
+
+- DART OpenAPI 응답 스키마 변경 — mock fixture 를 실제 응답 샘플 기반으로 작성
+- `DART_API_KEY` 누출 — `SensitiveFilter` `dart_api_key` 패턴 명시적 추가 필요
+
+**태그:** `v0.10-dart-provider`
+
+---
+
+### Phase C — RSS/News Provider 준비
+
+**목표:** v0.5 `NewsProviderInterface` ABC 위에 `RssNewsProvider` 를 추가한다. 메타데이터 전용 (title / url / published_at / source / category), 본문 저장 없음. `RSS_NEWS_ENABLED=false` 기본, 운영자가 설정한 feed URL 만.
+
+**정책:**
+
+- `RSS_NEWS_ENABLED=false` 기본 — 미설정 시 RSS fetch 0건
+- `RSS_FEED_URLS` env (쉼표 구분) — 운영자가 명시한 URL 만 fetch, 자동 크롤링 없음
+- 저장 필드: title / url / published_at / source / category 만. body/paragraph 0건
+- 기존 `news_items` 테이블에 저장 — Alembic revision 없음
+- 중복 방지: `url` unique 충돌 시 skip (upsert-ignore)
+
+**수정할 파일:**
+
+- `app/data/rss_provider.py` (신규) — `RssNewsProvider` (feedparser 또는 xml.etree 기반)
+- `app/config.py` — `RSS_NEWS_ENABLED: bool = False`, `RSS_FEED_URLS: str = ""`
+- `tests/data/test_rss_provider.py` (신규) — mock XML fixture
+
+**수정하지 않을 파일:**
+
+- DB / Alembic — `news_items` 테이블 그대로
+- ScoringEngine — RSS score 반영은 v0.11+ 후보
+
+**단계:**
+
+1. `app/config.py` 에 `RSS_NEWS_ENABLED` / `RSS_FEED_URLS` 추가
+2. `RssNewsProvider` — feedparser (또는 xml.etree) 로 feed 파싱
+3. body/paragraph 필드 저장 차단 (strip_body 강제 적용)
+4. `retry_with_backoff()` 적용 — 네트워크 에러 시 재시도
+5. URL UNIQUE 충돌 시 skip (upsert-ignore)
+6. 단위 테스트 ~15건 (mock XML / body strip / URL dedup / config 분기)
+
+**테스트:**
+
+- `pytest tests/data/test_rss_provider.py` (신규 ~15건)
+- `RSS_NEWS_ENABLED=false` 환경에서 기존 회귀 0건 실패
+
+**완료 기준:**
+
+- `RSS_NEWS_ENABLED=false` 시 HTTP fetch 0건
+- 저장 레코드에 body/paragraph 없음 단언
+- URL dedup 단언
+- pytest +15
+
+**위험 요소:**
+
+- feedparser 라이선스: MIT — 기존 `requirements.txt` 에 없으면 추가 필요
+- RSS feed 스키마 다양성 — Atom / RSS 2.0 / RDF 모두 처리
+
+**태그:** `v0.10-rss-provider`
+
+---
+
+### Phase D — 운영 모니터링 강화
+
+**목표:** Provider 상태와 잡 실행 현황을 조회하는 read-only API 2종 + 프런트 모니터링 패널을 추가한다.
+
+**수정할 파일:**
+
+- `app/routers/health.py` (신규 또는 확장) — `GET /api/health/providers` + `GET /api/health/jobs`
+- `frontend/src/api/health.ts` (신규)
+- `frontend/src/hooks/useHealthStatus.ts` (신규)
+- `frontend/src/pages/Jobs/index.tsx` — 기존 Jobs 화면에 provider status 패널 추가
+- `tests/routers/test_health.py` (신규 또는 확장) — ~+10 pytest
+- `frontend/src/tests/HealthPanel.test.tsx` (신규) — ~+5 vitest
+
+**수정하지 않을 파일:**
+
+- DB / Alembic — `ProviderHealthMonitor` in-memory 만
+- ScoringEngine / HoldingCheckEngine
+- 인증 정책 — read-only, `AUTH_ENABLED` 토글 동일 적용
+
+**단계:**
+
+1. `GET /api/health/providers` — `ProviderHealthMonitor.get_all_status()` 직렬화
+2. `GET /api/health/jobs` — `JobRunRepository.get_recent(limit=20)` 직렬화
+3. 프런트 `HealthPanel` 컴포넌트 (provider chip + job list)
+4. Jobs 화면 하단에 `HealthPanel` 삽입
+5. vitest ~5건 (패널 렌더 / 상태 chip 색상 / 오류 상태)
+6. pytest ~10건 (API 응답 스키마 / provider 없을 때 빈 배열 / job 0건 대응)
+
+**테스트:**
+
+- `pytest tests/routers/test_health.py`
+- `npx vitest run HealthPanel.test`
+
+**완료 기준:**
+
+- `GET /api/health/providers` → `[{"name": "kis", "status": "CLOSED", ...}]`
+- `GET /api/health/jobs` → `[{"job_name": ..., "status": ..., "started_at": ...}]`
+- 프런트 패널 vitest 통과
+- pytest +10 / vitest +5
+
+**위험 요소:**
+
+- `ProviderHealthMonitor` 가 in-memory — 서버 재시작 시 초기화. 응답 / 문서에 명시 필요
+- `AUTH_ENABLED=true` 시 health endpoint 인증 여부 — read-only 이므로 공개 가능 (운영자 판단)
+
+**태그:** `v0.10-health-api`
+
+---
+
+### Phase E — 마감
+
+**목표:** v0.10 사이클 문서 마감 + 4 게이트 최종 확인 + 태그 + push.
+
+**수정할 파일:**
+
+- `RELEASE_NOTES_v0.10.md` (신규)
+- `README.md` — v0.10 배너 + 기능 목록 갱신
+- `PROJECT_STATUS.md` — §0 v0.10 마감 선언으로 교체
+- `ROADMAP.md` — v0.10 행 ✅ 마감
+- `TASKS.md` — Phase E 체크박스 완료
+- `ARCHITECTURE.md` — v0.10 마감 시점 반영
+
+**완료 기준 (cycle-wide):**
+
+- 4 게이트 그린: pytest ~986 / vitest ~151 / e2e 19 / build
+- 5 태그 push: `v0.10-provider-resilience` → `v0.10-dart-provider` → `v0.10-rss-provider` → `v0.10-health-api` → `v0.10-final`
+- `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` 기본 유지 — CI 외부 API 호출 0건
+- Alembic `compare_metadata` diff 0건 (새 revision 없음)
+- 자동매매 / 실 KIS 주문 0건 유지
+
+**태그:** `v0.10-final`
+
+---
+
+### v0.10 핵심 정책 (cycle-wide)
+
+- 자동매매 / 실 KIS 주문 / BrokerInterface 구현 0건 — v0.1~v0.9 와 동일
+- 실 DART API 호출: `DART_ENABLED=true` + `DART_API_KEY` 설정 시만 — 기본 false
+- 실 RSS fetch: `RSS_NEWS_ENABLED=true` + `RSS_FEED_URLS` 설정 시만 — 기본 false
+- RSS body/paragraph 저장 0건 — 메타데이터만
+- Prometheus/Grafana 0건 — v0.11 연기
+- 백테스트 고도화 0건 — v0.11 연기 (recommendation_results 3~6개월 누적 필요)
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
+- Alembic 새 revision 0건 — DART/RSS 기존 테이블 재사용
+- 신규 POST/PUT/DELETE 라우터 0건 (health API 는 GET 만)
+- `DART_API_KEY` 는 `SensitiveFilter` 마스킹 대상에 추가
+
+### 완료 기준 (cycle-wide)
+
+- 4 게이트 그린: pytest ~986 / vitest ~151 / e2e 19 / build
+- 5 태그 push: `v0.10-provider-resilience` → `v0.10-dart-provider` → `v0.10-rss-provider` → `v0.10-health-api` → `v0.10-final`
+- `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` 기본값 유지 — CI 외부 호출 0건
+- Alembic `compare_metadata` diff 0건

@@ -287,21 +287,29 @@ Login 화면 + StockDetail `FavoriteButton` + Today `WatchlistCard`. 마감
 
 ---
 
-## v0.10 — 후보 (v0.9 마감 후 검토 대기)
+## v0.10 — Real Provider Readiness & Resilience (⏳ 진행 중)
 
-기준선 예정: `v0.9-final`. 아래 항목은 우선순위 순서이며 실제 진입 시 별도 계획서 작성 후 확정.
+기준선: `v0.9-final`. 회귀 게이트: pytest 916 / vitest 146 / e2e 19 / build 그린.
+**Alembic head 변경 없음** — DART/RSS 기존 테이블 재사용.
 
-| 후보 | 카테고리 | 전제 조건 |
-|---|---|---|
-| 실 DART / RSS provider 구현 | Data 인프라 | 라이선스 검토(사람) 선행 |
-| Provider resilience 실 적용 (KIS/DART 래핑) | 운영 안정성 | v0.9 skeleton 검증 후 |
-| Prometheus exporter + Grafana 대시보드 | 운영 모니터링 | 외부 노출 규모 확인 후 |
-| CSP / CSRF / rate limit 고도화 | 보안 | 운영 트래픽 수집 후 |
-| Refresh token / 다중 사용자 / OAuth | 인증 고도화 | 단일 사용자 운영 검증 후 |
-| 백테스트 고도화 (walk-forward / 실 비용 모델) | 분석 고도화 | v0.7 데이터 누적 후 |
-| Watchlist 가격 알림 / target return alert | UX 고도화 | 알림 시스템 별도 cycle |
-| Paper/Simulation Trading (MockBroker skeleton) | 트레이딩 준비 | 별도 보안·컴플라이언스 사이클 선행 |
-| LLM 보강 (News sentiment / 재무 자동화) | AI 고도화 | 룰 기반 검증 + 데이터 누적 |
+| Phase | 작업 | 상태 | 예상 태그 |
+|---|---|---|---|
+| A | Provider Resilience 실 적용 — `KisDataProvider` + `retry_with_backoff()` + `CircuitBreaker` + `ProviderHealthMonitor` | ⏳ 대기 | `v0.10-provider-resilience` |
+| B | DART Provider 구현 — `DartFundamentalProvider` / `DartEarningsProvider` / `DartDisclosureProvider`, `DART_ENABLED=false` 기본 | ⏳ 대기 | `v0.10-dart-provider` |
+| C | RSS/News Provider — `RssNewsProvider`, `RSS_NEWS_ENABLED=false` 기본, 메타데이터 전용 (title/url/published_at/source/category) | ⏳ 대기 | `v0.10-rss-provider` |
+| D | 운영 모니터링 강화 — `GET /api/health/providers` + `GET /api/health/jobs` + 프런트 Jobs 화면 패널 | ⏳ 대기 | `v0.10-health-api` |
+| E | 마감 — `RELEASE_NOTES_v0.10.md` + 문서 갱신 + 태그 `v0.10-final` | ⏳ 대기 | `v0.10-final` |
+
+**v0.10 핵심 정책 (cycle-wide)**:
+
+- 자동매매 / 실 KIS 주문 / BrokerInterface 구현 0건 — v0.1~v0.9 와 동일
+- `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` 기본 — CI 외부 API 호출 0건
+- RSS body/paragraph 저장 0건 — 메타데이터만
+- Prometheus/Grafana 0건 — v0.11 연기
+- 백테스트 고도화 0건 — v0.11 연기 (recommendation_results 3~6개월 누적 필요)
+- Alembic 새 revision 0건 — 기존 테이블 재사용
+
+상세 계획: [`PLANS.md`](./PLANS.md) `PLAN-0010`
 
 > **자동매매 / 실주문 (FULL_AUTO / SMALL_AUTO / BrokerInterface 구현)** 는 v0.10 에도
 > **Future Backlog** 유지. 별도 보안·컴플라이언스·자본 한도 사이클 선행 없이는 진입 불가.

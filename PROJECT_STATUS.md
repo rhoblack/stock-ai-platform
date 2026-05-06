@@ -7,7 +7,48 @@
 
 ---
 
-## 0. v0.9 마감 선언 — Operational Security & Watchlist Polish
+## 0. v0.10 시작 선언 — Real Provider Readiness & Resilience
+
+**v0.10 cycle 시작.** `v0.9-final` 위에 **Real Provider Readiness & Resilience** 5 phase 진입.
+
+- 시작 일자: **2026-05-07 (Asia/Seoul)**
+- 기준 태그: `v0.9-final`
+- 기준 게이트: pytest 916 / vitest 146 / e2e 19 / build 그린
+- Alembic head: `0004_user_preferences` (**신규 revision 없음** — DART/RSS 기존 테이블 재사용)
+- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0010`
+
+### v0.10 Phase 목표
+
+| Phase | 내용 | 예상 태그 | 예상 게이트 증가 |
+|---|---|---|---|
+| A | Provider Resilience 실 적용 (KIS 래핑 + ProviderHealthMonitor) | `v0.10-provider-resilience` | pytest +25 |
+| B | DART Provider 구현 (DartFundamental/Earnings/Disclosure, DART_ENABLED=false) | `v0.10-dart-provider` | pytest +20 |
+| C | RSS/News Provider 준비 (RssNewsProvider, RSS_NEWS_ENABLED=false, 메타데이터만) | `v0.10-rss-provider` | pytest +15 |
+| D | 운영 모니터링 강화 (GET /api/health/providers + /jobs + 프런트 패널) | `v0.10-health-api` | pytest +10 / vitest +5 |
+| E | 마감 문서 + 4 게이트 최종 확인 | `v0.10-final` | 4 게이트 그린 |
+
+### v0.10 핵심 정책
+
+- `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` 기본 — CI 에서 외부 API 호출 0건
+- RSS body/paragraph 저장 0건 — 메타데이터 (title/url/published_at/source/category) 만
+- Alembic 새 revision 0건 — DART/RSS 기존 테이블 재사용
+- Prometheus/Grafana / 백테스트 고도화 → v0.11 연기
+- 자동매매 / 실 KIS 주문 0건 유지
+
+### v0.11 후보
+
+1. Prometheus exporter + Grafana 대시보드 (외부 노출 규모 확인 후)
+2. 백테스트 고도화 (walk-forward / 실 비용 모델, recommendation_results 3~6개월 누적 후)
+3. CSP / rate limit 고도화 (운영 트래픽 수집 후)
+4. 인증 고도화 (refresh token / 다중 사용자 / OAuth)
+5. DART/RSS score 반영 (ScoringEngine weight 보강)
+6. LLM 보강 (News sentiment / 재무 자동화)
+7. Watchlist 가격 알림 / target return alert
+8. 자동매매 (Future Backlog — 별도 보안·컴플라이언스·자본 한도 사이클 선행 필수)
+
+---
+
+## 0-1. v0.9 마감 선언 — Operational Security & Watchlist Polish
 
 **v0.9 cycle 마감.** 기준선 `v0.8-final` 위에 **Operational Security &
 Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
@@ -45,7 +86,7 @@ Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
 
 ---
 
-## 0-1. v0.9 시작 선언 → 마감으로 갱신 (기록 보존)
+## 0-2. v0.9 시작 선언 → 마감으로 갱신 (기록 보존)
 
 ### v0.9 채택 결론 (후보 비교 요약)
 
