@@ -772,16 +772,137 @@ read-only 화면** 을 도입한다. 다음 자연 질문 "이 추천이 돈이 
 - [ ] tag `v0.7-final` + push (운영자 수동)
 - 완료 기준: 모든 게이트 그린, tag publish, GitHub Release 본문에 RELEASE_NOTES_v0.7 붙여넣기 (UI 작업).
 
-## v0.8+ — Backlog (v0.7 마감 후 검토 대기)
+## v0.8 — User & Migration Foundation (진행 중, 2026-05-06 시작)
 
-자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) §7 / [`PLANS.md`](./PLANS.md) `PLAN-0007` "v0.8+ 후보" 참조. 한 줄 요약:
+기준선: `v0.7-final` (HEAD `1f5b01f`). 자세한 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0008` 참조.
 
-- **Watchlist + 인증 (POST 첫 도입)** — 단일 토큰 → POST 라우터 → Watchlist (인증 동반 필수). v0.7 의 Strategy/Backtest 검증 후 자연스러운 다음 단계
-- **Alembic 도입** — 누적 ALTER 가 v0.5 1건 + v0.6 2건 + v0.7 신규 2건 = 5건 시점에 도입 적기
+**v0.8 핵심 목표**
+
+v0.1 ~ v0.7 동안 일관 유지된 read-only 정책의 **첫 변경 cycle**. 27 테이블
+시점에 **Alembic baseline** 을 도입하고, 단일 사용자 인증 기반 (`AUTH_ENABLED`
+토글 + JWT) 위에 **Watchlist 도메인** 을 통해 POST/DELETE 라우터를 처음
+도입한다. 자동매매 / 실주문 / Broker / 실 외부 API / LLM 은 **여전히 0건**
+— Watchlist 와 인증에 한정된 POST 첫 도입이다. ScoringEngine /
+HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
+
+**v0.8 에서 절대 하지 않을 것**
+
+- ❌ 실거래 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ Broker 구현 (`BrokerInterface` placeholder 유지)
+- ❌ POST 라우터 확장 — `POST /api/auth/login` + `POST/DELETE /api/watchlists/...` **2 도메인만**
+- ❌ 실 DART / 실 RSS / 실 News API 호출 (v0.5 / v0.6 ABC + Fake provider 정책 유지)
+- ❌ MockBroker / ReplayBroker / SimulationBroker (v0.10+)
+- ❌ ScoringEngine / HoldingCheckEngine 본 weight 변경
+- ❌ LLM 자동 전략 생성 / 자동 분석
+- ❌ 운영 모니터링 (Sentry / Prometheus / Grafana) — v0.9 후보
+- ❌ Watchlist 자동 텔레그램 / 가격 알림 — 알림 시스템 변경 0건
+- ❌ 다중 사용자 / SaaS / RBAC — 단일 admin user 만
+- ❌ OAuth / SSO — 단일 username/password + bcrypt + JWT 만
+- ❌ Refresh token / token revocation — 24h JWT TTL + 재로그인만
+- ❌ WebSocket / SSE — 폴링 그대로
+- ❌ Recommendations / Backtest / Today 산식 변경 — 즐겨찾기는 표시/필터만
+
+### Phase A — Alembic baseline 도입
+
+- [ ] `alembic.ini` 신규 (script_location / file_template / sqlalchemy.url placeholder)
+- [ ] `alembic/env.py` 신규 — `target_metadata = app.db.models.Base.metadata` + `Settings.database_url` 분기 + offline mode SQL 출력 지원
+- [ ] `alembic/script.py.mako` 신규 (표준 템플릿)
+- [ ] `alembic/versions/0001_baseline_v0_7.py` 신규 — 27 테이블 baseline (`op.create_table()` 27건, autogenerate 결과)
+- [ ] `scripts/migrate.py` 신규 — `alembic upgrade/downgrade/current/stamp` argparse wrapper
+- [ ] `tests/integration/test_alembic_migration.py` 신규 — 임시 SQLite 에 `alembic upgrade head` → ORM metadata 비교 (compare_metadata diff 0건 단언) + `alembic stamp 0001_baseline_v0_7` 시나리오 + downgrade -1 시나리오
+- [ ] `requirements.txt` — `alembic>=1.13` 추가
+- [ ] `.github/workflows/ci.yml` — alembic 검증 step 추가 (backend pytest 잡 내부)
+- [ ] `INTEGRATION_RUNBOOK.md` §17 신규 — 운영 DB Alembic 적용 절차 (backup → stamp → upgrade → smoke → rollback)
+- 안전 범위: 라우터 0건, frontend 0건, 신규 테이블 0건 (baseline 만), 외부 호출 0건. 운영 DB 변경 0건 (운영자 수동 실행 시점에만 적용)
+- 완료 기준: backend pytest **682 → ~692 (+~10)**, 회귀 0건. autogenerate diff 0건 단언 통과. 태그 `v0.8-alembic-baseline`.
+
+### Phase B — 단일 사용자 인증 기반
+
+- [ ] `app/db/models.py` — `User` 신규 (28번째 테이블) + `LoginAuditLog` 신규 (29번째 테이블)
+- [ ] `app/data/repositories/users.py` 신규 — `UserRepository` (create / get_by_id / get_by_username / update_password)
+- [ ] `app/data/repositories/login_audit_logs.py` 신규 — `LoginAuditLogRepository` (create / list_recent / purge_older_than)
+- [ ] `app/auth/__init__.py` 신규 — `AuthService` + `JwtIssuer` + `PasswordHasher` (bcrypt) + `AUTH_ENABLED` flag 노출
+- [ ] `app/auth/dependencies.py` 신규 — `get_current_user` FastAPI Depends + `require_auth` 데코레이터 + `AUTH_ENABLED=false` 시 fixed user_id=1 반환
+- [ ] `app/api/auth_routes.py` 신규 — `POST /api/auth/login` (첫 POST) + `POST /api/auth/logout` + `GET /api/auth/me`
+- [ ] `app/api/main.py` — auth router include + startup 시 `JWT_SECRET` 검증 (`AUTH_ENABLED=true` 시 미설정 거부)
+- [ ] `app/config.py` — `AUTH_ENABLED` (default false) + `JWT_SECRET` (default None) + `JWT_TTL_HOURS` (default 24) + `PROTECT_GET_ROUTES` (default false) 추가
+- [ ] `scripts/create_admin.py` 신규 — argparse CLI default dry-run, `--commit` 시 단일 admin user 생성, password prompt + bcrypt hash + JWT secret 생성 가이드 출력
+- [ ] `scripts/purge_login_audit.py` 신규 — argparse CLI default dry-run, `--days` (default 90) 이전 행 삭제
+- [ ] `alembic/versions/0002_user_audit.py` 신규 — User + LoginAuditLog 테이블 생성
+- [ ] `requirements.txt` — `bcrypt>=4.0` + `pyjwt>=2.8` 추가
+- [ ] `tests/unit/test_auth_service.py` 신규 — bcrypt hash/verify (cost 4) + JWT issue/verify + TTL 만료 + invalid signature
+- [ ] `tests/integration/test_auth_routes.py` 신규 — login happy / login wrong password / login unknown user / logout / me / `AUTH_ENABLED=false` bypass / `AUTH_ENABLED=true` + token 분기 / LoginAuditLog 기록 / source_ip SHA256 해시 / forbidden 키 미노출 / startup `JWT_SECRET` 미설정 거부
+- [ ] `DB_SCHEMA.md` §28 / §29 신규 — User + LoginAuditLog 컬럼 + Index + Unique + 정책
+- 안전 범위: 자동매매 0건, 실 외부 API 호출 0건, scheduler job 0건, ScoringEngine 변경 0건. POST 라우터는 auth 도메인만 (3건). 평문 IP / 평문 password 저장 0건
+- 완료 기준: backend pytest **~692 → ~735 (+~43)**, 회귀 0건. `AUTH_ENABLED=false` 모드에서 기존 회귀 테스트 100% 그대로 통과. 태그 `v0.8-auth-foundation`.
+
+### Phase C — Watchlist DB / API
+
+- [ ] `app/db/models.py` — `Watchlist` 신규 (30번째 테이블) + `WatchlistItem` 신규 (31번째 테이블, ON DELETE CASCADE)
+- [ ] `app/data/repositories/watchlists.py` 신규 — `WatchlistRepository` (create / get_by_id / list_by_user / get_or_create_default)
+- [ ] `app/data/repositories/watchlist_items.py` 신규 — `WatchlistItemRepository` (create / list_by_watchlist / get_by_symbol / delete_by_symbol)
+- [ ] `app/api/routes.py` — `GET /api/watchlists` (목록, 인증 필수) + `GET /api/watchlists/{id}/items` (목록, 인증 필수) + `POST /api/watchlists/{id}/items` (추가, `require_auth` 가드, body `{symbol, memo?}`) + `DELETE /api/watchlists/{id}/items/{symbol}` (삭제, `require_auth` 가드)
+- [ ] `app/api/schemas.py` — `WatchlistSchema` / `WatchlistItemSchema` / `WatchlistItemAddRequest` (`symbol` + optional `memo` ≤500자) / `WatchlistsResponse` 신규
+- [ ] `alembic/versions/0003_watchlist.py` 신규 — Watchlist + WatchlistItem 테이블 생성
+- [ ] `tests/integration/test_watchlist_routes.py` 신규 — list happy / list 401 (auth on, no token) / list bypass (auth off) / add happy / add invalid symbol / add duplicate (UniqueConstraint) / add 401 / add memo > 500자 거부 / delete happy / delete missing / delete 401 / forbidden 키 미노출 (broker / account / quantity / order_*) / source_file_path 미노출
+- [ ] `DB_SCHEMA.md` §30 / §31 신규 — Watchlist + WatchlistItem 컬럼 + Unique + Cascade + 정책
+- [ ] `API_SPEC.md` Watchlist 섹션 신규 — 4 라우터 + 인증 정책 + 응답 schema
+- 안전 범위: Watchlist 산식 / 점수 변경 0건. 알림 0건. 외부 호출 0건. 응답에 `broker` / `account` / `quantity` / `order_*` / `source_file_path` 0건 (e2e raw JSON 가드)
+- 완료 기준: backend pytest **~735 → ~770 (+~35)**, 회귀 0건. 태그 `v0.8-watchlist-api`.
+
+### Phase D — Watchlist 프런트 + Today / StockDetail 통합
+
+- [ ] `frontend/src/pages/Watchlist/index.tsx` 신규 — 11번째 화면. 즐겨찾기 종목 표 (symbol / 종목명 / 현재가 / 등락률 / 추가일 / 메모 / 삭제 버튼) + 추가 폼 (symbol + memo + 추가)
+- [ ] `frontend/src/pages/Login/index.tsx` 신규 — `AUTH_ENABLED=true` 시 진입. username/password 폼 → JWT localStorage 저장 → `/today` redirect
+- [ ] `frontend/src/components/auth/LoginForm.tsx` 신규
+- [ ] `frontend/src/api/auth.ts` 신규 — `login(username, password)` / `logout()` / `getMe()` API call
+- [ ] `frontend/src/api/client.ts` — Authorization 헤더 자동 첨부 (`localStorage.auth_token`) + 401 시 `/login` redirect
+- [ ] `frontend/src/hooks/useAuthStatus.ts` 신규 — `AUTH_ENABLED` 감지 + 현재 사용자 노출
+- [ ] `frontend/src/hooks/useWatchlist.ts` 신규 (default watchlist 단일)
+- [ ] `frontend/src/hooks/useWatchlistItems.ts` 신규
+- [ ] `frontend/src/hooks/useAddWatchlistItem.ts` 신규 (`useMutation` 첫 도입)
+- [ ] `frontend/src/hooks/useRemoveWatchlistItem.ts` 신규 (`useMutation`)
+- [ ] `frontend/src/components/layout/Sidebar.tsx` — `Star` 아이콘 + `관심종목 ★` 메뉴 추가 (Sidebar 10 → 11)
+- [ ] `frontend/src/router.tsx` — `/watchlist` lazy + `/login` lazy route 추가
+- [ ] `frontend/src/pages/StockDetail/index.tsx` — 헤더에 즐겨찾기 별 토글 추가
+- [ ] `frontend/src/pages/Today/index.tsx` — "내 관심종목" 카드 신규 (즐겨찾기 종목 등락률 / 추천 / 점수 요약, 자동 alert 0건)
+- [ ] `frontend/src/pages/Recommendations/index.tsx` — 표에 즐겨찾기 별 컬럼 추가 (시각 표시만, 정렬 / 필터 변경 0건)
+- [ ] `frontend/src/tests/Watchlist.test.tsx` 신규 — happy / empty / add mutation success / add 401 / add 500 / delete mutation / 자동매매·order UI 부재 + forbidden 토큰 미노출
+- [ ] `frontend/src/tests/Login.test.tsx` 신규 — happy / wrong password / network error / `AUTH_ENABLED=false` 시 로그인 화면 미표시
+- [ ] `frontend/src/tests/StockDetail.test.tsx` — 즐겨찾기 별 토글 케이스 추가
+- [ ] `frontend/src/tests/TodayReport.test.tsx` — "내 관심종목" 카드 케이스 추가
+- [ ] `frontend/src/tests/mswServer.ts` — `/api/watchlists` + `/api/watchlists/{id}/items` + `/api/auth/...` 핸들러 추가
+- [ ] `frontend/e2e/fixtures/apiMocks.ts` — Watchlist + auth fixture
+- [ ] `frontend/e2e/dashboard.spec.ts` — sidebar nav 테스트에 `관심종목 ★` 추가 + Watchlist 화면 (추가 → 즐겨찾기 ★ 활성 → 삭제 → 별 ☆) + Login 화면 + `/watchlist` / `/login` 의 자동매매 부재 가드 + raw JSON `broker`/`quantity`/`order_*` 0건
+- 안전 범위: POST 0건 (Phase C 의 라우터만 사용), 외부 호출 0건, 자동매매 0건, BacktestEngine 변경 0건. 즐겨찾기 mutation 외 모든 라우터는 read-only
+- 완료 기준: backend pytest **~770 → ~775 (+~5)**, frontend vitest **84 → ~95 (+~11)**, e2e **14 → 16 (+2)**, build 그린, 회귀 0건. source_file_path / 주문 관련 필드 0건 노출 가드. 태그 `v0.8-frontend-watchlist`.
+
+### Phase E — v0.8 릴리스 문서 / 마감
+
+- [ ] `RELEASE_NOTES_v0.8.md` 신규 (산출물 / 검증 / 안전 정책 / 한계 / v0.9 후보 / 운영 가이드 / 누적 태그)
+- [ ] `RELEASE_NOTES_v0.8.md` 안전 정책 — Alembic baseline 정책 / 단일 사용자 인증 / `AUTH_ENABLED` 토글 / POST 라우터 5건 한정 / 평문 IP 미저장 / 평문 password 미저장 / refresh token 미도입 / 다중 사용자 미지원 / `source_file_path` / `broker` / `account` / `quantity` / `order_*` 미노출 / 외부 API 자동 호출 0건
+- [ ] `README.md` 상단 마감 배너 v0.7 → v0.8 갱신 + 누적 태그 라인 + §1 누적 기능 v0.8 항목 4종 (Alembic baseline / 단일 사용자 인증 / Watchlist API / Watchlist 프런트) + §2 제외 범위 v0.8 정책 + §4 문서 표 + §6 누적 사이클 / 영역 표 + §11 회귀 기준선 (682 → ~775)
+- [ ] `PROJECT_STATUS.md` §0 v0.8 시작 → v0.8 마감 in-place 갱신 (Phase E 시점), 이전 §0 (v0.8 시작) 은 §0-1 로 강등, v0.7 마감은 §0-2 로 추가 강등 (시간순 역배열)
+- [ ] `TASKS.md` v0.8 phase 모두 [x] + v0.8 전체 마감 헤더 + v0.9 Backlog 정리
+- [ ] `ROADMAP.md` v0.8 행 마감 표시 + v0.8 phase 표 ✅ + v0.9 후보 정리
+- [ ] `ARCHITECTURE.md` / `API_SPEC.md` / `TESTING.md` / `INTEGRATION_RUNBOOK.md` / `DB_SCHEMA.md` 정합성 점검 + 마감 시점 헤더 갱신
+- [ ] backend pytest + frontend vitest + e2e + build 4 게이트 그린 (재확인) — **~775 / ~95 / 16 / build**
+- [ ] tag `v0.8-final` + push (운영자 수동)
+- 완료 기준: 모든 게이트 그린, tag publish, GitHub Release 본문에 RELEASE_NOTES_v0.8 붙여넣기 (UI 작업).
+
+## v0.9+ — Backlog (v0.8 마감 후 검토 대기)
+
+자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) §8 / [`PLANS.md`](./PLANS.md) `PLAN-0008` "v0.9+ 후보" 참조. 한 줄 요약:
+
+- **사용자 설정** — 관심 시장 / 기본 필터 / 기본 전략 / 알림 선호도 (인증 후 자연 확장)
+- **운영 모니터링** — Sentry / Prometheus / Grafana, 외부 노출 시점에 함께
 - **실 DART / 실 RSS provider** — v0.5/v0.6 ABC 위에 추가, 라이선스 / 스로틀링 / CI 외부 호출 차단 정책 동반
-- **운영 모니터링** — Sentry / Prometheus / Grafana, 인증 도입 후
+- **백테스트 고도화** — 다중 전략 / walk-forward / 종목별 stamp duty / 호가 단위 슬리피지 (v0.7 placeholder 검증 후)
 - **LLM 보강** — News sentiment / 재무 분석 / 자동 전략 생성, 룰 기반 검증 후
+- **WebSocket / SSE** — 실시간 잡 / 백테스트 진행, 인증 + 모니터링 후
 - **모바일 / 태블릿 / lightweight-charts 마이그레이션** — UX 고도화
+- **Watchlist 가격 알림 / target return alert** — 알림 시스템 변경 = 별도 cycle
+- **인증 고도화 (다중 사용자 / OAuth / SSO / refresh token)** — 단일 사용자 검증 후
 - **Future Backlog (자동매매)** — MockBroker / ReplayBroker / APPROVAL / SMALL_AUTO / FULL_AUTO 모두 별도 보안·컴플라이언스 사이클 선행 필수
 
 ## 완료 기준
