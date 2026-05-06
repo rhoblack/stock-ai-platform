@@ -888,6 +888,10 @@ class User(TimestampMixin, Base):
     audit_logs: Mapped[list["LoginAuditLog"]] = relationship(
         back_populates="user",
     )
+    watchlists: Mapped[list["Watchlist"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
 class LoginAuditLog(Base):
@@ -925,5 +929,67 @@ class LoginAuditLog(Base):
             "ix_login_audit_logs_event_created",
             "event_type",
             "created_at",
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.8 Phase C -- Watchlist DB foundation
+#
+# Watchlist: a named bucket of stocks owned by exactly one User. A user may
+# have multiple watchlists; at most one is `is_default = True`. Repositories
+# enforce this invariant; the DB enforces uniqueness via Unique(user_id, name).
+#
+# WatchlistItem: a single symbol inside a Watchlist, plus an optional short
+# operator memo. Symbol is normalized to UPPERCASE before persistence. The
+# table intentionally has NO broker / account / quantity / order_price /
+# order_type / side columns -- WatchlistItem is a "favourite", not an order.
+# ---------------------------------------------------------------------------
+
+
+class Watchlist(TimestampMixin, Base):
+    __tablename__ = "watchlists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    user: Mapped[User] = relationship(back_populates="watchlists")
+    items: Mapped[list["WatchlistItem"]] = relationship(
+        back_populates="watchlist",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_watchlists_user_name"),
+    )
+
+
+class WatchlistItem(TimestampMixin, Base):
+    __tablename__ = "watchlist_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    watchlist_id: Mapped[int] = mapped_column(
+        ForeignKey("watchlists.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # Operator-facing memo. Hard-capped at 500 chars to discourage paragraph
+    # bodies (the v0.4 copyright policy). API validation rejects >500 with 422.
+    memo: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    watchlist: Mapped[Watchlist] = relationship(back_populates="items")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "watchlist_id",
+            "symbol",
+            name="uq_watchlist_items_watchlist_symbol",
         ),
     )

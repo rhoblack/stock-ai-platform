@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import auth_router, router as api_router
+from app.api import auth_router, router as api_router, watchlist_router
 from app.auth.security import validate_auth_settings
 from app.config.logging import configure_logging
 from app.config.settings import get_settings
@@ -75,6 +75,7 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(auth_router)
+    app.include_router(watchlist_router)
     app.include_router(api_router)
     return app
 

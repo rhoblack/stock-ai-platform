@@ -2,5 +2,6 @@
 
 from app.api.auth_routes import router as auth_router
 from app.api.routes import router
+from app.api.watchlist_routes import router as watchlist_router
 
-__all__ = ["auth_router", "router"]
+__all__ = ["auth_router", "router", "watchlist_router"]

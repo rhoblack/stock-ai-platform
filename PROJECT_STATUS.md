@@ -308,6 +308,90 @@ HoldingCheckEngine 본 weight 변경 0건, 자동매매 / 실주문 / 실 외부
 - `compare_metadata` diff 0건 단언 통과 (load-bearing 가드)
 - baseline `0001` 은 변경 0건 (Phase A 결과 그대로)
 
+### v0.8 Phase C 결과 (요약) — Watchlist DB / API
+
+- 마감 일자: **2026-05-06 (Asia/Seoul)**
+- 회귀 게이트: backend pytest **760 → 808 passed (+48)** (1 deselected 그대로),
+  frontend / e2e / build 변경 0건 (Phase C 는 백엔드만; 프런트 Watchlist 화면 /
+  Login 화면 / StockDetail 별 토글은 Phase D 후보)
+- 누적 인수 태그 (예정): `v0.8-watchlist-api`
+
+**산출물:**
+
+- `app/db/models.py` — `Watchlist` (30번째, user_id FK + name + is_default +
+  Unique(user_id, name) + User.watchlists relationship cascade) +
+  `WatchlistItem` (31번째, watchlist_id FK ON DELETE CASCADE + symbol(32) index +
+  memo(500) nullable + Unique(watchlist_id, symbol)). **broker / account /
+  quantity / order_* / 가격 컬럼 0건** (회귀 단언)
+- `app/db/__init__.py` — Watchlist + WatchlistItem re-export
+- `app/data/repositories/watchlists.py` — `WatchlistRepository` 8 method, 단일
+  default invariant 강제 (`_clear_default_for_user`), ownership-scoped 조회만
+  노출 (`get_by_user_and_id`), `DEFAULT_WATCHLIST_NAME = "기본"`
+- `app/data/repositories/watchlist_items.py` — `WatchlistItemRepository` 7
+  method + `normalize_symbol` (trim + UPPER) + `MAX_MEMO_LENGTH = 500` +
+  `_validate_memo` defensive ValueError
+- `app/data/repositories/__init__.py` — 두 신규 repo export
+- `app/api/watchlist_routes.py` 신규 — 5 라우터 (`GET /api/watchlists` +
+  `GET /api/watchlists/{id}` + `POST /api/watchlists` +
+  `POST /api/watchlists/{id}/items` + `DELETE /api/watchlists/{id}/items/{symbol}`).
+  모두 `require_auth` 가드, cross-user 시 **404** (403 아님). symbol 은 stocks
+  테이블 존재 검증 후 추가. Pydantic schema 자체 정의 (8종)
+- `app/api/__init__.py` + `app/main.py` — watchlist_router include
+- `alembic/versions/0003_watchlist.py` — autogenerate 결과 (down_revision =
+  `0002_auth_foundation`) + Phase C 정책 docstring
+- `tests/integration/test_watchlist_repositories.py` — **27 케이스**
+- `tests/integration/test_watchlist_routes.py` — **19 케이스** (AUTH=false 12
+  + AUTH=true 4 + 보안/spoofing 3)
+- `tests/integration/test_alembic_migration.py` 갱신 — `HEAD_REVISION =
+  "0003_watchlist"` + `EXPECTED_TABLE_COUNT = 31` + spot-check 13 → 15
+- `API_SPEC.md` §18 + 헤더 + 금지 API 갱신 (Phase C 5건 누적)
+- `DB_SCHEMA.md` §30 / §31 + 헤더 (29 → 31 테이블)
+- `INTEGRATION_RUNBOOK.md` §19 신규 (6 sub-section)
+- `TESTING.md` §6.18 신규
+
+**Watchlist API 정책 요약:**
+
+| 라우터 | 인증 | 동작 |
+|---|---|---|
+| `GET /api/watchlists` | require_auth | user 의 watchlist 목록 (default 우선 정렬, item_count 포함) |
+| `GET /api/watchlists/{id}` | require_auth | 상세 + items[]. cross-user / missing → 404 |
+| `POST /api/watchlists` | require_auth | body `{name, is_default?}`. 중복 name → 409, 빈 name → 422, is_default 단일 invariant |
+| `POST /api/watchlists/{id}/items` | require_auth | body `{symbol, memo?}`. symbol normalize (trim + UPPER), stocks 미존재 → 404, 중복 → 409, memo > 500 → 422 |
+| `DELETE /api/watchlists/{id}/items/{symbol}` | require_auth | path symbol 도 normalize. missing → 404 |
+
+**인증 / 권한 정책:**
+
+- `AUTH_ENABLED=true`: 5 라우터 모두 Bearer token 필수. 토큰 없음 / 무효 / 만료 →
+  401 + `WWW-Authenticate: Bearer`
+- `AUTH_ENABLED=false` (dev / CI default): `require_auth` 가 dev fallback
+  identity (user_id=1) 로 해석 — 기존 read-only 흐름 유지
+- 다른 user 의 watchlist 접근 시 **404** (403 아님 — ownership 노출 0건)
+- request body 의 `user_id` 는 schema 에 정의되지 않아 자동 drop —
+  spoofing 시도 시 새 watchlist 가 token 의 user 에게 귀속 (회귀 단언:
+  `test_request_body_user_id_is_ignored`)
+- 기존 read-only GET 라우터는 여전히 OPEN (Watchlist 만 보호). Phase C 가
+  read-only 정책 retrofit 안 함
+
+**Forbidden field / 보안 가드 결과:**
+
+- `WatchlistItem.__table__.columns` 에 broker / account / quantity / order_price
+  / order_type / side / buy_price / sell_price 0건 (회귀 단언:
+  `test_no_order_or_quantity_columns_on_watchlist_item`)
+- 모든 응답 (list / create / detail / item create) recursive 스캔 → forbidden
+  토큰 (broker / account / quantity / order_* / source_file_path / password_hash
+  / password / token / secret / jwt_secret / scrypt$) 0건
+  (`test_response_never_leaks_password_hash_or_token`)
+- cross-user 접근 시 동일 404 메시지 — ownership 노출 0건
+- request body user_id spoofing → token user 우선
+
+**Alembic head:**
+
+- `0002_auth_foundation` → `0003_watchlist` (down_revision 정합)
+- `compare_metadata` diff 0건 (load-bearing)
+- 0001 / 0002 변경 0건
+- 운영 적용: `alembic upgrade head` 한 번이면 Phase B → C 차이 적용 (
+  INTEGRATION_RUNBOOK §17.5 절차)
+
 ---
 
 ## 0-1. v0.7 마감 선언 — Strategy & Backtest Foundation

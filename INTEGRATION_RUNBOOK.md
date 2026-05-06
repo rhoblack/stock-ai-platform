@@ -1196,3 +1196,114 @@ sqlite3 stock_ai_kis_check.db \
 - 기존 read-only GET 라우터 동작 변경 0건 — `AUTH_ENABLED=true` 모드에서도
   `/health`, `/api/recommendations/...` 등은 그대로 OPEN. Watchlist (Phase C)
   가 첫 보호 라우터 후보.
+
+## 19. Watchlist API smoke 절차 (v0.8 Phase C)
+
+Phase C 가 도입한 5 라우터의 운영 검증 절차다. 모두 인증 도메인과 동일하게
+`require_auth` 를 거치며, 사용자별 데이터 격리는 라우터 레이어에서 강제한다.
+
+**핵심 정책**:
+
+- 라우터 5건만: `GET /api/watchlists`, `GET /api/watchlists/{id}`,
+  `POST /api/watchlists`, `POST /api/watchlists/{id}/items`,
+  `DELETE /api/watchlists/{id}/items/{symbol}`
+- 다른 user 의 watchlist 접근은 모두 **404** (403 아님 — ownership 노출 0건)
+- request body 의 `user_id` 는 무시 — 항상 token / dev context 에서 결정
+- watchlist_items 응답에 `broker` / `account` / `quantity` / `order_*` /
+  `source_file_path` / `password_hash` / `token` / `secret` 0건
+
+### 19.1 신규 환경 부트스트랩
+
+```bash
+# (1) 0003 까지 마이그레이션 적용
+python -m scripts.migrate upgrade --to head
+
+# (2) admin 계정 생성 (Phase B 절차 그대로)
+ADMIN_PASSWORD='S3cret!' python -m scripts.create_admin --username admin
+
+# (3) AUTH_ENABLED=true + JWT_SECRET 설정 (운영 전환 시)
+echo 'AUTH_ENABLED=true' >> .env
+echo 'JWT_SECRET=...32바이트이상...' >> .env
+```
+
+### 19.2 dev (AUTH_ENABLED=false) smoke
+
+```bash
+# 빈 목록 (user_id=1 dev fallback)
+curl -s http://localhost:8000/api/watchlists | jq
+
+# watchlist 생성
+curl -sX POST http://localhost:8000/api/watchlists \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"단기","is_default":true}' | jq
+
+# 종목 추가 (symbol normalize: "  005930 " → "005930")
+curl -sX POST http://localhost:8000/api/watchlists/1/items \
+  -H 'Content-Type: application/json' \
+  -d '{"symbol":"  005930 ","memo":"메모"}' | jq
+
+# 상세 조회
+curl -s http://localhost:8000/api/watchlists/1 | jq
+
+# 종목 제거 (path symbol 도 normalize)
+curl -sX DELETE http://localhost:8000/api/watchlists/1/items/005930 | jq
+```
+
+### 19.3 prod (AUTH_ENABLED=true) smoke
+
+```bash
+TOKEN=$(curl -sX POST http://localhost:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"S3cret!"}' | jq -r .access_token)
+
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/watchlists | jq
+
+# 토큰 없으면 401 + WWW-Authenticate: Bearer
+curl -sI http://localhost:8000/api/watchlists | head -3
+```
+
+### 19.4 보안 회귀 점검 항목
+
+응답 / 로그 / DB row 어디에도 다음 토큰이 보이면 **즉시 보고**:
+
+- `password` / `password_hash` / `scrypt$...`
+- `token` / `secret` / `jwt_secret`
+- `broker` / `account` / `quantity` / `order_price` / `order_type` / `side`
+- `source_file_path`
+- 평문 IP (예: `192.168.1.10`) — `source_ip_hash` 의 64자 hex 만 허용
+- 평문 User-Agent — `user_agent_hash` 의 64자 hex 만 허용
+
+Phase C 의 `tests/integration/test_watchlist_routes.py::test_response_never_leaks_password_hash_or_token`
+가 raw response JSON 트리에서 위 토큰 0건을 단언한다 — CI 가 자동 가드.
+
+### 19.5 cross-user 격리 점검
+
+```bash
+# bob 토큰으로 alice 의 watchlist 조회 시 404 (403 아님)
+ALICE_TOKEN=$(... alice 로그인 ...)
+BOB_TOKEN=$(... bob 로그인 ...)
+ALICE_WL=$(curl -s -H "Authorization: Bearer $ALICE_TOKEN" \
+  -X POST http://localhost:8000/api/watchlists \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"alice-list"}' | jq -r .id)
+
+# bob 이 alice 의 watchlist 에 접근 시도 → 404
+curl -sI -H "Authorization: Bearer $BOB_TOKEN" \
+  http://localhost:8000/api/watchlists/$ALICE_WL | head -2
+```
+
+### 19.6 Phase C 안전 가드
+
+- Watchlist 외 도메인 POST/PUT/DELETE 0건 — Phase C 가 도입한 라우터는
+  Watchlist 5건뿐
+- `app/api/watchlist_routes.py`, `app/data/repositories/watchlists.py`,
+  `app/data/repositories/watchlist_items.py` 어디에도 KIS / DART / RSS /
+  Telegram / Broker / 자동매매 import 0건
+- ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine
+  / CostModel / regime_split / 기존 read-only GET 라우터 동작 변경 0건
+- `WatchlistItem` ORM 컬럼에 broker / account / quantity / order_* / 가격
+  필드 0건 (회귀 단언:
+  `test_no_order_or_quantity_columns_on_watchlist_item`)
+- request body 의 `user_id` 는 schema 에서 정의되지 않아 자동 drop —
+  spoofing 시도 가드 (`test_request_body_user_id_is_ignored`)
+- alembic head = `0003_watchlist`, `compare_metadata` diff 0건 유지

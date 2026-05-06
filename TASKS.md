@@ -847,19 +847,26 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - 안전 범위: 자동매매 0건, 실 외부 API (KIS / DART / RSS / Telegram) 호출 0건, scheduler job 0건, ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine / CostModel / regime_split 변경 0건. 기존 read-only GET 라우터 동작 변경 0건 (AUTH_ENABLED=true 모드에서도 그대로 OPEN). POST 라우터 5건 → **3건만** (`/api/auth/login` + `/api/auth/logout` + `/api/auth/me` 는 GET 이므로 POST 2건). Watchlist 라우터 0건 (Phase C). 평문 IP / 평문 user agent / 평문 password 저장 0건
 - 완료 기준: backend pytest **698 → 760 passed (+62)** (1 deselected 그대로), `AUTH_ENABLED=false` 모드에서 기존 v0.7 회귀 테스트 100% 그대로 통과, alembic head = `0002_auth_foundation`, compare_metadata diff 0건. 태그 `v0.8-auth-foundation`.
 
-### Phase C — Watchlist DB / API
+### Phase C — Watchlist DB / API ✅ 인수
 
-- [ ] `app/db/models.py` — `Watchlist` 신규 (30번째 테이블) + `WatchlistItem` 신규 (31번째 테이블, ON DELETE CASCADE)
-- [ ] `app/data/repositories/watchlists.py` 신규 — `WatchlistRepository` (create / get_by_id / list_by_user / get_or_create_default)
-- [ ] `app/data/repositories/watchlist_items.py` 신규 — `WatchlistItemRepository` (create / list_by_watchlist / get_by_symbol / delete_by_symbol)
-- [ ] `app/api/routes.py` — `GET /api/watchlists` (목록, 인증 필수) + `GET /api/watchlists/{id}/items` (목록, 인증 필수) + `POST /api/watchlists/{id}/items` (추가, `require_auth` 가드, body `{symbol, memo?}`) + `DELETE /api/watchlists/{id}/items/{symbol}` (삭제, `require_auth` 가드)
-- [ ] `app/api/schemas.py` — `WatchlistSchema` / `WatchlistItemSchema` / `WatchlistItemAddRequest` (`symbol` + optional `memo` ≤500자) / `WatchlistsResponse` 신규
-- [ ] `alembic/versions/0003_watchlist.py` 신규 — Watchlist + WatchlistItem 테이블 생성
-- [ ] `tests/integration/test_watchlist_routes.py` 신규 — list happy / list 401 (auth on, no token) / list bypass (auth off) / add happy / add invalid symbol / add duplicate (UniqueConstraint) / add 401 / add memo > 500자 거부 / delete happy / delete missing / delete 401 / forbidden 키 미노출 (broker / account / quantity / order_*) / source_file_path 미노출
-- [ ] `DB_SCHEMA.md` §30 / §31 신규 — Watchlist + WatchlistItem 컬럼 + Unique + Cascade + 정책
-- [ ] `API_SPEC.md` Watchlist 섹션 신규 — 4 라우터 + 인증 정책 + 응답 schema
-- 안전 범위: Watchlist 산식 / 점수 변경 0건. 알림 0건. 외부 호출 0건. 응답에 `broker` / `account` / `quantity` / `order_*` / `source_file_path` 0건 (e2e raw JSON 가드)
-- 완료 기준: backend pytest **~735 → ~770 (+~35)**, 회귀 0건. 태그 `v0.8-watchlist-api`.
+- [x] `app/db/models.py` — `Watchlist` 신규 (30번째 테이블, user_id FK + name + is_default + Unique(user_id, name) + User.watchlists relationship cascade) + `WatchlistItem` 신규 (31번째 테이블, watchlist_id FK ON DELETE CASCADE + symbol(32) index + memo(500) nullable + Unique(watchlist_id, symbol) + Watchlist.items cascade="all, delete-orphan")
+- [x] `app/db/__init__.py` — Watchlist + WatchlistItem re-export
+- [x] `app/data/repositories/watchlists.py` 신규 — `WatchlistRepository` (create / get_by_user_and_id / get_default_for_user / get_or_create_default / list_by_user / rename / set_default / delete) + 단일 default invariant 강제 (`_clear_default_for_user`) + ownership-scoped 조회만 노출 + `DEFAULT_WATCHLIST_NAME = "기본"`
+- [x] `app/data/repositories/watchlist_items.py` 신규 — `WatchlistItemRepository` (add_item / update_memo / remove_item / get_item / list_items / list_symbols / exists) + `normalize_symbol` (trim + UPPER + None / empty 거부) + `MAX_MEMO_LENGTH = 500` + `_validate_memo` defensive ValueError
+- [x] `app/data/repositories/__init__.py` — WatchlistRepository + WatchlistItemRepository import + export 추가
+- [x] `app/api/watchlist_routes.py` 신규 — 5 라우터 (`GET /api/watchlists` + `GET /api/watchlists/{id}` + `POST /api/watchlists` + `POST /api/watchlists/{id}/items` + `DELETE /api/watchlists/{id}/items/{symbol}`). 모두 `require_auth` 가드 + `_load_owned_watchlist` (cross-user 시 404). Pydantic schema 자체 정의 (WatchlistItemSchema / WatchlistSchema with item_count / WatchlistDetailSchema / WatchlistsResponse / CreateWatchlistRequest with name validator / CreateWatchlistItemRequest with symbol normalize + memo length validator / StatusResponse). symbol 은 stocks 테이블 존재 여부 확인 후 추가 (404 if missing)
+- [x] `app/api/__init__.py` — watchlist_router export 추가
+- [x] `app/main.py` — watchlist_router include
+- [x] `alembic/versions/0003_watchlist.py` 신규 — autogenerate 결과 (watchlists + watchlist_items op.create_table + 3 인덱스 + 2 unique constraint) + Phase C 정책 docstring (down_revision = `0002_auth_foundation`)
+- [x] `tests/integration/test_watchlist_repositories.py` 신규 — **27 케이스**: normalize_symbol (4 parametrize + 2 edge), WatchlistRepository (10 — create / list_by_user 정렬 / get_default / get_or_create_default 멱등 / Unique IntegrityError / set_default demote / create+is_default demote / cross-user 격리 (get_by_user_and_id None) / list_by_user 격리 / cascade delete), WatchlistItemRepository (12 — symbol normalize / Unique 후 collide / 다른 watchlist 같은 symbol OK / memo limit / over / remove True/False / remove normalize / list_items / list_symbols / update_memo / **broker / account / quantity / order_* / 가격 컬럼 0건 단언**)
+- [x] `tests/integration/test_watchlist_routes.py` 신규 — **19 케이스**: AUTH_ENABLED=false 12 (list / create + 중복 409 + 빈 name 422 + is_default 단일 invariant / detail + 404 / item create + symbol normalize + 중복 409 + unknown symbol 404 + memo over 422 / delete + path symbol normalize + 404 missing) / AUTH_ENABLED=true 4 (token 없음 401 + WWW-Authenticate Bearer / valid token 200 / **cross-user 404 (GET + POST + DELETE)** / **request body user_id 무시 (spoofing 가드)**) / 보안 3 (`_assert_no_forbidden_fields` recursive 스캔 — broker / account / quantity / order_* / source_file_path / password_hash / token / secret / jwt_secret / scrypt$ 0건)
+- [x] `tests/integration/test_alembic_migration.py` 갱신 — `HEAD_REVISION = "0003_watchlist"` / `EXPECTED_TABLE_COUNT = 31` / spot-check 에 watchlists + watchlist_items 추가. `compare_metadata` diff 0건 단언 유지
+- [x] `API_SPEC.md` §18 신규 — Watchlist 5 라우터 + 인증 정책 + cross-user 404 정책 + forbidden 필드 + 응답 schema 예시 + Phase C 한계 (PUT / DELETE watchlist / 가격 alert 보류)
+- [x] `DB_SCHEMA.md` §30 / §31 신규 — Watchlist / WatchlistItem 컬럼 + Unique + Cascade + 정책 + 운영 마이그레이션 안내
+- [x] `INTEGRATION_RUNBOOK.md` §19 신규 (6 sub-section: 신규 환경 부트스트랩 / dev smoke / prod smoke / 보안 회귀 점검 / cross-user 격리 점검 / Phase C 안전 가드)
+- [x] `TESTING.md` §6.18 신규 — Repository 27 + API 19 + Alembic head 갱신 + 회귀 기준 (760 → 808)
+- 안전 범위: Watchlist 외 도메인 POST/PUT/DELETE 0건 (Phase C 도입 라우터 = Watchlist 5건만). 자동매매 / 실 외부 API 호출 / scheduler 0건. ScoringEngine / RecommendationEngine / HoldingCheckEngine / BacktestEngine / CostModel / regime_split 변경 0건. 기존 read-only GET 라우터 동작 변경 0건. WatchlistItem ORM 컬럼에 broker / account / quantity / order_* / 가격 필드 0건 (회귀 단언). request body 의 `user_id` 자동 drop (spoofing 가드)
+- 완료 기준: backend pytest **760 → 808 passed (+48)** (1 deselected 그대로), alembic head = `0003_watchlist`, compare_metadata diff 0건. 태그 `v0.8-watchlist-api`.
 
 ### Phase D — Watchlist 프런트 + Today / StockDetail 통합
 

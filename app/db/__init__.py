@@ -21,6 +21,8 @@ from app.db.models import (
     StockUniverse,
     StockUniverseMember,
     User,
+    Watchlist,
+    WatchlistItem,
 )
 
 __all__ = [
@@ -44,4 +46,6 @@ __all__ = [
     "StockUniverse",
     "StockUniverseMember",
     "User",
+    "Watchlist",
+    "WatchlistItem",
 ]

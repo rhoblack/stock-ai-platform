@@ -649,6 +649,74 @@ Phase B 가 새 head 를 layering 했으므로 Phase A 의 single-head 단언이
 - frontend / build / e2e 변경 0건 (Phase B 는 백엔드 + CLI 만; 프런트 로그인
   화면은 Phase D 후보).
 
+## 6.18 v0.8 Phase C — Watchlist DB/API 테스트
+
+총 **48 케이스 (+ alembic spot-check 2 추가)**. v0.8 Phase B 위에 도입된 Watchlist
+도메인 (`Watchlist` 30번째 + `WatchlistItem` 31번째 + GET/POST/DELETE 5 라우터 +
+require_auth 가드 + symbol normalize + cross-user isolation) 을 다층 검증.
+
+### 6.18.1 Repository — `tests/integration/test_watchlist_repositories.py` (27 케이스)
+
+in-memory SQLite + `PRAGMA foreign_keys=ON` + `Base.metadata.create_all`.
+
+- **normalize_symbol** (4 parametrize + 2 edge): trim + UPPER, 빈 / None 거부
+- **WatchlistRepository** (10): create / list_by_user (default 우선 정렬) /
+  get_default_for_user / get_or_create_default 멱등 / Unique(user_id, name)
+  IntegrityError / set_default 가 이전 default demote / create with
+  is_default 도 demote / **다른 user 의 watchlist 격리** (get_by_user_and_id 가
+  None) / list_by_user 격리 / cascade delete 가 items 모두 제거
+- **WatchlistItemRepository** (12): symbol normalize 적용 / Unique(watchlist_id,
+  symbol) (normalize 후 collide) / 다른 watchlist 에 같은 symbol OK / memo 길이
+  500 (limit / over) / remove_item True/False / remove_item 도 normalize /
+  list_items id 정렬 / list_symbols 알파벳 정렬 / update_memo / **broker /
+  account / quantity / order_* / 가격 컬럼 0건 단언** (회귀 가드)
+
+### 6.18.2 API — `tests/integration/test_watchlist_routes.py` (19 케이스)
+
+FastAPI TestClient + dependency override + in-memory SQLite +
+`PRAGMA foreign_keys=ON`. 두 운영 모드 + cross-user + spoofing 모두 커버.
+
+**AUTH_ENABLED=false (dev / CI)** (12):
+
+- 빈 목록 / create + list / 중복 name 409 / 빈 name 422 /
+  is_default=true 두 번 → 단일 default invariant / 상세 + items / 404 missing /
+  POST item with normalize ("aapl" → "AAPL") / 중복 symbol 409 / unknown symbol
+  404 / memo 500자 초과 422 / DELETE item 성공 / DELETE path symbol normalize /
+  DELETE missing 404
+
+**AUTH_ENABLED=true** (4):
+
+- list 토큰 없음 / 무효 토큰 → 401 + `WWW-Authenticate: Bearer`
+- 유효 토큰 → 200
+- **cross-user 404**: bob 의 watchlist 에 alice 토큰으로 접근 시도 (GET / POST
+  item / DELETE item) 모두 404 — 403 아님, ownership 노출 0건
+- **request body user_id 무시**: `{"name":"spoof", "user_id": <bob_id>}` 페이로드
+  를 alice 토큰으로 보내도 alice 가 owner
+
+**보안 가드** (3):
+
+- `test_response_never_leaks_password_hash_or_token` — 모든 응답 (list / create
+  / detail / item create) 을 recursive 로 스캔, forbidden 토큰 (broker / account
+  / quantity / order_* / source_file_path / password_hash / token / secret /
+  jwt_secret) 0건 + scrypt$ string 0건
+- `test_request_body_user_id_is_ignored` (spoofing 가드)
+
+### 6.18.3 Alembic head 갱신 — `tests/integration/test_alembic_migration.py`
+
+Phase C 가 새 head 를 layering 했으므로:
+
+- `HEAD_REVISION = "0003_watchlist"` (0002 → 0003)
+- `EXPECTED_TABLE_COUNT = 31` (29 → 31)
+- spot-check parametrize 에 `watchlists` + `watchlist_items` 2건 추가 (11 → 13)
+- `compare_metadata` diff 0건 단언 그대로 (load-bearing 가드)
+
+### 6.18.4 회귀 기준
+
+- backend pytest **760 → 808 passed (+48)** (1 deselected 그대로)
+- 신규 alembic head = `0003_watchlist` — CI 의 `alembic upgrade head` step 자동 검증
+- frontend / build / e2e 변경 0건 (Phase C 는 백엔드만; 프런트 Watchlist 화면 / Login
+  화면 / StockDetail 별 토글은 Phase D 후보)
+
 ## 7. 금지 사항
 
 테스트에서 절대 금지:

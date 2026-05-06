@@ -41,10 +41,10 @@ from app.db import models  # noqa: F401  -- ensure all 27 ORM classes register
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"
 BASELINE_REVISION = "0001_baseline_v0_7"
-# v0.8 Phase B introduces the second revision. ``HEAD_REVISION`` is what
+# v0.8 Phase C introduces the third revision. ``HEAD_REVISION`` is what
 # ``alembic upgrade head`` should land on; new revisions update this constant.
-HEAD_REVISION = "0002_auth_foundation"
-EXPECTED_TABLE_COUNT = 29  # 27 baseline + 2 from 0002 (users + login_audit_logs)
+HEAD_REVISION = "0003_watchlist"
+EXPECTED_TABLE_COUNT = 31  # 27 baseline + 2 from 0002 + 2 from 0003
 SPOT_CHECK_TABLES = (
     # v0.1 backend
     "stocks",
@@ -64,6 +64,9 @@ SPOT_CHECK_TABLES = (
     # v0.8 Phase B auth foundation
     "users",
     "login_audit_logs",
+    # v0.8 Phase C watchlist
+    "watchlists",
+    "watchlist_items",
 )
 
 
@@ -289,6 +292,9 @@ def test_offline_mode_emits_sql_without_connecting(tmp_path: Path) -> None:
         # v0.8 Phase B auth foundation
         "users",
         "login_audit_logs",
+        # v0.8 Phase C watchlist
+        "watchlists",
+        "watchlist_items",
     ],
 )
 def test_spot_check_each_required_table_present(

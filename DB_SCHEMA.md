@@ -1,11 +1,14 @@
 # DB_SCHEMA.md
 
-> 본 문서는 **v0.8 Phase B 시점** 기준이다 (`v0.7-final` 위에 Alembic baseline
-> + auth foundation 도입 완료). 누적 29 테이블 (v0.1 17 + v0.4 6 + v0.6 2 +
-> v0.7 2 + v0.8 2). 자동매매 / 주문 / 계좌 / 가격 / 수량 컬럼 0건 정책 그대로
-> 유지. v0.8 Phase B 가 도입한 `users.password_hash` 는 scrypt 해시만 저장
-> (평문 0건). `login_audit_logs.source_ip_hash` / `user_agent_hash` 는 SHA256
-> 해시만 저장 (평문 IP / user agent 0건).
+> 본 문서는 **v0.8 Phase C 시점** 기준이다 (`v0.7-final` 위에 Alembic baseline
+> + auth foundation + watchlist 도입 완료). 누적 31 테이블 (v0.1 17 + v0.4 6 +
+> v0.6 2 + v0.7 2 + v0.8 4). 자동매매 / 주문 / 계좌 / 가격 / 수량 컬럼 0건
+> 정책 그대로 유지. v0.8 Phase B 가 도입한 `users.password_hash` 는 scrypt
+> 해시만 저장 (평문 0건). `login_audit_logs.source_ip_hash` /
+> `user_agent_hash` 는 SHA256 해시만 저장 (평문 IP / user agent 0건). v0.8
+> Phase C 의 `watchlist_items` 는 broker / account / quantity / order_* /
+> source_file_path 컬럼 0건 (favourite 만, 주문 아님 — `WatchlistItem.__table__`
+> 컬럼 가드 단언이 회귀 방지).
 >
 > **v0.8 부터 Alembic 으로 관리한다.** 27 테이블의 baseline revision 은
 > `alembic/versions/0001_baseline_v0_7.py`. 이후 모든 ORM 변경은 신규 revision
@@ -734,3 +737,52 @@ LOGIN_SUCCESS / LOGIN_FAILED / LOGOUT 이벤트 append-only 감사 로그.
 > layering — `alembic upgrade head` 한 번이면 적용. 기존 운영 DB 가 baseline 만
 > stamp 된 상태라면 `alembic upgrade head` 가 0002 만 실제 실행 (INTEGRATION_RUNBOOK
 > §17.5 절차).
+
+## 30. watchlists (v0.8 Phase C)
+
+사용자별 관심종목 묶음. 한 user 가 여러 watchlist 를 가질 수 있고, 그 중 최대
+하나만 `is_default = True` (단일-default invariant 는 `WatchlistRepository` 가
+강제 — DB CHECK 가 아닌 application 레벨 보장).
+
+| 컬럼 | 설명 |
+|---|---|
+| id | PK |
+| user_id | FK → users.id, NOT NULL, index |
+| name | String(64) NOT NULL — 빈 문자열 금지 (API validator) |
+| is_default | Boolean NOT NULL default false — 같은 user 내 단일 default |
+| created_at / updated_at | TimestampMixin |
+
+**Unique**: `(user_id, name)` — 같은 user 가 동일 이름 watchlist 둘 만들지 못함.
+**Index**: `user_id` (사용자별 조회).
+
+**관계**: `User.watchlists` ← Watchlist (1:N) / `Watchlist.items` ←
+WatchlistItem (1:N, ON DELETE CASCADE 는 application + DB 양쪽).
+
+## 31. watchlist_items (v0.8 Phase C)
+
+특정 watchlist 안에 포함된 종목 + 운영자 메모. **broker / account / quantity /
+order_price / order_type / side / buy_price / sell_price 컬럼 0건** — Watchlist
+는 즐겨찾기지 주문이 아니다 (회귀 단언:
+`tests/integration/test_watchlist_repositories.py::test_no_order_or_quantity_columns_on_watchlist_item`).
+
+| 컬럼 | 설명 |
+|---|---|
+| id | PK |
+| watchlist_id | FK → watchlists.id ON DELETE CASCADE, NOT NULL, index |
+| symbol | String(32) NOT NULL index — `app.data.repositories.watchlist_items.normalize_symbol` 가 trim + UPPER 보장 |
+| memo | String(500) nullable — 500자 이하, API validator + Repository defensive ValueError |
+| created_at / updated_at | TimestampMixin |
+
+**Unique**: `(watchlist_id, symbol)` — 같은 watchlist 에 동일 symbol 중복 금지.
+**Index**: `watchlist_id`, `symbol`.
+
+**Cascade**: Watchlist 삭제 시 자동 drop (DB FK ON DELETE CASCADE + ORM
+`cascade="all, delete-orphan"`). SQLite 는 `PRAGMA foreign_keys=ON` 필요 —
+테스트 fixture 가 이를 보장한다.
+
+> **운영 환경 마이그레이션 (v0.8 Phase C)**: Alembic revision `0003_watchlist`
+> 가 두 테이블 생성. v0.8 Phase B 의 `0002_auth_foundation` 위에 layering —
+> `alembic upgrade head` 한 번이면 적용. 기존 운영 DB 가 baseline + auth 까지
+> 적용된 상태라면 `alembic upgrade head` 가 0003 만 실제 실행
+> (INTEGRATION_RUNBOOK §17.5 절차). 다운그레이드 (`alembic downgrade -1`) 는
+> watchlists / watchlist_items 만 drop, auth 테이블은 보존.

@@ -1,17 +1,20 @@
 # API_SPEC.md
 
-> 본 문서는 **v0.8 Phase B 시점** 기준이다 (`v0.8-auth-foundation` 누적).
+> 본 문서는 **v0.8 Phase C 시점** 기준이다 (`v0.8-watchlist-api` 누적 예정).
 > v0.5 §14 테마 + v0.6 §15 재무·실적 + v0.7 §16 백테스트 + v0.8 §17 인증 +
-> 추천 / 보유 evidence 화이트리스트 + Strategy / Backtest 응답에 broker / 주문
-> 필드 0건 가드가 모두 반영되어 있다.
+> v0.8 §18 Watchlist + 추천 / 보유 evidence 화이트리스트 + Strategy /
+> Backtest 응답에 broker / 주문 필드 0건 가드가 모두 반영되어 있다.
 
 FastAPI 기반 PC 대시보드 API 명세이다.
 
 v0.1 ~ v0.7 모든 사이클의 API는 조회 중심이었다 (read-only GET 만). v0.8 Phase
 B 에서 단일 사용자 인증 도메인 한정으로 **POST 라우터 첫 도입** —
-`POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` 3건. 그
-외 도메인 (recommendations / holdings / backtest / 잡 트리거 / 알림 / 점수 등)
-은 여전히 read-only GET 만. 실거래 주문 API는 구현하지 않는다.
+`POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` 3건.
+v0.8 Phase C 에서 **Watchlist 도메인 한정으로 POST/DELETE 추가** —
+`GET/POST /api/watchlists` / `GET /api/watchlists/{id}` / `POST/DELETE
+/api/watchlists/{id}/items[/{symbol}]` 5건. 그 외 도메인 (recommendations /
+holdings / backtest / 잡 트리거 / 알림 / 점수 등) 은 여전히 read-only GET 만.
+실거래 주문 API는 구현하지 않는다.
 
 v0.7 마감 시점 기준으로 23+ GET 라우터가 `app/api/routes.py`에 구현되어 있고
 [Pydantic schema](app/api/schemas.py)는 risk_summary, risk_level, risk_flags,
@@ -724,6 +727,138 @@ secret 으로 동작). `true` 시 `JWT_SECRET` 미설정이면 startup 거부 (`
 - 평문 IP / 평문 user agent 0건 (audit row 의 `source_ip_hash` /
   `user_agent_hash` 만, 라우터에서 schema 화 안 함)
 
+## 18. Watchlist (v0.8 Phase C)
+
+Watchlist 도메인 한정으로 read/write API. 5 라우터 모두 `require_auth` 가드를
+거치며, 사용자별 데이터 격리는 라우터 레이어에서 `user_id` 기준으로 강제한다.
+
+**인증 정책**:
+
+- `AUTH_ENABLED=true`: Bearer token 필수. 401 + `WWW-Authenticate: Bearer`
+- `AUTH_ENABLED=false` (dev / CI default): `require_auth` 가 dev fallback
+  identity 로 해석 (user_id=1) — 기존 read-only 흐름 유지
+- 다른 user 의 watchlist 에 접근 시 모두 **404** (403 아님 — 존재 여부 노출 0건)
+- request body 에 `user_id` 포함 0건. 항상 token / dev context 에서 결정
+
+**금지 필드 (응답)**:
+
+- `broker` / `account` / `quantity` / `order_price` / `order_type` / `side` /
+  `buy_price` / `sell_price` 0건 (WatchlistItem ORM column 자체 부재)
+- `source_file_path` / `password_hash` / `password` / `scrypt$...` /
+  `token` / `secret` / `jwt_secret` 0건
+
+### GET /api/watchlists
+
+응답 (200):
+
+```json
+{
+  "watchlists": [
+    {
+      "id": 1,
+      "name": "기본",
+      "is_default": true,
+      "item_count": 3,
+      "created_at": "2026-05-06T00:00:00+00:00",
+      "updated_at": "2026-05-06T00:00:00+00:00"
+    }
+  ]
+}
+```
+
+- 정렬: `is_default desc, id asc`
+- 401 (auth on, token 없음 / 무효 / 만료)
+
+### GET /api/watchlists/{watchlist_id}
+
+응답 (200): 위 schema 에 `items: [WatchlistItemSchema]` 추가
+
+```json
+{
+  "id": 1,
+  "name": "기본",
+  "is_default": true,
+  "item_count": 2,
+  "created_at": "...",
+  "updated_at": "...",
+  "items": [
+    {
+      "id": 10,
+      "symbol": "005930",
+      "memo": "삼전 메모",
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ]
+}
+```
+
+- 404: 존재하지 않거나 다른 user 소유 (둘 다 동일 응답)
+- 401: auth on + token 없음
+
+### POST /api/watchlists
+
+요청:
+
+```json
+{ "name": "단기", "is_default": false }
+```
+
+응답 (201): `WatchlistSchema` (위와 동일, `item_count = 0`)
+
+- 422: name 빈 문자열 / 64자 초과
+- 409: 같은 user 의 동일 name 중복
+- `is_default=true` 이면 같은 user 의 기존 default 자동 demote (단일 default invariant)
+- 401: auth on + token 없음
+
+### POST /api/watchlists/{watchlist_id}/items
+
+요청:
+
+```json
+{ "symbol": "005930", "memo": "장기 보유 후보" }
+```
+
+응답 (201):
+
+```json
+{
+  "id": 10,
+  "symbol": "005930",
+  "memo": "장기 보유 후보",
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+- symbol 은 자동 normalize (trim + uppercase) — `"  aapl "` → `"AAPL"`
+- 404 (1): watchlist 존재 X 또는 다른 user 소유
+- 404 (2): symbol 이 `stocks` 테이블에 없음 (`symbol not found in stocks`)
+- 409: 동일 watchlist 에 이미 같은 symbol 존재
+- 422: memo 500자 초과 / symbol 빈 문자열
+- 401: auth on + token 없음
+
+### DELETE /api/watchlists/{watchlist_id}/items/{symbol}
+
+응답 (200):
+
+```json
+{ "status": "ok" }
+```
+
+- symbol path parameter 도 자동 normalize
+- 404 (1): watchlist 존재 X 또는 다른 user 소유
+- 404 (2): item 이 watchlist 에 없음
+- 401: auth on + token 없음
+
+### Phase C 한계 / 보류
+
+- `DELETE /api/watchlists/{id}` (watchlist 자체 삭제) — Phase C 보류, v0.9 후보
+- `PUT /api/watchlists/{id}` (rename / set_default) — Phase C 보류, v0.9 후보
+- `PUT /api/watchlists/{id}/items/{symbol}` (memo 수정) — Phase C 보류
+- 가격 / 등락률 / 점수 join — 별도 GET 라우터 호출로 클라이언트 측 결합 (Phase D 프런트)
+- 알림 / 가격 트리거 — 별도 알림 cycle 후보 (v0.9+)
+
 ## 금지 API
 
 v0.1 ~ v0.8 모든 cycle 에서 다음 API 는 만들지 않는다.
@@ -739,5 +874,8 @@ POST /api/backtest/runs              # 백테스트 시작 = v0.9+ 후보
 DELETE /api/recommendations/{id}     # 운영자 재정의 = 권한 검토 필요
 ```
 
-v0.8 Phase B 가 도입한 POST 는 `/api/auth/login` + `/api/auth/logout` 2건뿐이다.
-Watchlist (`/api/watchlists/...`) 는 Phase C 후보 — Phase B 에서는 도입하지 않는다.
+v0.8 누적 도입 POST/DELETE 는 인증 도메인 (`/api/auth/login` + `/api/auth/logout`) +
+Watchlist 도메인 (`POST /api/watchlists` + `POST /api/watchlists/{id}/items` +
+`DELETE /api/watchlists/{id}/items/{symbol}`) **5건** 뿐. 그 외 도메인
+(Recommendations / Holdings / Backtest / Jobs / Notifications / Scoring)
+POST/PUT/DELETE 는 v0.8 cycle 에서도 추가하지 않는다.

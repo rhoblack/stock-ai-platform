@@ -35,6 +35,8 @@ from app.data.repositories.stock_universes import (
 )
 from app.data.repositories.theme_stock_mappings import ThemeStockMappingRepository
 from app.data.repositories.users import UserRepository
+from app.data.repositories.watchlist_items import WatchlistItemRepository
+from app.data.repositories.watchlists import WatchlistRepository
 
 __all__ = [
     "AnalystReportRepository",
@@ -66,4 +68,6 @@ __all__ = [
     "StockUniverseRepository",
     "ThemeStockMappingRepository",
     "UserRepository",
+    "WatchlistItemRepository",
+    "WatchlistRepository",
 ]
