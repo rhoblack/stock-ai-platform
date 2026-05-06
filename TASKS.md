@@ -984,7 +984,7 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] `frontend/src/tests/WatchlistManage.test.tsx` 신규 (21 tests — rename/409/cancel, set-default, delete/404, memo/422/cancel, filter, forbidden fields)
 - [x] `frontend/src/tests/UserPreferences.test.tsx` 신규 (15 tests — Settings preference GET/PUT, TodayReport watchlist, FavoriteButton preference)
 - [x] vitest **146 passed** / build 그린 / tsc 오류 0건
-- [ ] tag `v0.9-frontend` + push
+- [x] tag `v0.9-frontend` + push (commit `cfa6f2c`)
 
 ### Phase E: 마감 (문서)
 
