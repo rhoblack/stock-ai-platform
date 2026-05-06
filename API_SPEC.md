@@ -1,11 +1,15 @@
 # API_SPEC.md
 
+> 본 문서는 **v0.6 마감 시점** 기준이다 (`v0.6-frontend-fundamentals` 누적,
+> `v0.6-final` 마감 예정). v0.5 §14 테마 + v0.6 §15 재무·실적 + 추천 / 보유
+> evidence 화이트리스트가 모두 반영되어 있다.
+
 FastAPI 기반 PC 대시보드 API 명세이다.
 
-v0.1 API는 조회 중심이다.  
-실거래 주문 API는 구현하지 않는다.
+v0.1 ~ v0.6 모든 사이클의 API는 조회 중심이다 (read-only GET 만, POST / PUT /
+DELETE 0건). 실거래 주문 API는 구현하지 않는다.
 
-Phase 7 기준 13개 GET 라우터가 `app/api/routes.py`에 구현되어 있고
+v0.6 마감 시점 기준으로 20+ GET 라우터가 `app/api/routes.py`에 구현되어 있고
 [Pydantic schema](app/api/schemas.py)는 risk_summary, risk_level, risk_flags,
 decision, alert 정보를 응답에 포함한다. Decimal 컬럼은 정밀도 보존을 위해
 JSON에 모두 문자열로 직렬화된다 (예: `total_score: "82.0000"`).

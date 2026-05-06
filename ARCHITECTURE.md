@@ -1,11 +1,14 @@
 # Architecture
 
-> 본 문서는 **v0.5 마감 시점** 기준으로 갱신된다 (`v0.5-frontend-themes` 태그
-> 누적, `v0.5-final` 마감 예정). v0.1 Backend → v0.2 Frontend → v0.3
-> Analysis/Ops → v0.4 Analyst & Theme Intelligence → v0.5 News·공시·테마 랭킹이
-> 모두 누적된 상태의 시스템 구조를 반영한다. v0.5 의 News / Disclosure 데이터
-> 라인은 `app/data/collectors/` 하위에 흡수되어 별도 layer 신설 없이 기존 Data
-> Layer 가 확장되었다.
+> 본 문서는 **v0.6 마감 시점** 기준으로 갱신된다 (`v0.6-frontend-fundamentals` 태그
+> 누적, `v0.6-final` 마감 예정). v0.1 Backend → v0.2 Frontend → v0.3
+> Analysis/Ops → v0.4 Analyst & Theme Intelligence → v0.5 News·공시·테마 랭킹 →
+> v0.6 Fundamental & Earnings Intelligence 가 모두 누적된 상태의 시스템 구조를
+> 반영한다. v0.5 의 News / Disclosure 데이터 라인은 `app/data/collectors/` 하위에,
+> v0.6 의 Fundamental / Earnings 데이터 라인은 `app/data/importers/` +
+> `app/data/repositories/` 하위에 흡수되어 별도 layer 신설 없이 기존 Data Layer +
+> Analysis Layer (Score Producer composition) + API Layer (read-only GET 3종 +
+> evidence 화이트리스트) 가 확장되었다.
 
 ## 1. 핵심 흐름
 
