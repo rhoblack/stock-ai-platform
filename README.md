@@ -4,38 +4,40 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.6 Fundamental & Earnings Intelligence — 마감 완료.**
-> 현재 누적 인수 태그는 `v0.6-frontend-fundamentals`이며, 최종 마감 태그는
-> `v0.6-final` 예정이다. v0.6은 운영자 수동 CSV import 기반의 재무 / 실적 데이터
-> 라인 (`fundamental_snapshots` 24번째 + `earnings_events` 25번째 테이블) 첫
-> 도입, `fundamental_score` (가중치 15%) + HoldingCheckEngine 의 `earnings_score`
-> placeholder 의 첫 real 화 (`RealFundamentalScoreProducer` +
-> `RealEarningsScoreProducer`), 백엔드 read-only API 3종 (`/api/stocks/{symbol}/fundamentals`
-> + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`), StockDetail 의
-> 재무 / 실적 두 카드 + Today 의 다가오는 실적 카드 + Recommendations / Holdings
-> evidence cell 추가를 진행한 사이클이다. 추천 / 보유 응답에는 `fundamental_evidence` /
-> `earnings_evidence` 가 명시 nullable 필드로 노출된다 (라우터 단계 화이트리스트
-> 통과, 본문 / `source_file_path` 0건).
+> **v0.7 Strategy & Backtest Foundation — 마감 완료.**
+> 현재 누적 인수 태그는 `v0.7-frontend-backtest`이며, 최종 마감 태그는
+> `v0.7-final` 예정이다. v0.7은 v0.1~v0.6 누적 추천 판단 축 위에
+> `StrategyInterface` ABC + 룰 기반 전략 3종 (`TopGradeStrategy` /
+> `HighScoreStrategy` / `MultiSignalStrategy`), `BacktestEngine` +
+> `BacktestRun` (26번째) + `BacktestResult` (27번째) 신규 테이블,
+> `CostModel` placeholder (총 0.33% 차감) + `assign_regime` 시장 국면별 분리,
+> 백엔드 read-only API 3종 (`/api/strategies` + `/api/backtest/runs` +
+> `/api/backtest/runs/{run_id}`), 프런트 10번째 화면 `/backtest` (Sidebar
+> `백테스트 (β)`) 를 추가한 사이클이다. **`StrategySignal` 은 분석 신호이지
+> 매매 주문이 아니다** — `app/strategy/` + `app/backtest/` 어디에도 broker /
+> quantity / order_price / account / order_type / side 필드 / 호출 0건 (grep 가드 +
+> 단위 테스트 명시 단언).
 >
-> 최신 통과 회귀 게이트 — **백엔드 pytest 558 / frontend vitest 77 / Playwright e2e 13 /
-> build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO / POST
-> 트리거 UI 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface`
-> 는 ABC placeholder 만 유지). 자세한 정책은 [`AGENTS.md`](./AGENTS.md) /
+> 최신 통과 회귀 게이트 — **백엔드 pytest 682 (1 deselected) / frontend vitest 84 /
+> Playwright e2e 14 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
+> SMALL_AUTO / POST 트리거 UI 는 모든 사이클에서 코드 일체 포함하지 않습니다
+> (`BrokerInterface` 는 ABC placeholder 만 유지). 백테스트 run 트리거도 화면이
+> 아니라 운영자 수동 CLI (`scripts/run_backtest.py --commit`) 에서만 가능 —
+> POST 도입은 v0.8 의 인증과 묶음. 자세한 정책은 [`AGENTS.md`](./AGENTS.md) /
 > [`ROADMAP.md`](./ROADMAP.md) 참조.
 >
-> **저작권 / 데이터 정책 (v0.4 + v0.5 + v0.6 누적)**: 리포트·뉴스·공시·재무·실적
+> **저작권 / 데이터 정책 (v0.4 + v0.5 + v0.6 + v0.7 누적)**: 리포트·뉴스·공시·재무·실적
 > 원문 본문 (paragraph) 저장 0건, PDF / Excel BLOB 저장 0건, 자동 크롤링 0건,
 > `source_file_path` 외부 노출 0건. 모든 DTO·ORM 어디에도 body / content /
 > full_text / paragraph_text / raw_text / 본문 / 원문 / 전문 13종 forbidden
-> 컬럼 없음 (단위 테스트가 명시 단언 + CSV importer 가 forbidden header 즉시
-> 거부). 수집 잡 (`collect_news` 19:00 KST / `collect_disclosures` 20:00 KST) +
-> 재무 / 실적 자동 fetch (`fundamental_collection_enabled` /
-> `earnings_collection_enabled`) 모두 default OFF — 운영자가 `.env` 에 명시
-> 설정 시에만 동작. v0.6 시점에서는 재무 / 실적 scheduler job 자체를 추가하지
-> 않았으므로 운영 default 영향 0건. DART API 자동 호출 0건 (1단계는 운영자
-> 수동 CSV 만, 실 provider 는 v0.7+ 후보). evidence 응답은 라우터 단계
-> 화이트리스트로 defense-in-depth 2단 검증 — `fundamental_evidence` 는 10 키 +
-> reason / `earnings_evidence` 는 8 키 + reason 만 노출.
+> 컬럼 없음. v0.7 의 `BacktestResult` 응답에도 broker / account / quantity /
+> order_price / order_type / side 6종 추가 forbidden 키워드 0건 노출 (e2e raw
+> JSON substring 단언). 외부 API 자동 호출 0건 (실 DART / RSS / 뉴스 / KIS 호출
+> 모두 v0.8+ 후보). `CostModel` 은 `constant-v1` placeholder 만 — 실 broker fee
+> schedule fetch 는 v0.8+ 후보, `cost_model_version` 이 응답에 함께 노출되어
+> 모델 변경 추적 가능. ScoringEngine 본 weight 변경 0건 (technical 35% / news
+> 25% / supply 15% / fundamental 15% / ai 10%) — `StrategyInterface` 는 평가만
+> 할 뿐 가중치를 바꾸지 않는다.
 >
 > **누적 인수 태그**: `v0.1-backend-final` → `v0.1-backend-kis-paper-verified`
 > → `v0.2-frontend-final` → `v0.3-phase-a-ci` → `v0.3-backend-analysis` →
@@ -44,9 +46,10 @@
 > `v0.4-frontend-reports` → `v0.4-final` →
 > `v0.5-news-collector` → `v0.5-disclosure-pipeline` → `v0.5-news-score` →
 > `v0.5-frontend-themes` → `v0.5-final` →
-> (v0.6 Phase A 별도 태그 부재, 커밋 `0d3dba5` + `da3567f` 로 추적) →
-> `v0.6-earnings-event-pipeline` → `v0.6-fundamental-score` →
-> **`v0.6-frontend-fundamentals`** → `v0.6-final` (예정).
+> `v0.6-fundamental-data-layer` → `v0.6-earnings-event-pipeline` →
+> `v0.6-fundamental-score` → `v0.6-frontend-fundamentals` → `v0.6-final` →
+> `v0.7-strategy-interface` → `v0.7-backtest-engine` → `v0.7-backtest-cost-regime`
+> → **`v0.7-frontend-backtest`** → `v0.7-final` (예정).
 >
 > 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
@@ -55,15 +58,17 @@
 > (v0.4 Analyst & Theme Intelligence, 382 / 60 / 9) /
 > [`RELEASE_NOTES_v0.5.md`](./RELEASE_NOTES_v0.5.md) (v0.5 News·공시·테마 랭킹, 481 / 68 / 11) /
 > [`RELEASE_NOTES_v0.6.md`](./RELEASE_NOTES_v0.6.md) (v0.6 Fundamental & Earnings,
-> **558 / 77 / 13**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.7 참조.
+> 558 / 77 / 13) /
+> [`RELEASE_NOTES_v0.7.md`](./RELEASE_NOTES_v0.7.md) (v0.7 Strategy & Backtest,
+> **682 / 84 / 14**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.8 참조.
 
 ## 1. 프로젝트 목표
 
 본 프로젝트는 **실거래 자동매매가 아닌 read-only 분석 / 추천 / 보유점검 +
 증권사 리포트·테마 인텔리전스 + News·공시 데이터 라인 + 재무·실적 인텔리전스 +
-대시보드** 플랫폼입니다.
+Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 
-현재까지 마감된 사이클 (v0.1 ~ v0.6) 의 누적 기능:
+현재까지 마감된 사이클 (v0.1 ~ v0.7) 의 누적 기능:
 
 - 한국투자증권 API 기반 read-only 데이터 수집
 - 시가총액 TOP 500 종목 유니버스 관리
@@ -90,10 +95,15 @@
 - **`fundamental_score` + `earnings_score` 첫 real 화** — `RealFundamentalScoreProducer` (composition 패턴, recommendation 가중치 15%) + `RealEarningsScoreProducer` (HoldingCheckEngine). 산식 모두 룰 기반, snapshot/event 부재 시 50 fallback. 본 weight 변경 0건 — v0.6
 - **재무 / 실적 read-only API 3종** — `GET /api/stocks/{symbol}/fundamentals` + `GET /api/stocks/{symbol}/earnings` + `GET /api/calendar/earnings` (모두 read-only, source_file_path 0건) — v0.6
 - **StockDetail 두 카드 + Today 한 카드 + Recommendations / Holdings evidence** — `FundamentalsCard` (PER/PBR/ROE/부채/배당/성장률 + history) + `EarningsCard` (BEAT/MEET/MISS tone-color badge + actual vs consensus + history) + `UpcomingEarningsCard` (limit 5) + `RecommendationsTable` 의 fund/earnings evidence cell + `RecentHoldingChecksCard` 의 earnings evidence 컬럼 + `HoldingCheckSchema` 의 evidence 3종 (v0.5 이연분 흡수) — v0.6
+- **`StrategyInterface` ABC + 룰 기반 전략 3종** — `TopGradeStrategy` / `HighScoreStrategy` / `MultiSignalStrategy` (모두 pure-function + `[0, 1]` confidence clamp + null/malformed evidence raise 0건). `StrategySignal` BUY/PASS/AVOID 는 분석 신호이지 매매 주문 아님 — `ScoreSnapshot` 에 broker / quantity / order 필드 0건 가드 — v0.7
+- **`BacktestEngine` + 신규 테이블 2개 (`backtest_runs` 26번째 + `backtest_results` 27번째)** — 과거 `recommendations` + `recommendation_results` 위에 전략을 replay 해서 승률 / 평균 수익률 / max drawdown 계산. BUY-only metrics 정책 + horizon 별 missing_result_count + cascade delete + `scripts/run_backtest.py` argparse CLI (default dry-run, `--commit` 시 적재) — v0.7
+- **`CostModel` placeholder + 시장 국면별 분리** — `total_cost = 0.33%` 차감 (`constant-v1`) + `assign_regime(session, signal_date)` (`MarketRegime.date <= signal_date` 가장 최근). `cost_adjusted_return_5d` / `regime` 컬럼 + `regime_breakdown` summary. 실 broker fee schedule fetch 는 v0.8+ 후보 — v0.7
+- **백엔드 백테스트 read-only API 3종** — `GET /api/strategies` (registry 기반, DB 0건) + `GET /api/backtest/runs?strategy=&limit=` + `GET /api/backtest/runs/{run_id}` (regime breakdown + cost_model_version + BUY-only notes) — v0.7
+- **프런트 10번째 화면 `/backtest` (Sidebar `백테스트 (β)`)** — 상단 전략 카드 grid + 중단 클릭 가능한 run 표 (전략 filter radiogroup) + 하단 detail 패널 (regime breakdown + 신호 row 표 + cost_model badge + BUY-only note). 자동매매 / order CTA 0건 — v0.7
 - data_snapshots / decision_logs / job_runs / notification_logs persistence
-- 테스트 가능한 구조 (backend pytest **558**, vitest **77**, e2e **13**, build)
+- 테스트 가능한 구조 (backend pytest **682**, vitest **84**, e2e **14**, build)
 
-## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.6 일관 정책)
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.7 일관 정책)
 
 다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
 별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.
@@ -118,6 +128,11 @@
 - **(v0.6)** 재무제표 PDF / Excel BLOB DB 저장
 - **(v0.6)** 재무 / 실적 자동 fetch default ON — `fundamental_collection_enabled` / `earnings_collection_enabled` 기본 false (v0.6 시점에서는 scheduler job 자체 미추가)
 - **(v0.6)** 추천 / 보유 산식 본 weight 변경 — `fundamental_score` 만 50 → real (가중치 15%), `earnings_score` 만 50 → real (가중치 그대로)
+- **(v0.7)** `StrategySignal` 을 매매 주문으로 사용 — 분석 신호 전용. `ScoreSnapshot` / `BacktestResult` 에 broker / account / quantity / order_price / order_type / side 필드 0건
+- **(v0.7)** Strategy / Backtest 결과 자동 텔레그램 발송 — read-only 화면만, 자동 발송 0건
+- **(v0.7)** 백테스트 run 트리거 UI — `/backtest` 화면에 "Run backtest" 버튼 없음. 운영자가 `scripts/run_backtest.py --commit` 으로 적재한 결과만 read-only 노출 (POST 도입은 v0.8 의 인증과 묶음)
+- **(v0.7)** 실 broker fee schedule / 종목별 stamp duty / tick-size 슬리피지 fetch — `CostModel` 은 `constant-v1` placeholder 만, 실 적용은 v0.8+ 후보
+- **(v0.7)** LLM 기반 자동 전략 생성 — 룰 기반만, LLM 보강은 v0.8+ 후보
 
 위 항목은 모두 [`ROADMAP.md`](./ROADMAP.md) 의 Future Backlog 로 분류되어 있고,
 각 항목은 진입 전제 조건 (예: 인증 / 컴플라이언스 / 자본 한도) 이 명시되어
@@ -141,17 +156,17 @@
 
 | 파일 | 설명 |
 |---|---|
-| [`AGENTS.md`](./AGENTS.md) | Codex 가 매번 따라야 하는 핵심 지침 — 프로젝트 전체 (v0.1~v0.6) 규칙, 13 코딩 에이전트 역할 |
+| [`AGENTS.md`](./AGENTS.md) | Codex 가 매번 따라야 하는 핵심 지침 — 프로젝트 전체 (v0.1~v0.7) 규칙, 13 코딩 에이전트 역할 |
 | [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) | 현재 사이클 상태 / 시작·마감 선언 / Phase 결과 요약. 새 세션이 가장 먼저 읽어야 할 파일 |
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | 시스템 구조 — 10 layer (Data / Repository / Analysis / Report Intelligence / Scoring / Notification / API / Frontend / Scheduler / Ops·CI) |
-| [`ROADMAP.md`](./ROADMAP.md) | v0.1 ~ v0.6 진행 이력 + v0.7 후보 + Future Backlog (자동매매) |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | 시스템 구조 — 10 layer (Data / Repository / Analysis / Report Intelligence / Scoring / Notification / API / Frontend / Scheduler / Ops·CI) + Strategy / Backtest layer (v0.7) |
+| [`ROADMAP.md`](./ROADMAP.md) | v0.1 ~ v0.7 진행 이력 + v0.8 후보 + Future Backlog (자동매매) |
 | [`TASKS.md`](./TASKS.md) | 사이클별 phase 체크리스트 |
-| [`PLANS.md`](./PLANS.md) | Codex 실행 계획 (PLAN-0001 ~ PLAN-0006) |
-| [`API_SPEC.md`](./API_SPEC.md) | FastAPI read-only GET API 명세 (20+ GET, POST 0건, v0.5 §14 테마 + v0.6 §15 재무·실적 포함) |
-| [`DB_SCHEMA.md`](./DB_SCHEMA.md) | 25 테이블 (v0.1 17 + v0.4 6 + v0.6 2) 명세 + 저작권 정책 + v0.5 `news_items.category` |
-| [`TESTING.md`](./TESTING.md) | 테스트 전략 + 게이트 baseline (558 / 77 / 13 / build) |
-| [`SECURITY.md`](./SECURITY.md) | 보안 원칙 (KIS / Telegram / source_file_path 마스킹 + News·공시·재무·실적 본문 미저장) |
-| [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) | mock seed 통합 시나리오 + KIS 모의투자 검증 + News·공시·테마·재무·실적 운영 절차 (v0.5 §10~§12 + v0.6 §13~§15) |
+| [`PLANS.md`](./PLANS.md) | Codex 실행 계획 (PLAN-0001 ~ PLAN-0007) |
+| [`API_SPEC.md`](./API_SPEC.md) | FastAPI read-only GET API 명세 (23+ GET, POST 0건, v0.5 §14 테마 + v0.6 §15 재무·실적 + v0.7 §16 백테스트 포함) |
+| [`DB_SCHEMA.md`](./DB_SCHEMA.md) | 27 테이블 (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2) 명세 + 저작권 정책 + v0.5 `news_items.category` |
+| [`TESTING.md`](./TESTING.md) | 테스트 전략 + 게이트 baseline (682 / 84 / 14 / build) |
+| [`SECURITY.md`](./SECURITY.md) | 보안 원칙 (KIS / Telegram / source_file_path 마스킹 + News·공시·재무·실적 본문 미저장 + Strategy/Backtest 주문 필드 미노출) |
+| [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) | mock seed 통합 시나리오 + KIS 모의투자 검증 + News·공시·테마·재무·실적·백테스트 운영 절차 (v0.5 §10~§12 + v0.6 §13~§15 + v0.7 §16) |
 | [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) | 운영 KIS 키 사전 검증 체크리스트 |
 | [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md) | v0.1 백엔드 마감 선언 |
 | [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md) | v0.2 프런트 MVP 마감 선언 |
@@ -159,6 +174,7 @@
 | [`RELEASE_NOTES_v0.4.md`](./RELEASE_NOTES_v0.4.md) | v0.4 Analyst & Theme Intelligence 마감 선언 |
 | [`RELEASE_NOTES_v0.5.md`](./RELEASE_NOTES_v0.5.md) | v0.5 News·공시·테마 랭킹 마감 선언 |
 | [`RELEASE_NOTES_v0.6.md`](./RELEASE_NOTES_v0.6.md) | v0.6 Fundamental & Earnings Intelligence 마감 선언 |
+| [`RELEASE_NOTES_v0.7.md`](./RELEASE_NOTES_v0.7.md) | v0.7 Strategy & Backtest Foundation 마감 선언 |
 | `stock_ai_project_codex_brief.md` | 초기 프로젝트 브리프 (역사적 — 실제 진행은 ROADMAP 참조) |
 | `stock_ai_detailed_spec.md` | 초기 상세 기능 명세 (역사적) |
 | `codex_agent_creation_spec.md` | 초기 코딩 에이전트 생성 명세 (역사적) |
@@ -177,7 +193,7 @@
 9. FastAPI 대시보드 API
 10. 테스트와 문서화
 
-## 6. 누적 사이클 상태 (v0.1 ~ v0.6)
+## 6. 누적 사이클 상태 (v0.1 ~ v0.7)
 
 | 사이클 | 상태 | 회귀 게이트 | 최종 태그 |
 |---|---|---|---|
@@ -186,35 +202,38 @@
 | v0.3 Analysis & Ops | ✅ 마감 | pytest 319 / vitest 59 / e2e 8 | `v0.3-final` |
 | v0.4 Analyst & Theme Intelligence | ✅ 마감 | pytest 382 / vitest 60 / e2e 9 / build | `v0.4-final` |
 | v0.5 News, Disclosure & Theme Ranking | ✅ 마감 | pytest 481 / vitest 68 / e2e 11 / build | `v0.5-final` |
-| v0.6 Phase A — Fundamental data layer + CSV import | ✅ 인수 | pytest 부분 통과 (커밋 추적) | (별도 태그 부재 — `0d3dba5` + `da3567f`) |
-| v0.6 Phase B — Earnings event layer + CSV import | ✅ 인수 | pytest 부분 통과 | `v0.6-earnings-event-pipeline` |
-| v0.6 Phase C — `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` + evidence 통합 | ✅ 인수 | pytest 544 | `v0.6-fundamental-score` |
-| v0.6 Phase D — read-only API 3종 + StockDetail 카드 + Today 카드 + evidence cell | ✅ 인수 | pytest 558 / vitest 77 / e2e 13 | `v0.6-frontend-fundamentals` |
-| v0.6 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 558 / vitest 77 / e2e 13 / build | `v0.6-final` (예정) |
+| v0.6 Fundamental & Earnings Intelligence | ✅ 마감 | pytest 558 / vitest 77 / e2e 13 / build | `v0.6-final` |
+| v0.7 Phase A — StrategyInterface + 룰 기반 전략 3종 | ✅ 인수 | pytest 614 | `v0.7-strategy-interface` |
+| v0.7 Phase B — BacktestEngine + 신규 테이블 2개 + CLI | ✅ 인수 | pytest 652 | `v0.7-backtest-engine` |
+| v0.7 Phase C — CostModel + 시장 국면별 분리 | ✅ 인수 | pytest 673 | `v0.7-backtest-cost-regime` |
+| v0.7 Phase D — read-only API 3종 + 10번째 화면 `/backtest` | ✅ 인수 | pytest 682 / vitest 84 / e2e 14 | `v0.7-frontend-backtest` |
+| v0.7 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 682 / vitest 84 / e2e 14 / build | `v0.7-final` (예정) |
 
 ### 영역별 상태
 
 | 영역 | 상태 |
 |---|---|
-| DB 모델 / Repository | 17 + 6 + 2 = **25 테이블 ORM**, 16 + 6 + 2 = **24 Repository**. v0.5 는 `news_items.category` ALTER ADD COLUMN, v0.6 은 `fundamental_snapshots` + `earnings_events` 신규 |
+| DB 모델 / Repository | 17 + 6 + 2 + 2 = **27 테이블 ORM**, 16 + 6 + 2 + 2 = **26 Repository**. v0.5 는 `news_items.category` ALTER ADD COLUMN, v0.6 은 `fundamental_snapshots` + `earnings_events` 신규, v0.7 은 `backtest_runs` + `backtest_results` 신규 |
 | KIS 데이터 수집 | `KisClient` + 정규화 / 품질 검사 / `DailyPriceCollector` / `MarketCapRankingCollector` (mock-injectable) |
 | **News / 공시 데이터 라인 (v0.5)** | `NewsProviderInterface` / `DisclosureProviderInterface` ABC + `NewsCollector` / `DisclosureCollector` + 9 필드 DTO (본문 0건) + `news_items.category` 6 enum + 공시 5 카테고리 keyword 분류 + `collect_news` (19:00) / `collect_disclosures` (20:00) 잡 (모두 default OFF) |
 | **재무 / 실적 데이터 라인 (v0.6)** | `FundamentalProviderInterface` / `EarningsProviderInterface` ABC + `FundamentalSnapshot` (24번째, 8 정량 지표) + `EarningsEvent` (25번째, BEAT/MEET/MISS) + `scripts/import_fundamentals.py` / `scripts/import_earnings.py` argparse CLI (default dry-run) + `FakeFundamentalProvider` / `FakeEarningsProvider` (실 DART 호출 0건) |
-| 분석 / 점수 | `TechnicalAnalyzer` (MA/RSI/MACD/breakout/ma_alignment + 캔들 5종 / ATR / 변동성), `ScoringEngine`, `RiskEngine`, `ScoreProducerInterface` ABC + `DummyScoreProducer` + `RealNewsScoreProducer` + `DisclosureRiskProducer` (v0.5) + **`RealFundamentalScoreProducer` + `RealEarningsScoreProducer`** (v0.6) |
+| 분석 / 점수 | `TechnicalAnalyzer` (MA/RSI/MACD/breakout/ma_alignment + 캔들 5종 / ATR / 변동성), `ScoringEngine`, `RiskEngine`, `ScoreProducerInterface` ABC + `DummyScoreProducer` + `RealNewsScoreProducer` + `DisclosureRiskProducer` (v0.5) + `RealFundamentalScoreProducer` + `RealEarningsScoreProducer` (v0.6) |
+| **Strategy / Backtest (v0.7)** | `StrategyInterface` ABC + `StrategySignal` (BUY/PASS/AVOID, `[0,1]` confidence) + `ScoreSnapshot` (broker/주문 필드 0건) + `TopGradeStrategy` / `HighScoreStrategy` / `MultiSignalStrategy` 3종 (룰 기반) + `BacktestEngine` (recommendation_results replay → win_rate / avg_return / max_drawdown, BUY-only 산식) + `CostModel` `constant-v1` (총 0.33% 차감) + `assign_regime` (MarketRegime at-or-before 매칭) + `scripts/run_backtest.py` argparse CLI (default dry-run) |
 | 추천 / 보유 점검 | `RecommendationEngine`, `HoldingCheckEngine` (PRE/POST), `RecommendationResultService` (1/3/5/20일 성과). v0.5 의 evidence 4종 + **v0.6 의 `fundamental_evidence` (recommendation) + `earnings_evidence` (holding)** 모두 `data_snapshots.market_context_json` + `decision_logs.rule_result_json` 에 기록 |
 | 알림 / 리포트 | `ReportGenerator` + `TelegramNotifier` (DRY_RUN 기본) + `NotificationService` + 3 dispatcher |
-| Backend API | read-only GET API **20+ 라우터**. v0.5 `/api/themes/ranking` + `/api/themes/{theme_id}` + **v0.6 `/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings`**. POST 0건. RecommendationItemSchema / HoldingCheckSchema 에 evidence 4종 nullable 필드 (라우터 단계 화이트리스트) |
+| Backend API | read-only GET API **23+ 라우터**. v0.5 `/api/themes/ranking` + `/api/themes/{theme_id}` + v0.6 `/api/stocks/{symbol}/fundamentals` + `/api/stocks/{symbol}/earnings` + `/api/calendar/earnings` + **v0.7 `/api/strategies` + `/api/backtest/runs` + `/api/backtest/runs/{run_id}`**. POST 0건. RecommendationItemSchema / HoldingCheckSchema 에 evidence 4종 nullable 필드 (라우터 단계 화이트리스트) |
 | Scheduler | APScheduler + `run_job` 래퍼 + **9개 잡** (v0.4 Phase B `update_report_consensus_snapshots` 06:30 + v0.5 `collect_news` 19:00 + `collect_disclosures` 20:00, 두 v0.5 잡은 default OFF). v0.6 에서는 scheduler job 추가 0건 (수동 CSV import 만) |
 | Import Pipeline | v0.4 `scripts/import_analyst_reports.py` + **v0.6 `scripts/import_fundamentals.py` + `scripts/import_earnings.py`** (모두 argparse CLI, default dry-run, `--commit` 시 DB 적재). Forbidden body column 13종 거부, `summary` / `memo` 500자 truncate, `source_file_path` 마스킹. pandas / openpyxl 의존성 0건 |
-| Frontend | Vite + React + TS, **9 화면** (v0.5 `테마 (β)` 추가), 코드 스플릿, KRX 휴장 배너, StockDetail 일봉 차트 + 리포트 카드 + 테마 링크 + impact_path badge + **Fundamentals + Earnings 카드 (v0.6)** + Today **UpcomingEarnings 카드 (v0.6)** + Recommendations evidence 4종 cell + Holdings/HoldingChecks earnings evidence cell, msw + Playwright |
+| Frontend | Vite + React + TS, **10 화면** (v0.5 `테마 (β)` + v0.7 `백테스트 (β)` 추가), 코드 스플릿, KRX 휴장 배너, StockDetail 일봉 차트 + 리포트 카드 + 테마 링크 + impact_path badge + Fundamentals + Earnings 카드 (v0.6) + Today UpcomingEarnings 카드 (v0.6) + Recommendations evidence 4종 cell + Holdings/HoldingChecks earnings evidence cell + **Backtest 화면 (전략 카드 grid + run 표 + detail 패널 + regime breakdown + cost_model badge + BUY-only note)** (v0.7), msw + Playwright |
 | **Report Intelligence (v0.4)** | 6 ORM + 6 Repository + CSV import + consensus snapshot job + report/theme score + dashboard 표시 |
 | **News·Disclosure Intelligence (v0.5)** | `news_items` 통합 저장 (뉴스 + 공시) + `RealNewsScoreProducer` 가 `news_score` 25% 첫 real 화 + `DisclosureRiskProducer` 가 `RISK_DISCLOSURE` flag + cap +10 penalty + 추천·보유 evidence 노출 |
 | **Fundamental·Earnings Intelligence (v0.6)** | 2 ORM + 2 Repository + 2 CSV import + RealFundamentalScoreProducer 가 `fundamental_score` 15% 첫 real 화 + RealEarningsScoreProducer 가 holding `earnings_score` 첫 real 화 + 3 read-only API + StockDetail 2 카드 + Today 1 카드 + Recommendations / Holdings evidence cell |
+| **Strategy & Backtest Foundation (v0.7)** | `StrategyInterface` ABC + 룰 기반 전략 3종 (TopGrade / HighScore / MultiSignal) + `BacktestEngine` (BUY-only metrics) + 신규 테이블 2개 (`backtest_runs` 26 / `backtest_results` 27) + `CostModel` `constant-v1` (총 0.33% 차감) + `assign_regime` (MarketRegime at-or-before) + 3 read-only API (`/api/strategies` + `/api/backtest/runs` + `/api/backtest/runs/{run_id}`) + 10번째 화면 `/backtest` (Sidebar `백테스트 (β)`) + `scripts/run_backtest.py` argparse CLI (default dry-run) |
 | Ops / CI | GitHub Actions 3 잡 (backend pytest / vitest+build / Playwright e2e), main + PR 자동 검증, mock 환경 변수 |
-| 통합 검증 | `scripts/seed_mock_data.py` (멱등) + `INTEGRATION_RUNBOOK.md` (§10 News / §11 Disclosure / §12 테마 / **§13 Fundamental CSV / §14 Earnings CSV / §15 read-only API 운영 절차 포함**) |
+| 통합 검증 | `scripts/seed_mock_data.py` (멱등) + `INTEGRATION_RUNBOOK.md` (§10 News / §11 Disclosure / §12 테마 / §13 Fundamental CSV / §14 Earnings CSV / §15 read-only API + **§16 백테스트 CLI + read-only API + 화면**) |
 
 세부 산출물 / 테스트 카운트 / 변경 이력은 [`PROJECT_STATUS.md`](./PROJECT_STATUS.md)
-와 [`TASKS.md`](./TASKS.md) 참고. v0.7 후보는 [`ROADMAP.md`](./ROADMAP.md) §7 참조.
+와 [`TASKS.md`](./TASKS.md) 참고. v0.8 후보는 [`ROADMAP.md`](./ROADMAP.md) 참조.
 
 ## 7. 실행 순서 (권장)
 
@@ -227,8 +246,8 @@
 | 7.1 의존성 | `.\.venv\bin\python.exe -m pip install -e ".[dev]"` | 정상 설치 |
 | 7.2 Docker (권장) 또는 로컬 uvicorn | §8 또는 §9 | `/health` 200 |
 | 7.3 Mock seed | `.\.venv\bin\python.exe -m scripts.seed_mock_data --reset` | stocks 5 / daily_prices 150 등 (§10) |
-| 7.4 통합 시나리오 (9잡 + 20+ API) | [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) §3 ~ §5 / §10 ~ §15 따라감 | 모든 잡 SUCCESS (collect_news / collect_disclosures 는 default SKIPPED), API 200, notification_logs DRY_RUN |
-| 7.5 회귀 게이트 | `.\.venv\bin\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | 558 passed (v0.6 마감 시점) — 로컬 `.env` dev override 가 있으면 `test_settings_defaults` 1건은 deselect, CI clean env 에서는 자동 통과 |
+| 7.4 통합 시나리오 (9잡 + 23+ API) | [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) §3 ~ §5 / §10 ~ §16 따라감 | 모든 잡 SUCCESS (collect_news / collect_disclosures 는 default SKIPPED), API 200, notification_logs DRY_RUN |
+| 7.5 회귀 게이트 | `.\.venv\bin\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | 682 passed (v0.7 마감 시점) — 로컬 `.env` dev override 가 있으면 `test_settings_defaults` 1건은 deselect, CI clean env 에서는 자동 통과 |
 | 7.6 (운영 전) 실 KIS 키 사전 검증 | [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) | 체크리스트 항목별 통과 — 코드 변경 없음 |
 
 ## 8. Docker 로컬 실행
@@ -311,11 +330,11 @@ holding_checks. 자세한 건수와 종목 / 점검 데이터 구성은
 외부 API, 텔레그램, 주문 기능은 테스트에서 실제로 호출하지 않습니다 (mock /
 `httpx.MockTransport` / `FakeKisDataProvider`).
 
-현재 회귀 기준선 (v0.6 마감 시점):
+현재 회귀 기준선 (v0.7 마감 시점):
 
-- backend pytest **558 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 Phase C 544 → Phase D 558). 로컬 `.env` 의 dev override (`MARKET_CAP_LIMIT=5` 등) 가 있으면 `tests/unit/test_project_structure.py::test_settings_defaults` 1건은 환경 의존으로 실패하므로 `--deselect` 또는 명시 env override 필요. CI clean env 에서는 자동 통과
-- frontend vitest **77 passed** (13 파일)
-- Playwright e2e **13 passed** (chromium + page.route mock)
+- backend pytest **682 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 final 558 → v0.7 Phase A 614 → Phase B 652 → Phase C 673 → Phase D 682). 로컬 `.env` 의 dev override (`MARKET_CAP_LIMIT=5` 등) 가 있으면 `tests/unit/test_project_structure.py::test_settings_defaults` 1건은 환경 의존으로 실패하므로 `--deselect` 또는 명시 env override 필요. CI clean env 에서는 자동 통과
+- frontend vitest **84 passed** (14 파일)
+- Playwright e2e **14 passed** (chromium + page.route mock)
 - frontend build (`tsc --noEmit && vite build`) 그린
 
 자세한 테스트 정책 / 카테고리는 [`TESTING.md`](./TESTING.md) 참조.
@@ -355,15 +374,16 @@ npm run e2e
 
 ```text
 AGENTS.md, PROJECT_STATUS.md (§0), ARCHITECTURE.md, TASKS.md, ROADMAP.md 를
-먼저 읽고, 현재 사이클 (v0.6 마감 — v0.7 후보 검토 대기) 범위를 벗어나지
+먼저 읽고, 현재 사이클 (v0.7 마감 — v0.8 후보 검토 대기) 범위를 벗어나지
 않는 개발 계획을 작성해줘.
 아직 코드는 수정하지 말고 TASKS.md 업데이트 계획만 제안해줘.
 ```
 
 ## 15. 주의
 
-이 프로젝트는 **투자 판단 보조 도구** 입니다. v0.1 ~ v0.6 어디에도 실제 주문 /
+이 프로젝트는 **투자 판단 보조 도구** 입니다. v0.1 ~ v0.7 어디에도 실제 주문 /
 자동매매 / FULL_AUTO / APPROVAL / SMALL_AUTO 코드를 구현하지 않습니다.
+v0.7 의 `StrategySignal` (BUY/PASS/AVOID) 도 분석 신호이지 매매 주문이 아닙니다.
 
 자동매매 진입은 별도 보안 / 컴플라이언스 / 자본 한도 / 비상정지 / 일일 손실
 제한 사이클이 선행되어야 검토할 수 있습니다 ([`ROADMAP.md`](./ROADMAP.md) 의
