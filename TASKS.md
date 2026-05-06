@@ -772,7 +772,7 @@ read-only 화면** 을 도입한다. 다음 자연 질문 "이 추천이 돈이 
 - [ ] tag `v0.7-final` + push (운영자 수동)
 - 완료 기준: 모든 게이트 그린, tag publish, GitHub Release 본문에 RELEASE_NOTES_v0.7 붙여넣기 (UI 작업).
 
-## v0.8 — User & Migration Foundation (진행 중, 2026-05-06 시작)
+## v0.8 — User & Migration Foundation ✅ 마감 (2026-05-06)
 
 기준선: `v0.7-final` (HEAD `1f5b01f`). 자세한 계획은 [`PLANS.md`](./PLANS.md) `PLAN-0008` 참조.
 
@@ -894,18 +894,20 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - 안전 범위: POST 0건 신규 추가 (Phase C 의 라우터만 사용), 외부 호출 0건, 자동매매 0건, BacktestEngine 변경 0건. 즐겨찾기 mutation 외 모든 라우터는 read-only. `broker` / `account` / `quantity` / `order_*` / `password` / `access_token` 렌더링 0건
 - 완료 기준: frontend vitest **84 → 113 passed (+29)**, e2e **14 → 19 passed (+5)**, build 그린, 회귀 0건. source_file_path / 주문 관련 필드 0건 노출 가드. 태그 `v0.8-frontend-watchlist`.
 
-### Phase E — v0.8 릴리스 문서 / 마감
+### Phase E — v0.8 릴리스 문서 / 마감 ✅ 인수
 
-- [ ] `RELEASE_NOTES_v0.8.md` 신규 (산출물 / 검증 / 안전 정책 / 한계 / v0.9 후보 / 운영 가이드 / 누적 태그)
-- [ ] `RELEASE_NOTES_v0.8.md` 안전 정책 — Alembic baseline 정책 / 단일 사용자 인증 / `AUTH_ENABLED` 토글 / POST 라우터 5건 한정 / 평문 IP 미저장 / 평문 password 미저장 / refresh token 미도입 / 다중 사용자 미지원 / `source_file_path` / `broker` / `account` / `quantity` / `order_*` 미노출 / 외부 API 자동 호출 0건
-- [ ] `README.md` 상단 마감 배너 v0.7 → v0.8 갱신 + 누적 태그 라인 + §1 누적 기능 v0.8 항목 4종 (Alembic baseline / 단일 사용자 인증 / Watchlist API / Watchlist 프런트) + §2 제외 범위 v0.8 정책 + §4 문서 표 + §6 누적 사이클 / 영역 표 + §11 회귀 기준선 (682 → ~775)
-- [ ] `PROJECT_STATUS.md` §0 v0.8 시작 → v0.8 마감 in-place 갱신 (Phase E 시점), 이전 §0 (v0.8 시작) 은 §0-1 로 강등, v0.7 마감은 §0-2 로 추가 강등 (시간순 역배열)
-- [ ] `TASKS.md` v0.8 phase 모두 [x] + v0.8 전체 마감 헤더 + v0.9 Backlog 정리
-- [ ] `ROADMAP.md` v0.8 행 마감 표시 + v0.8 phase 표 ✅ + v0.9 후보 정리
-- [ ] `ARCHITECTURE.md` / `API_SPEC.md` / `TESTING.md` / `INTEGRATION_RUNBOOK.md` / `DB_SCHEMA.md` 정합성 점검 + 마감 시점 헤더 갱신
-- [ ] backend pytest + frontend vitest + e2e + build 4 게이트 그린 (재확인) — **~775 / ~95 / 16 / build**
+- [x] `RELEASE_NOTES_v0.8.md` 신규 (산출물 / 검증 / 안전 정책 / 한계 / v0.9 후보 / 운영 가이드 / 누적 태그)
+- [x] `RELEASE_NOTES_v0.8.md` 안전 정책 — Alembic baseline 정책 / 단일 사용자 인증 / `AUTH_ENABLED` 토글 / POST 라우터 5건 한정 / 평문 IP 미저장 / 평문 password 미저장 / refresh token 미도입 / 다중 사용자 미지원 / `source_file_path` / `broker` / `account` / `quantity` / `order_*` 미노출 / 외부 API 자동 호출 0건
+- [x] `README.md` 상단 마감 배너 v0.7 → v0.8 갱신 + 누적 태그 라인 + §1 누적 기능 v0.8 항목 4종 + §2 제외 범위 v0.8 정책 + §4 문서 표 + §6 누적 사이클 / 영역 표 + §11 회귀 기준선 (808 / 113 / 19)
+- [x] `PROJECT_STATUS.md` §0 v0.8 마감 선언 in-place 갱신, §0-1 v0.8 시작 선언 강등, §0-2 v0.7 마감 (순차 강등)
+- [x] `TASKS.md` v0.8 phase 모두 [x] + v0.8 전체 마감 헤더
+- [x] `ROADMAP.md` v0.8 행 ✅ 마감 표시 + v0.8 phase 표 ✅
+- [x] `ARCHITECTURE.md` / `TESTING.md` 헤더 v0.8 기준 갱신
+- [x] backend pytest **808** + frontend vitest **113** + e2e **19** + build 4 게이트 그린 (재확인)
 - [ ] tag `v0.8-final` + push (운영자 수동)
 - 완료 기준: 모든 게이트 그린, tag publish, GitHub Release 본문에 RELEASE_NOTES_v0.8 붙여넣기 (UI 작업).
+
+**실제 결과 (Phase E 시점)**: vitest **113 passed** (16 파일) / e2e **19 passed** / build 그린 / backend pytest **808 passed** (1 deselected, 가상환경 필요). 태그 `v0.8-frontend-watchlist` 커밋 `65a0c94` 로컬 생성 완료.
 
 ## v0.9+ — Backlog (v0.8 마감 후 검토 대기)
 

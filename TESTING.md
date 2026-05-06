@@ -1,20 +1,20 @@
 # TESTING.md
 
-> 본 문서는 **v0.7 마감 시점** 기준으로 갱신된다 (`v0.7-frontend-backtest` 누적,
-> `v0.7-final` 마감 예정). 누적 cycle 의 게이트 baseline 과 v0.4 / v0.5 / v0.6 /
-> v0.7 신규 테스트 카테고리를 반영한다.
+> 본 문서는 **v0.8 마감 시점** 기준으로 갱신된다 (`v0.8-frontend-watchlist` 누적,
+> `v0.8-final` 마감). 누적 cycle 의 게이트 baseline 과 v0.4 / v0.5 / v0.6 /
+> v0.7 / v0.8 신규 테스트 카테고리를 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.7 마감 시점)
+## 1. 현재 회귀 게이트 (v0.8 마감 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **682 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 final 558 → v0.7 Phase A 614 → Phase B 652 → Phase C 673 → Phase D 682) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **84 passed** (14 파일, jsdom + msw v2) |
-| frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, vendor-charts 청크 383 kB / gzip 105 kB) |
-| Playwright e2e | `cd frontend && npm run e2e` | **14 passed** (chromium + page.route mock) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **808 passed** (v0.7 682 → v0.8 Phase A 698 → Phase B 760 → Phase C 808) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **113 passed** (16 파일, jsdom + msw v2) |
+| frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
+| Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).

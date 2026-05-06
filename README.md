@@ -4,40 +4,30 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.7 Strategy & Backtest Foundation — 마감 완료.**
-> 현재 누적 인수 태그는 `v0.7-frontend-backtest`이며, 최종 마감 태그는
-> `v0.7-final` 예정이다. v0.7은 v0.1~v0.6 누적 추천 판단 축 위에
-> `StrategyInterface` ABC + 룰 기반 전략 3종 (`TopGradeStrategy` /
-> `HighScoreStrategy` / `MultiSignalStrategy`), `BacktestEngine` +
-> `BacktestRun` (26번째) + `BacktestResult` (27번째) 신규 테이블,
-> `CostModel` placeholder (총 0.33% 차감) + `assign_regime` 시장 국면별 분리,
-> 백엔드 read-only API 3종 (`/api/strategies` + `/api/backtest/runs` +
-> `/api/backtest/runs/{run_id}`), 프런트 10번째 화면 `/backtest` (Sidebar
-> `백테스트 (β)`) 를 추가한 사이클이다. **`StrategySignal` 은 분석 신호이지
-> 매매 주문이 아니다** — `app/strategy/` + `app/backtest/` 어디에도 broker /
-> quantity / order_price / account / order_type / side 필드 / 호출 0건 (grep 가드 +
-> 단위 테스트 명시 단언).
+> **v0.8 User & Migration Foundation — 마감 완료.**
+> 최종 마감 태그 `v0.8-final`. v0.8은 v0.1 부터 일관 유지된 **read-only 정책의
+> 첫 변경 cycle** — 27 테이블 시점에 **Alembic baseline 도입** +
+> **단일 사용자 인증** (`AUTH_ENABLED` 토글 + JWT HS256 + scrypt password) +
+> **Watchlist 도메인 POST/DELETE** 첫 도입 (총 5 라우터) +
+> **Watchlist 프런트 11번째 화면** (`/watchlist`) + Login 화면 (`/login`) +
+> StockDetail `FavoriteButton` + Today `WatchlistCard` 를 추가한 사이클이다.
+> **`StrategySignal` / `BacktestResult` 는 분석 신호 — broker / quantity / order_*
+> 필드 0건 정책 그대로 유지**. `WatchlistItem` 에도 broker / account / quantity /
+> order_* 컬럼 0건 (repo 단언 + e2e 단언).
 >
-> 최신 통과 회귀 게이트 — **백엔드 pytest 682 (1 deselected) / frontend vitest 84 /
-> Playwright e2e 14 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
-> SMALL_AUTO / POST 트리거 UI 는 모든 사이클에서 코드 일체 포함하지 않습니다
-> (`BrokerInterface` 는 ABC placeholder 만 유지). 백테스트 run 트리거도 화면이
-> 아니라 운영자 수동 CLI (`scripts/run_backtest.py --commit`) 에서만 가능 —
-> POST 도입은 v0.8 의 인증과 묶음. 자세한 정책은 [`AGENTS.md`](./AGENTS.md) /
+> 최신 통과 회귀 게이트 — **백엔드 pytest 808 (1 deselected) / frontend vitest 113 /
+> Playwright e2e 19 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
+> SMALL_AUTO 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface` 는
+> ABC placeholder 만 유지). 인증 (`AUTH_ENABLED=false` 기본) 이므로 기존
+> read-only GET API 는 그대로 OPEN. 자세한 정책은 [`AGENTS.md`](./AGENTS.md) /
 > [`ROADMAP.md`](./ROADMAP.md) 참조.
 >
-> **저작권 / 데이터 정책 (v0.4 + v0.5 + v0.6 + v0.7 누적)**: 리포트·뉴스·공시·재무·실적
-> 원문 본문 (paragraph) 저장 0건, PDF / Excel BLOB 저장 0건, 자동 크롤링 0건,
-> `source_file_path` 외부 노출 0건. 모든 DTO·ORM 어디에도 body / content /
-> full_text / paragraph_text / raw_text / 본문 / 원문 / 전문 13종 forbidden
-> 컬럼 없음. v0.7 의 `BacktestResult` 응답에도 broker / account / quantity /
-> order_price / order_type / side 6종 추가 forbidden 키워드 0건 노출 (e2e raw
-> JSON substring 단언). 외부 API 자동 호출 0건 (실 DART / RSS / 뉴스 / KIS 호출
-> 모두 v0.8+ 후보). `CostModel` 은 `constant-v1` placeholder 만 — 실 broker fee
-> schedule fetch 는 v0.8+ 후보, `cost_model_version` 이 응답에 함께 노출되어
-> 모델 변경 추적 가능. ScoringEngine 본 weight 변경 0건 (technical 35% / news
-> 25% / supply 15% / fundamental 15% / ai 10%) — `StrategyInterface` 는 평가만
-> 할 뿐 가중치를 바꾸지 않는다.
+> **저작권 / 데이터 정책 (v0.4 ~ v0.8 누적)**: 리포트·뉴스·공시·재무·실적 원문 본문
+> (paragraph) 저장 0건, PDF / Excel BLOB 저장 0건, 자동 크롤링 0건,
+> `source_file_path` 외부 노출 0건. `WatchlistItem` ORM 에 broker / account /
+> quantity / order_* 컬럼 0건. **평문 IP / 평문 password 저장 0건** —
+> `LoginAuditLog.source_ip_hash` 는 SHA256 만, password 는 scrypt cost-12 hash 만.
+> 외부 API 자동 호출 0건 (실 DART / RSS / 뉴스 / KIS 호출 모두 v0.9+ 후보).
 >
 > **누적 인수 태그**: `v0.1-backend-final` → `v0.1-backend-kis-paper-verified`
 > → `v0.2-frontend-final` → `v0.3-phase-a-ci` → `v0.3-backend-analysis` →
@@ -49,7 +39,9 @@
 > `v0.6-fundamental-data-layer` → `v0.6-earnings-event-pipeline` →
 > `v0.6-fundamental-score` → `v0.6-frontend-fundamentals` → `v0.6-final` →
 > `v0.7-strategy-interface` → `v0.7-backtest-engine` → `v0.7-backtest-cost-regime`
-> → **`v0.7-frontend-backtest`** → `v0.7-final` (예정).
+> → `v0.7-frontend-backtest` → `v0.7-final` →
+> `v0.8-alembic-baseline` → `v0.8-auth-foundation` → `v0.8-watchlist-api`
+> → `v0.8-frontend-watchlist` → **`v0.8-final`**.
 >
 > 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
@@ -60,7 +52,9 @@
 > [`RELEASE_NOTES_v0.6.md`](./RELEASE_NOTES_v0.6.md) (v0.6 Fundamental & Earnings,
 > 558 / 77 / 13) /
 > [`RELEASE_NOTES_v0.7.md`](./RELEASE_NOTES_v0.7.md) (v0.7 Strategy & Backtest,
-> **682 / 84 / 14**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.8 참조.
+> 682 / 84 / 14) /
+> [`RELEASE_NOTES_v0.8.md`](./RELEASE_NOTES_v0.8.md) (v0.8 User & Migration Foundation,
+> **808 / 113 / 19**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.9 참조.
 
 ## 1. 프로젝트 목표
 
@@ -68,7 +62,7 @@
 증권사 리포트·테마 인텔리전스 + News·공시 데이터 라인 + 재무·실적 인텔리전스 +
 Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 
-현재까지 마감된 사이클 (v0.1 ~ v0.7) 의 누적 기능:
+현재까지 마감된 사이클 (v0.1 ~ v0.8) 의 누적 기능:
 
 - 한국투자증권 API 기반 read-only 데이터 수집
 - 시가총액 TOP 500 종목 유니버스 관리
@@ -79,7 +73,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - 신규 추천 TOP 5 + 1/3/5/20일 후 성과 검증
 - 텔레그램 알림 (DRY_RUN 기본)
 - FastAPI **read-only** 대시보드 API (17+ GET, **POST 0건**)
-- **PC 대시보드 SPA** (9 화면, Vite + React + TypeScript) — v0.2 → v0.5
+- **PC 대시보드 SPA** (11 화면, Vite + React + TypeScript) — v0.2 → v0.8
 - **KRX 휴장일 정적 캘린더 + MarketStatusBanner** — v0.3
 - **StockDetail 일봉 라인 차트 (Recharts) + 30/60/120/250 days 선택자** — v0.3
 - **GitHub Actions CI** (3 잡: backend pytest / frontend vitest+build / Playwright e2e) — v0.3
@@ -100,17 +94,21 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **`CostModel` placeholder + 시장 국면별 분리** — `total_cost = 0.33%` 차감 (`constant-v1`) + `assign_regime(session, signal_date)` (`MarketRegime.date <= signal_date` 가장 최근). `cost_adjusted_return_5d` / `regime` 컬럼 + `regime_breakdown` summary. 실 broker fee schedule fetch 는 v0.8+ 후보 — v0.7
 - **백엔드 백테스트 read-only API 3종** — `GET /api/strategies` (registry 기반, DB 0건) + `GET /api/backtest/runs?strategy=&limit=` + `GET /api/backtest/runs/{run_id}` (regime breakdown + cost_model_version + BUY-only notes) — v0.7
 - **프런트 10번째 화면 `/backtest` (Sidebar `백테스트 (β)`)** — 상단 전략 카드 grid + 중단 클릭 가능한 run 표 (전략 filter radiogroup) + 하단 detail 패널 (regime breakdown + 신호 row 표 + cost_model badge + BUY-only note). 자동매매 / order CTA 0건 — v0.7
+- **Alembic baseline 도입 (v0.8)** — 27 테이블 baseline (`0001`) + 인증 (`0002`) + Watchlist (`0003`), `compare_metadata` 0건 가드, CI smoke step
+- **단일 사용자 인증 (v0.8)** — `AUTH_ENABLED` 토글 + JWT HS256 + scrypt password hash + `LoginAuditLog` (source_ip_hash SHA256) + `scripts/create_admin.py` CLI
+- **Watchlist 도메인 GET/POST/DELETE (v0.8)** — `Watchlist` (30번째 테이블) + `WatchlistItem` (31번째) + 5 라우터 + cross-user 404 격리 + spoofing 가드 + broker/account/quantity/order_* 컬럼 0건
+- **Watchlist 프런트 11번째 화면 + Login (v0.8)** — `/watchlist` (WatchlistListPanel / DetailPanel / AddItemForm) + `/login` (AUTH_ENABLED=false 자동 redirect) + StockDetail `FavoriteButton` + Today `WatchlistCard`
 - data_snapshots / decision_logs / job_runs / notification_logs persistence
-- 테스트 가능한 구조 (backend pytest **682**, vitest **84**, e2e **14**, build)
+- 테스트 가능한 구조 (backend pytest **808**, vitest **113**, e2e **19**, build)
 
-## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.7 일관 정책)
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.8 일관 정책)
 
 다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
 별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.
 
 - 실거래 자동매매 (FULL_AUTO / APPROVAL / SMALL_AUTO 모드)
 - 실제 주문 API 실행 (`BrokerInterface` 는 ABC placeholder 만 유지)
-- POST / PUT / DELETE 라우터 (read-only API 만)
+- POST / PUT / DELETE 라우터 — **v0.8 에서 인증·Watchlist 에 한해 5건 첫 도입** (`POST /api/auth/login` + `POST /api/auth/logout` + `POST /api/watchlists` + `POST /api/watchlists/{id}/items` + `DELETE /api/watchlists/{id}/items/{symbol}`). 그 외 도메인 0건
 - 가상 증권사 서버 / MockBroker / ReplayBroker / SimulationBroker
 - 전략 자동 튜닝 / Strategy 모듈
 - 전용 AI 모델 학습 / Custom AI training
@@ -133,6 +131,10 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **(v0.7)** 백테스트 run 트리거 UI — `/backtest` 화면에 "Run backtest" 버튼 없음. 운영자가 `scripts/run_backtest.py --commit` 으로 적재한 결과만 read-only 노출 (POST 도입은 v0.8 의 인증과 묶음)
 - **(v0.7)** 실 broker fee schedule / 종목별 stamp duty / tick-size 슬리피지 fetch — `CostModel` 은 `constant-v1` placeholder 만, 실 적용은 v0.8+ 후보
 - **(v0.7)** LLM 기반 자동 전략 생성 — 룰 기반만, LLM 보강은 v0.8+ 후보
+- **(v0.8)** 다중 사용자 / OAuth / SSO / RBAC — 단일 admin user 만 (`AUTH_ENABLED` 토글)
+- **(v0.8)** Refresh token / token revocation list — 24h JWT TTL + 재로그인만
+- **(v0.8)** Watchlist 가격 알림 / target return alert — 표시·필터만, 알림 시스템 변경 0건
+- **(v0.8)** 평문 IP / 평문 password 저장 — `source_ip_hash` SHA256 만 / scrypt hash 만
 
 위 항목은 모두 [`ROADMAP.md`](./ROADMAP.md) 의 Future Backlog 로 분류되어 있고,
 각 항목은 진입 전제 조건 (예: 인증 / 컴플라이언스 / 자본 한도) 이 명시되어
@@ -175,6 +177,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 | [`RELEASE_NOTES_v0.5.md`](./RELEASE_NOTES_v0.5.md) | v0.5 News·공시·테마 랭킹 마감 선언 |
 | [`RELEASE_NOTES_v0.6.md`](./RELEASE_NOTES_v0.6.md) | v0.6 Fundamental & Earnings Intelligence 마감 선언 |
 | [`RELEASE_NOTES_v0.7.md`](./RELEASE_NOTES_v0.7.md) | v0.7 Strategy & Backtest Foundation 마감 선언 |
+| [`RELEASE_NOTES_v0.8.md`](./RELEASE_NOTES_v0.8.md) | v0.8 User & Migration Foundation 마감 선언 |
 | `stock_ai_project_codex_brief.md` | 초기 프로젝트 브리프 (역사적 — 실제 진행은 ROADMAP 참조) |
 | `stock_ai_detailed_spec.md` | 초기 상세 기능 명세 (역사적) |
 | `codex_agent_creation_spec.md` | 초기 코딩 에이전트 생성 명세 (역사적) |
@@ -207,7 +210,12 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 | v0.7 Phase B — BacktestEngine + 신규 테이블 2개 + CLI | ✅ 인수 | pytest 652 | `v0.7-backtest-engine` |
 | v0.7 Phase C — CostModel + 시장 국면별 분리 | ✅ 인수 | pytest 673 | `v0.7-backtest-cost-regime` |
 | v0.7 Phase D — read-only API 3종 + 10번째 화면 `/backtest` | ✅ 인수 | pytest 682 / vitest 84 / e2e 14 | `v0.7-frontend-backtest` |
-| v0.7 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 682 / vitest 84 / e2e 14 / build | `v0.7-final` (예정) |
+| v0.7 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 682 / vitest 84 / e2e 14 / build | `v0.7-final` |
+| v0.8 Phase A — Alembic baseline (27 테이블) | ✅ 인수 | pytest 698 | `v0.8-alembic-baseline` |
+| v0.8 Phase B — 단일 사용자 인증 (JWT + scrypt) | ✅ 인수 | pytest 760 | `v0.8-auth-foundation` |
+| v0.8 Phase C — Watchlist DB / API (5 라우터) | ✅ 인수 | pytest 808 | `v0.8-watchlist-api` |
+| v0.8 Phase D — Watchlist 프런트 11번째 화면 + Login | ✅ 인수 | pytest 808 / vitest 113 / e2e 19 | `v0.8-frontend-watchlist` |
+| v0.8 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 808 / vitest 113 / e2e 19 / build | `v0.8-final` |
 
 ### 영역별 상태
 
@@ -229,6 +237,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 | **News·Disclosure Intelligence (v0.5)** | `news_items` 통합 저장 (뉴스 + 공시) + `RealNewsScoreProducer` 가 `news_score` 25% 첫 real 화 + `DisclosureRiskProducer` 가 `RISK_DISCLOSURE` flag + cap +10 penalty + 추천·보유 evidence 노출 |
 | **Fundamental·Earnings Intelligence (v0.6)** | 2 ORM + 2 Repository + 2 CSV import + RealFundamentalScoreProducer 가 `fundamental_score` 15% 첫 real 화 + RealEarningsScoreProducer 가 holding `earnings_score` 첫 real 화 + 3 read-only API + StockDetail 2 카드 + Today 1 카드 + Recommendations / Holdings evidence cell |
 | **Strategy & Backtest Foundation (v0.7)** | `StrategyInterface` ABC + 룰 기반 전략 3종 (TopGrade / HighScore / MultiSignal) + `BacktestEngine` (BUY-only metrics) + 신규 테이블 2개 (`backtest_runs` 26 / `backtest_results` 27) + `CostModel` `constant-v1` (총 0.33% 차감) + `assign_regime` (MarketRegime at-or-before) + 3 read-only API (`/api/strategies` + `/api/backtest/runs` + `/api/backtest/runs/{run_id}`) + 10번째 화면 `/backtest` (Sidebar `백테스트 (β)`) + `scripts/run_backtest.py` argparse CLI (default dry-run) |
+| **User & Migration Foundation (v0.8)** | Alembic baseline (`0001`/`0002`/`0003`) + `User` (28번째) + `LoginAuditLog` (29번째, source_ip_hash SHA256) + `Watchlist` (30번째) + `WatchlistItem` (31번째, broker/account/quantity/order_* 0건) + JWT HS256 + scrypt + `AUTH_ENABLED` 토글 + 5 write 라우터 (auth 3 + watchlist 2) + cross-user 404 격리 + 11번째 화면 `/watchlist` + `/login` + StockDetail `FavoriteButton` + Today `WatchlistCard` |
 | Ops / CI | GitHub Actions 3 잡 (backend pytest / vitest+build / Playwright e2e), main + PR 자동 검증, mock 환경 변수 |
 | 통합 검증 | `scripts/seed_mock_data.py` (멱등) + `INTEGRATION_RUNBOOK.md` (§10 News / §11 Disclosure / §12 테마 / §13 Fundamental CSV / §14 Earnings CSV / §15 read-only API + **§16 백테스트 CLI + read-only API + 화면**) |
 
@@ -330,11 +339,11 @@ holding_checks. 자세한 건수와 종목 / 점검 데이터 구성은
 외부 API, 텔레그램, 주문 기능은 테스트에서 실제로 호출하지 않습니다 (mock /
 `httpx.MockTransport` / `FakeKisDataProvider`).
 
-현재 회귀 기준선 (v0.7 마감 시점):
+현재 회귀 기준선 (v0.8 마감 시점):
 
-- backend pytest **682 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 final 558 → v0.7 Phase A 614 → Phase B 652 → Phase C 673 → Phase D 682). 로컬 `.env` 의 dev override (`MARKET_CAP_LIMIT=5` 등) 가 있으면 `tests/unit/test_project_structure.py::test_settings_defaults` 1건은 환경 의존으로 실패하므로 `--deselect` 또는 명시 env override 필요. CI clean env 에서는 자동 통과
-- frontend vitest **84 passed** (14 파일)
-- Playwright e2e **14 passed** (chromium + page.route mock)
+- backend pytest **808 passed** (v0.1 296 → v0.3 319 → v0.4 382 → v0.5 481 → v0.6 558 → v0.7 682 → v0.8 Phase A 698 → Phase B 760 → Phase C 808). 로컬 `.env` 의 dev override (`MARKET_CAP_LIMIT=5` 등) 가 있으면 `tests/unit/test_project_structure.py::test_settings_defaults` 1건은 환경 의존으로 실패하므로 `--deselect` 또는 명시 env override 필요. CI clean env 에서는 자동 통과
+- frontend vitest **113 passed** (16 파일)
+- Playwright e2e **19 passed** (chromium + page.route mock)
 - frontend build (`tsc --noEmit && vite build`) 그린
 
 자세한 테스트 정책 / 카테고리는 [`TESTING.md`](./TESTING.md) 참조.
@@ -374,16 +383,18 @@ npm run e2e
 
 ```text
 AGENTS.md, PROJECT_STATUS.md (§0), ARCHITECTURE.md, TASKS.md, ROADMAP.md 를
-먼저 읽고, 현재 사이클 (v0.7 마감 — v0.8 후보 검토 대기) 범위를 벗어나지
+먼저 읽고, 현재 사이클 (v0.8 마감 — v0.9 후보 검토 대기) 범위를 벗어나지
 않는 개발 계획을 작성해줘.
 아직 코드는 수정하지 말고 TASKS.md 업데이트 계획만 제안해줘.
 ```
 
 ## 15. 주의
 
-이 프로젝트는 **투자 판단 보조 도구** 입니다. v0.1 ~ v0.7 어디에도 실제 주문 /
+이 프로젝트는 **투자 판단 보조 도구** 입니다. v0.1 ~ v0.8 어디에도 실제 주문 /
 자동매매 / FULL_AUTO / APPROVAL / SMALL_AUTO 코드를 구현하지 않습니다.
 v0.7 의 `StrategySignal` (BUY/PASS/AVOID) 도 분석 신호이지 매매 주문이 아닙니다.
+v0.8 의 `WatchlistItem` 도 즐겨찾기 저장 전용 — broker / 주문 / 계좌 / 수량 필드
+0건, Watchlist `POST` 는 즐겨찾기 추가/삭제만입니다.
 
 자동매매 진입은 별도 보안 / 컴플라이언스 / 자본 한도 / 비상정지 / 일일 손실
 제한 사이클이 선행되어야 검토할 수 있습니다 ([`ROADMAP.md`](./ROADMAP.md) 의
