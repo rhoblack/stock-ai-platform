@@ -1,14 +1,16 @@
 # Architecture
 
-> 본 문서는 **v0.9 Phase A 시점** 기준으로 갱신된다 (`v0.9-security-hardening` 태그).
+> 본 문서는 **v0.9 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.9-final`).
 > v0.1 Backend → v0.2 Frontend → v0.3 Analysis/Ops → v0.4 Analyst & Theme Intelligence →
 > v0.5 News·공시·테마 랭킹 → v0.6 Fundamental & Earnings Intelligence →
 > v0.7 Strategy & Backtest Foundation → v0.8 User & Migration Foundation →
-> **v0.9 Phase A Operational Security** 이 모두 누적된 상태의 시스템 구조를 반영한다.
-> v0.9 Phase A 는 `app/middleware/` 패키지 신규 도입 (`SecurityHeadersMiddleware` /
-> `rate_limit` slowapi 모듈) + `app/auth/brute_force.py` (인메모리 BruteForceGuard) 를
-> 추가하고, `app/main.py` 에서 미들웨어 스택을 완성한다. Alembic revision 은 변경 없음
-> (브루트포스 상태는 인메모리 전용, DB 스키마 변경 0건).
+> **v0.9 Operational Security & Watchlist Polish** (Phase A~D) 이 모두 누적된 상태의
+> 시스템 구조를 반영한다.
+> v0.9 는 `app/middleware/` 패키지 (`SecurityHeadersMiddleware` / `RequestIDMiddleware` /
+> `rate_limit`) + `app/auth/brute_force.py` + `app/config/logging.py` +
+> `app/monitoring/sentry.py` + Watchlist PATCH/DELETE 4건 + `app/data/repositories/user_preferences.py` +
+> `app/data/provider_resilience.py` + Frontend 관리 UI (Watchlist / Settings / Today / StockDetail)
+> 를 추가하고, Alembic head 를 `0004_user_preferences` 로 진행했다.
 
 ## 1. 핵심 흐름
 
@@ -37,35 +39,40 @@ Strategy Signal → AI Judgement → RiskEngine → BrokerInterface → TradeLog
 이 흐름은 v0.5+ 의 별도 보안 / 컴플라이언스 사이클이 선행되어야 진입 가능하다.
 v0.1~v0.4 어디에도 활성화된 코드가 없다.
 
-## 2. 레이어 구조 (v0.4 Phase A 기준)
+## 2. 레이어 구조 (v0.9 마감 기준)
 
 ```text
 app/
 ├─ config/                  # Settings, .env 매핑, KIS / Telegram 마스킹
-├─ db/                      # SQLAlchemy 2.0 Base / 23 ORM 모델 (v0.1 17 + v0.3 +0/3컬럼 + v0.4 +6)
+├─ middleware/               # v0.9 Phase A/B — SecurityHeadersMiddleware / RequestIDMiddleware / rate_limit (slowapi)
+├─ auth/                    # JWT 발급·검증 (v0.8) + BruteForceGuard (v0.9 Phase A)
+├─ config/                  # Settings (.env 매핑) + logging.py (SensitiveFilter / RequestIDFilter, v0.9 Phase B)
+├─ monitoring/              # sentry.py optional init (v0.9 Phase B, SENTRY_ENABLED=false 기본)
+├─ db/                      # SQLAlchemy 2.0 Base / 32 ORM 모델 (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1)
 ├─ data/
 │  ├─ collectors/           # KIS read-only HTTP / DailyPriceCollector / MarketCapCollector / Fake provider
-│  ├─ importers/            # v0.4 — operator CSV / Excel import (analyst reports, themes, mappings, signal events)
+│  ├─ importers/            # operator CSV / Excel import (analyst reports, themes, mappings, signal events)
 │  ├─ normalizers/          # KIS raw → DTO
 │  ├─ validators/           # DataQualityChecker
-│  └─ repositories/         # 22 Repository (v0.1 16 + v0.4 +6)
+│  ├─ provider_resilience.py # v0.9 Phase C — ProviderCallResult / retry_with_backoff / CircuitBreaker skeleton
+│  └─ repositories/         # 28 Repository (v0.1 16 + v0.4 6 + v0.6 2 + v0.8 3 + v0.9 1)
 ├─ analysis/                # TechnicalAnalyzer, IndicatorService, candle/ATR/volatility (v0.3 Phase B)
 ├─ decision/                # ScoringEngine, RecommendationEngine, HoldingCheckEngine, RiskEngine, score producers
 ├─ notification/            # ReportGenerator, TelegramNotifier (DRY_RUN), Dispatchers
-├─ api/                     # FastAPI read-only routers (15+ GET endpoints, 0 POST)
-├─ scheduler/               # APScheduler + run_job wrapper + 6 jobs (v0.4 Phase B 진입 시 7번째 추가 예정)
+├─ api/                     # FastAPI routers (23+ GET + 5 auth/watchlist POST/DELETE v0.8 + 6 watchlist/pref PATCH/PUT v0.9)
+├─ scheduler/               # APScheduler + run_job wrapper + 9 jobs
 └─ broker/                  # placeholder only (ABC) — 자동매매 진입 전까지 비어 있음
 
-frontend/                   # v0.2 Vite/React/TS PC 대시보드 + v0.3 휴장 배너·일봉 차트
+frontend/                   # v0.2 Vite/React/TS PC 대시보드 + v0.3~v0.9 누적
 ├─ src/
-│  ├─ pages/                # 8 화면 (Today / Recommendations / History / Holdings / StockDetail / MarketCap / Jobs / Settings)
-│  ├─ components/common/    # MarketStatusBanner, TrendLineChart, RiskBadge, GradePill, …
+│  ├─ pages/                # 11 화면 + Login (Today/Recommendations/History/Holdings/StockDetail/MarketCap/Jobs/Settings/Themes/Backtest/Watchlist + /login)
+│  ├─ components/common/    # MarketStatusBanner, TrendLineChart, RiskBadge, GradePill, ErrorBoundary (v0.9), …
 │  ├─ data/                 # KRX 휴장일 정적 JSON (2025–2027)
 │  ├─ lib/                  # marketCalendar 등 read-only 유틸
-│  ├─ hooks/                # useStockDetail, useStockPriceSeries, …
-│  ├─ api/                  # apiFetch + 타입 (hand-written)
-│  └─ tests/                # vitest + msw
-├─ e2e/                     # Playwright + page.route mock
+│  ├─ hooks/                # useStockDetail, useStockPriceSeries, useWatchlists, useUserPreferences (v0.9), …
+│  ├─ api/                  # apiFetch / apiPost / apiPatch / apiPut / apiDelete + 타입 (hand-written)
+│  └─ tests/                # vitest + msw v2 (146 passed)
+├─ e2e/                     # Playwright + page.route mock (19 passed)
 
 scripts/                    # 운영자 CLI
 ├─ seed_mock_data.py        # v0.1 — mock seed 적재
@@ -165,18 +172,20 @@ v0.1~v0.4 일관 정책.
 라우터는 collector / 지표 계산 / 추천 생성을 직접 하지 않는다 — Repository 와
 Pydantic schema 만 사용한다.
 
-### 3.8 Frontend Layer (v0.2 ~ v0.3)
+### 3.8 Frontend Layer (v0.2 ~ v0.9)
 
-Vite + React + TypeScript 5.5 + Tailwind + TanStack Query/Table + Recharts. 8 화면
-모두 backend read-only API 만 소비. **POST / form / submit 0건** — e2e 가
-명시적으로 검증.
+Vite + React + TypeScript 5.5 + Tailwind + TanStack Query/Table + Recharts. 11 화면
++ Login. Watchlist·UserPreference 도메인에 한해 POST/PATCH/DELETE 소비.
+자동매매 form / submit / CTA 0건 — e2e 가 명시적으로 검증.
 
 - v0.2 — 8 화면 MVP + 코드 스플릿 + Docker
-- v0.3 Phase C — KRX 휴장일 정적 JSON + `MarketStatusBanner` (Today / Jobs /
-  Holdings 헤더)
-- v0.3 Phase D — StockDetail 일봉 라인 차트 (Recharts) + 30/60/120/250 days 선택자
-- v0.4 Phase D (예정) — StockDetail 리포트·테마·시그널 카드 + Recommendations 의
-  `report_score` / `theme_signal_score` 컬럼
+- v0.3 — KRX 휴장일 캘린더 + `MarketStatusBanner` + StockDetail 일봉 차트
+- v0.4 — StockDetail 리포트·테마·시그널 4 카드 + Recommendations score 컬럼
+- v0.5 — 테마 랭킹 9번째 화면 + Recommendations evidence 컬럼
+- v0.6 — StockDetail Fundamentals/Earnings 카드 + Today UpcomingEarnings + evidence
+- v0.7 — 백테스트 10번째 화면 (전략 카드 + run 표 + detail 패널)
+- v0.8 — Watchlist 11번째 화면 + `/login` + StockDetail `FavoriteButton` + Today `WatchlistCard`
+- v0.9 — Watchlist 인라인 관리 UI (rename/delete/set-default/memo/filter) + Settings `UserPreference` 섹션 + `useEffectiveDefaultWatchlistId` preference priority + `ErrorBoundary`
 
 ### 3.9 Scheduler Layer
 

@@ -1,9 +1,12 @@
 # INTEGRATION_RUNBOOK.md
 
-> 본 문서는 **v0.7 마감 시점** 기준이다 (`v0.7-frontend-backtest` 누적,
-> `v0.7-final` 마감 예정). v0.5 §10 (News) / §11 (Disclosure) / §12 (테마) +
+> 본 문서는 **v0.9 마감 시점** 기준이다 (마감 태그 `v0.9-final`).
+> v0.5 §10 (News) / §11 (Disclosure) / §12 (테마) +
 > v0.6 §13 (Fundamental CSV) / §14 (Earnings CSV) / §15 (read-only API) +
-> v0.7 §16 (백테스트 CLI + read-only API + 화면) 모두 반영.
+> v0.7 §16 (백테스트 CLI + read-only API + 화면) +
+> v0.8 §17 (Alembic + 인증 + Watchlist) +
+> v0.9 §18 (Security Middleware + 구조화 로깅 + Watchlist PATCH/DELETE + UserPreference) 모두 반영.
+> Alembic 현재 head: `0004_user_preferences`.
 
 v0.1 백엔드 전체 흐름을 **실 KIS / 실 텔레그램 없이** 로컬에서 검증하는 시나리오 문서.
 새 세션 / QA 인수자가 이 문서 하나만 따라가면 6개 잡 + 13개 GET API + dispatcher

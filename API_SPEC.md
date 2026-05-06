@@ -1,9 +1,22 @@
 # API_SPEC.md
 
-> 본 문서는 **v0.8 Phase C 시점** 기준이다 (`v0.8-watchlist-api` 누적 예정).
+> 본 문서는 **v0.9 마감 시점** 기준이다 (마감 태그 `v0.9-final`).
 > v0.5 §14 테마 + v0.6 §15 재무·실적 + v0.7 §16 백테스트 + v0.8 §17 인증 +
-> v0.8 §18 Watchlist + 추천 / 보유 evidence 화이트리스트 + Strategy /
-> Backtest 응답에 broker / 주문 필드 0건 가드가 모두 반영되어 있다.
+> v0.8 §18 Watchlist + v0.9 §19 Watchlist 고도화 + v0.9 §20 UserPreference +
+> 추천 / 보유 evidence 화이트리스트 + Strategy / Backtest 응답에 broker / 주문 필드
+> 0건 가드가 모두 반영되어 있다.
+>
+> **v0.9 Phase C 신규 엔드포인트 (v0.8 5건 + v0.9 6건 = 총 11건 write 라우터):**
+> - `PATCH /api/watchlists/{id}` — name 변경 / is_default 토글 (이전 default 자동 demote)
+> - `DELETE /api/watchlists/{id}` — watchlist 삭제 + items cascade (기본 목록 삭제 허용)
+> - `GET /api/watchlists/{id}/items` — 페이지네이션 (limit/offset) + symbol_prefix 필터
+> - `PATCH /api/watchlists/{id}/items/{symbol}` — memo 수정 / null 초기화
+> - `GET /api/users/me/preferences` — lazy-create 후 반환
+> - `PUT /api/users/me/preferences` — watchlist 소유권 검증; 비밀 키 포함 시 422
+>
+> 모든 신규 엔드포인트: password / password_hash / access_token / jwt_secret /
+> source_file_path / broker / account / quantity / order_price / order_type / side
+> 응답 0건 가드.
 
 FastAPI 기반 PC 대시보드 API 명세이다.
 

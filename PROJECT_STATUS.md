@@ -7,20 +7,45 @@
 
 ---
 
-## 0. v0.9 시작 선언 — Operational Security & Watchlist Polish
+## 0. v0.9 마감 선언 — Operational Security & Watchlist Polish
 
-**v0.9 cycle 시작.** 기준선 `v0.8-final` (HEAD `80f0bac`) 위에 **Operational
-Security & Watchlist Polish** 5 phase 진입. v0.8 에서 도입한 JWT 인증 + POST
-라우터(5건) + Watchlist 도메인 위에 운영 필수 보안(rate limit / security headers
-/ brute force protection) + 운영 모니터링(Sentry optional + 구조화 로깅) +
-Watchlist API 고도화(PUT rename/DELETE list/default/memo) + UserPreference(32번째
-테이블) + provider 회복성 레이어를 쌓는다.
+**v0.9 cycle 마감.** 기준선 `v0.8-final` 위에 **Operational Security &
+Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
 
 - 시작 일자: **2026-05-06 (Asia/Seoul)**
-- 기준 게이트: backend pytest **808 passed (1 deselected)**
-  / frontend vitest **113 passed** / Playwright e2e **19 passed** / build 그린
-- 기준 태그: `v0.8-final`
-- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0009`, 체크리스트: [`TASKS.md`](./TASKS.md) `v0.9 — Operational Security & Watchlist Polish`
+- 마감 일자: **2026-05-07 (Asia/Seoul)**
+- 최종 게이트:
+  - backend pytest **916 passed** (1 deselected — test_settings_defaults 로컬 .env 충돌, 관례대로 deselect)
+  - frontend vitest **146 passed** (19 파일)
+  - frontend build **그린** (`tsc --noEmit && vite build`, 2.65s)
+  - Playwright e2e **19 passed** (chromium)
+- 기준 태그: `v0.8-final` → 마감 태그: `v0.9-final`
+- 세부 결과: [`RELEASE_NOTES_v0.9.md`](./RELEASE_NOTES_v0.9.md)
+
+### v0.9 Phase 결과 요약
+
+| Phase | 내용 | 태그 | 게이트 |
+|---|---|---|---|
+| A | SecurityHeadersMiddleware + slowapi rate limit + BruteForceGuard | `v0.9-security-hardening` | pytest 808→845 (+37) |
+| B | RequestIDMiddleware + SensitiveFilter + optional Sentry + ErrorBoundary | `v0.9-monitoring` | pytest 845→869 (+24) |
+| C | Watchlist PATCH/DELETE 4건 + UserPreference (32nd table) + Provider resilience skeleton | `v0.9-watchlist-api` | pytest 869→916 (+47) |
+| D | Watchlist 관리 UI + UserPreference Settings + Today/StockDetail preference 연동 | `v0.9-frontend` | vitest 117→146 (+29) |
+| E | 마감 문서 + 4 게이트 최종 재확인 | `v0.9-final` | 4 게이트 모두 그린 |
+
+### v0.10 후보 (우선순위 순)
+
+1. 실 DART / RSS provider (v0.5/v0.6 ABC 위에 추가 — 라이선스 검토 선행)
+2. Provider resilience 실 적용 (KIS/DART 래핑)
+3. 운영 모니터링 고도화 (Prometheus + Grafana)
+4. CSP / rate limit 고도화 (운영 트래픽 수집 후)
+5. 인증 고도화 (refresh token / 다중 사용자)
+6. 백테스트 고도화 (walk-forward / 실 비용 모델)
+7. Paper/Simulation Trading 준비 (MockBroker skeleton)
+8. 자동매매 (Future Backlog — 별도 보안·컴플라이언스 사이클 선행 필수)
+
+---
+
+## 0-1. v0.9 시작 선언 → 마감으로 갱신 (기록 보존)
 
 ### v0.9 채택 결론 (후보 비교 요약)
 

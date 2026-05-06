@@ -4,30 +4,32 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.8 User & Migration Foundation — 마감 완료.**
-> 최종 마감 태그 `v0.8-final`. v0.8은 v0.1 부터 일관 유지된 **read-only 정책의
-> 첫 변경 cycle** — 27 테이블 시점에 **Alembic baseline 도입** +
-> **단일 사용자 인증** (`AUTH_ENABLED` 토글 + JWT HS256 + scrypt password) +
-> **Watchlist 도메인 POST/DELETE** 첫 도입 (총 5 라우터) +
-> **Watchlist 프런트 11번째 화면** (`/watchlist`) + Login 화면 (`/login`) +
-> StockDetail `FavoriteButton` + Today `WatchlistCard` 를 추가한 사이클이다.
-> **`StrategySignal` / `BacktestResult` 는 분석 신호 — broker / quantity / order_*
-> 필드 0건 정책 그대로 유지**. `WatchlistItem` 에도 broker / account / quantity /
-> order_* 컬럼 0건 (repo 단언 + e2e 단언).
+> **v0.9 Operational Security & Watchlist Polish — 마감 완료.**
+> 최종 마감 태그 `v0.9-final`. v0.9 는 v0.8 에서 도입한 JWT 인증 + Watchlist
+> POST 라우터 위에 **운영 보안** (SecurityHeadersMiddleware + slowapi rate limit +
+> BruteForceGuard) + **구조화 로깅·모니터링** (RequestIDMiddleware + SensitiveFilter
+> + optional Sentry + ErrorBoundary) + **Watchlist API 고도화** (PATCH rename /
+> DELETE list / set-default / memo PATCH — 4건 추가) + **UserPreference**
+> (32번째 테이블, `default_watchlist_id` FK) + **Provider resilience skeleton**
+> (retry_with_backoff / CircuitBreaker) + **Frontend 관리 UI** (Watchlist 인라인
+> 편집 + Settings UserPreference 섹션 + Today/StockDetail preference 연동) 을
+> 쌓은 사이클이다.
+> 자동매매 / 실주문 / Broker 구현 / LLM / 실 DART·RSS 호출 은 여전히 **0건**.
 >
-> 최신 통과 회귀 게이트 — **백엔드 pytest 808 (1 deselected) / frontend vitest 113 /
+> 최신 통과 회귀 게이트 — **백엔드 pytest 916 (1 deselected) / frontend vitest 146 /
 > Playwright e2e 19 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
 > SMALL_AUTO 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface` 는
 > ABC placeholder 만 유지). 인증 (`AUTH_ENABLED=false` 기본) 이므로 기존
 > read-only GET API 는 그대로 OPEN. 자세한 정책은 [`AGENTS.md`](./AGENTS.md) /
 > [`ROADMAP.md`](./ROADMAP.md) 참조.
 >
-> **저작권 / 데이터 정책 (v0.4 ~ v0.8 누적)**: 리포트·뉴스·공시·재무·실적 원문 본문
+> **저작권 / 데이터 정책 (v0.4 ~ v0.9 누적)**: 리포트·뉴스·공시·재무·실적 원문 본문
 > (paragraph) 저장 0건, PDF / Excel BLOB 저장 0건, 자동 크롤링 0건,
-> `source_file_path` 외부 노출 0건. `WatchlistItem` ORM 에 broker / account /
-> quantity / order_* 컬럼 0건. **평문 IP / 평문 password 저장 0건** —
-> `LoginAuditLog.source_ip_hash` 는 SHA256 만, password 는 scrypt cost-12 hash 만.
-> 외부 API 자동 호출 0건 (실 DART / RSS / 뉴스 / KIS 호출 모두 v0.9+ 후보).
+> `source_file_path` 외부 노출 0건. `WatchlistItem` / `UserPreference` ORM 에
+> broker / account / quantity / order_* 컬럼 0건.
+> **평문 IP / 평문 password 저장 0건** — `LoginAuditLog.source_ip_hash` 는
+> SHA256 만, password 는 scrypt hash 만. 알림 설정 UI 는 저장 전용 — 실 Telegram
+> 발송 0건. 외부 API 자동 호출 0건 (실 DART / RSS / 뉴스 / KIS 호출 모두 v0.10+ 후보).
 >
 > **누적 인수 태그**: `v0.1-backend-final` → `v0.1-backend-kis-paper-verified`
 > → `v0.2-frontend-final` → `v0.3-phase-a-ci` → `v0.3-backend-analysis` →
@@ -41,7 +43,9 @@
 > `v0.7-strategy-interface` → `v0.7-backtest-engine` → `v0.7-backtest-cost-regime`
 > → `v0.7-frontend-backtest` → `v0.7-final` →
 > `v0.8-alembic-baseline` → `v0.8-auth-foundation` → `v0.8-watchlist-api`
-> → `v0.8-frontend-watchlist` → **`v0.8-final`**.
+> → `v0.8-frontend-watchlist` → `v0.8-final` →
+> `v0.9-security-hardening` → `v0.9-monitoring` → `v0.9-watchlist-api`
+> → `v0.9-frontend` → **`v0.9-final`**.
 >
 > 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
@@ -54,7 +58,9 @@
 > [`RELEASE_NOTES_v0.7.md`](./RELEASE_NOTES_v0.7.md) (v0.7 Strategy & Backtest,
 > 682 / 84 / 14) /
 > [`RELEASE_NOTES_v0.8.md`](./RELEASE_NOTES_v0.8.md) (v0.8 User & Migration Foundation,
-> **808 / 113 / 19**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.9 참조.
+> 808 / 113 / 19) /
+> [`RELEASE_NOTES_v0.9.md`](./RELEASE_NOTES_v0.9.md) (v0.9 Operational Security &
+> Watchlist Polish, **916 / 146 / 19**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.10 참조.
 
 ## 1. 프로젝트 목표
 
@@ -62,7 +68,7 @@
 증권사 리포트·테마 인텔리전스 + News·공시 데이터 라인 + 재무·실적 인텔리전스 +
 Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 
-현재까지 마감된 사이클 (v0.1 ~ v0.8) 의 누적 기능:
+현재까지 마감된 사이클 (v0.1 ~ v0.9) 의 누적 기능:
 
 - 한국투자증권 API 기반 read-only 데이터 수집
 - 시가총액 TOP 500 종목 유니버스 관리
@@ -98,10 +104,16 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **단일 사용자 인증 (v0.8)** — `AUTH_ENABLED` 토글 + JWT HS256 + scrypt password hash + `LoginAuditLog` (source_ip_hash SHA256) + `scripts/create_admin.py` CLI
 - **Watchlist 도메인 GET/POST/DELETE (v0.8)** — `Watchlist` (30번째 테이블) + `WatchlistItem` (31번째) + 5 라우터 + cross-user 404 격리 + spoofing 가드 + broker/account/quantity/order_* 컬럼 0건
 - **Watchlist 프런트 11번째 화면 + Login (v0.8)** — `/watchlist` (WatchlistListPanel / DetailPanel / AddItemForm) + `/login` (AUTH_ENABLED=false 자동 redirect) + StockDetail `FavoriteButton` + Today `WatchlistCard`
+- **Security Hardening (v0.9)** — `SecurityHeadersMiddleware` (4종 헤더) + slowapi rate limit (login 5/min / others 100/min / exempt UUID test모드) + `BruteForceGuard` (composite key + generic 401 + LOCKOUT_REJECTED 감사 로그)
+- **구조화 로깅 · 모니터링 (v0.9)** — `RequestIDMiddleware` (X-Request-ID 전파) + `SensitiveFilter` (password/token/secret 마스킹) + `LOG_FORMAT=json` 옵션 + optional Sentry (`SENTRY_ENABLED=false` 기본, `send_default_pii=False`) + 프런트 `ErrorBoundary`
+- **Watchlist API 고도화 (v0.9)** — `PATCH /api/watchlists/{id}` (rename / set-default) + `DELETE /api/watchlists/{id}` + `GET /api/watchlists/{id}/items` (페이지네이션 + symbol_prefix) + `PATCH /api/watchlists/{id}/items/{symbol}` (memo)
+- **UserPreference — 32번째 테이블 (v0.9)** — `user_preferences` ORM + Alembic `0004_user_preferences` + `GET /api/users/me/preferences` / `PUT /api/users/me/preferences` + `default_watchlist_id` FK (ON DELETE SET NULL) + `default_market` / `default_strategy` / `notification_preferences_json`
+- **Provider Resilience skeleton (v0.9)** — `ProviderCallResult` / `ProviderErrorKind` + `retry_with_backoff()` (지수 백오프, CLIENT_ERROR 비재시도) + `CircuitBreaker` (CLOSED→OPEN→HALF_OPEN→CLOSED). 실 provider 강제 적용 0건
+- **Frontend 관리 UI (v0.9)** — Watchlist 인라인 rename/delete/set-default/memo edit/item filter + Settings UserPreference 섹션 + Today/StockDetail `useEffectiveDefaultWatchlistId` preference priority chain
 - data_snapshots / decision_logs / job_runs / notification_logs persistence
-- 테스트 가능한 구조 (backend pytest **808**, vitest **113**, e2e **19**, build)
+- 테스트 가능한 구조 (backend pytest **916**, vitest **146**, e2e **19**, build)
 
-## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.8 일관 정책)
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.9 일관 정책)
 
 다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
 별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.
@@ -135,6 +147,10 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **(v0.8)** Refresh token / token revocation list — 24h JWT TTL + 재로그인만
 - **(v0.8)** Watchlist 가격 알림 / target return alert — 표시·필터만, 알림 시스템 변경 0건
 - **(v0.8)** 평문 IP / 평문 password 저장 — `source_ip_hash` SHA256 만 / scrypt hash 만
+- **(v0.9)** Provider resilience 실 provider 강제 적용 — skeleton 완성, KIS/DART 래핑은 v0.10 후보
+- **(v0.9)** CSP (Content-Security-Policy) 헤더 — Vite devserver / nginx 충돌 우려, v0.10 후보
+- **(v0.9)** notification_preferences_json 실 발송 연결 — UI 저장만, Telegram / 푸시 연결 0건
+- **(v0.9)** Prometheus exporter / Grafana 대시보드 — 외부 노출 규모 확인 후 v0.10 후보
 
 위 항목은 모두 [`ROADMAP.md`](./ROADMAP.md) 의 Future Backlog 로 분류되어 있고,
 각 항목은 진입 전제 조건 (예: 인증 / 컴플라이언스 / 자본 한도) 이 명시되어

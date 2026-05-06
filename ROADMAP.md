@@ -1,13 +1,12 @@
 # Roadmap
 
-> 본 문서는 **v0.9 시작 선언 시점** 기준으로 갱신되었다 (직전 마감 태그
-> `v0.8-final`). v0.9 는 **Operational Security & Watchlist Polish** 사이클로,
-> v0.8 에서 도입한 JWT 인증 + POST 라우터 위에 보안 강화(rate limit / security
-> headers / brute force) + 운영 모니터링(Sentry optional + 구조화 로깅) + Watchlist
-> API 고도화(PUT/DELETE 4건 + 메모) + UserPreference(32번째 테이블) + provider
-> 회복성 레이어를 쌓는다. 자동매매 / MockBroker / FULL_AUTO 는 여전히
-> **Future Backlog**. 실 DART / RSS provider 구현은 라이선스 검토(사람) 선행
-> 필수 — v0.10+ 후보.
+> 본 문서는 **v0.9 마감 시점** 기준으로 갱신되었다 (마감 태그 `v0.9-final`).
+> v0.9 **Operational Security & Watchlist Polish** 사이클 완료 —
+> SecurityHeadersMiddleware + rate limit + BruteForceGuard + RequestIDMiddleware +
+> SensitiveFilter + optional Sentry + ErrorBoundary + Watchlist PATCH/DELETE 4건 +
+> UserPreference (32번째 테이블) + Provider resilience skeleton + Frontend 관리 UI.
+> 자동매매 / MockBroker / FULL_AUTO 는 여전히 **Future Backlog**.
+> 실 DART / RSS provider 구현은 라이선스 검토(사람) 선행 필수 — v0.10+ 후보.
 
 ## 진행 이력 요약
 
@@ -21,7 +20,7 @@
 | v0.6 Fundamental & Earnings Intelligence | 재무 / 실적 데이터 라인 (CSV import 1단계) + `fundamental_score` (15%) + `earnings_score` (HoldingCheck) 첫 real 화 + StockDetail Fundamental·Earnings 카드 + Today 다가오는 어닝 | ✅ 마감 | `v0.6-final` |
 | v0.7 Strategy & Backtest Foundation | `StrategyInterface` + 룰 기반 전략 3종 + `BacktestEngine` (recommendation_results 1·3·5·20일 활용) + 비용 모델 (placeholder 0.33% 차감) + 시장 국면별 분리 + 백테스트 화면 (10번째) | ✅ 마감 | `v0.7-final` |
 | v0.8 User & Migration Foundation | Alembic baseline (27 → 31 테이블) + 단일 사용자 인증 (`AUTH_ENABLED` 토글 + JWT) + Watchlist 도메인 GET/POST/DELETE (POST 라우터 첫 도입) + Watchlist 프런트 (11번째 화면) + StockDetail/Today 즐겨찾기 통합 | ✅ 마감 | `v0.8-final` |
-| v0.9 Operational Security & Watchlist Polish | rate limit + security headers + brute force + Sentry optional + 구조화 로깅 + Watchlist API 고도화 (PUT/DELETE 4건 + 메모) + UserPreference (32번째 테이블) + provider 회복성 레이어 + Frontend 관리 UI | ⏳ 진행 중 | — |
+| v0.9 Operational Security & Watchlist Polish | rate limit + security headers + brute force + Sentry optional + 구조화 로깅 + Watchlist API 고도화 (PATCH/DELETE 4건 + 메모) + UserPreference (32번째 테이블) + provider 회복성 skeleton + Frontend 관리 UI | ✅ 마감 | `v0.9-final` |
 
 ---
 
@@ -263,38 +262,49 @@ Login 화면 + StockDetail `FavoriteButton` + Today `WatchlistCard`. 마감
 
 ---
 
-## v0.9 — Operational Security & Watchlist Polish (⏳ 진행 중)
+## v0.9 — Operational Security & Watchlist Polish (✅ 마감)
 
-기준선: `v0.8-final` (HEAD `80f0bac`). 회귀 게이트: pytest **808** / vitest **113** / e2e **19** / build 그린.
+기준선: `v0.8-final` (HEAD `80f0bac`). 마감 게이트: pytest **916** / vitest **146** / e2e **19** / build 그린.
 
-핵심 목표: POST 라우터 운영 보안 강화 + 운영 모니터링 기반 + Watchlist UX 고도화 + UserPreference 기초.
-
-| Phase | 작업 | 상태 | 산출 태그 | 목표 게이트 |
+| Phase | 작업 | 상태 | 태그 | 실측 게이트 |
 |---|---|---|---|---|
-| A | Security Hardening (slowapi rate limit + security headers + brute force) | ⏳ 미착수 | `v0.9-security-hardening` | pytest ~830 |
-| B | Error Monitoring + 구조화 로깅 (Sentry optional + LOG_FORMAT + RequestID + React ErrorBoundary) | ⏳ 미착수 | `v0.9-monitoring` | pytest ~850 |
-| C | Watchlist API 고도화 + UserPreference + Provider 회복성 (PUT/DELETE 4건 + 32번째 테이블 + Alembic 0004~0005 + ProviderStatus) | ⏳ 미착수 | `v0.9-watchlist-api` | pytest ~910 |
-| D | Frontend 관리 UI (Watchlist rename/delete/default/메모 + Settings 화면) | ⏳ 미착수 | `v0.9-frontend` | vitest ~130 / e2e ~27 |
-| E | 마감 (RELEASE_NOTES_v0.9.md + 문서 갱신) | ⏳ 미착수 | `v0.9-final` | 4 게이트 그린 |
+| A | SecurityHeadersMiddleware + slowapi rate limit + BruteForceGuard (37 신규 케이스) | ✅ 인수 | `v0.9-security-hardening` | pytest 808→845 |
+| B | RequestIDMiddleware + SensitiveFilter + optional Sentry + ErrorBoundary (24 신규 케이스) | ✅ 인수 | `v0.9-monitoring` | pytest 845→869 |
+| C | Watchlist PATCH/DELETE 4건 + UserPreference 32번째 테이블 + Provider resilience skeleton (47 신규 케이스) | ✅ 인수 | `v0.9-watchlist-api` | pytest 869→916 |
+| D | Watchlist 관리 UI + UserPreference Settings + Today/StockDetail preference 연동 (29 신규 vitest) | ✅ 인수 | `v0.9-frontend` | vitest 117→146 |
+| E | RELEASE_NOTES_v0.9.md + 문서 마감 + tag `v0.9-final` | ✅ 문서 마감 | `v0.9-final` | 4 게이트 그린 |
 
-### v0.9 에서 추가되는 새 라우터 (v0.8 5건 + v0.9 6건 = 11건)
+**v0.9 핵심 정책 (cycle-wide)**:
 
-- `PUT /api/watchlists/{id}` — 목록 이름 변경
-- `DELETE /api/watchlists/{id}` — 목록 삭제 (cascade)
-- `PUT /api/watchlists/{id}/default` — 기본 목록 지정
-- `PUT /api/watchlists/{id}/items/{symbol}` — 종목 메모 편집
-- `GET /api/me/preferences` — 사용자 설정 조회
-- `PUT /api/me/preferences` — 사용자 설정 저장
+- 자동매매 / 실 KIS 주문 / BrokerInterface 구현 0건 — v0.1~v0.8 와 동일
+- 실 DART / 실 RSS / 뉴스 외부 API 실제 호출 0건 — Provider resilience skeleton 만
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
+- WatchlistItem broker/account/quantity/order_* 컬럼 추가 0건
+- 알림 설정 UI 저장 전용 — Telegram / 푸시 실제 발송 0건
+- 비밀값 미노출 — password_hash / access_token / jwt_secret / source_file_path API 응답 0건
 
-### v0.9 정책 (변경 없을 항목)
+상세 계획: [`PLANS.md`](./PLANS.md) `PLAN-0009` / 마감 사유: [`RELEASE_NOTES_v0.9.md`](./RELEASE_NOTES_v0.9.md)
 
-- ❌ 자동매매 / 실 KIS 주문 / BrokerInterface 구현 0건
-- ❌ 실 DART / 실 RSS provider 구현 (ProviderStatus + retry interface 만)
-- ❌ 다중 사용자 / OAuth / refresh token / Prometheus / Grafana
-- ❌ ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
-- ❌ WatchlistItem broker/account/quantity/order_* 컬럼 추가 0건
+---
 
-상세 계획: [`PLANS.md`](./PLANS.md) `PLAN-0009`
+## v0.10 — 후보 (v0.9 마감 후 검토 대기)
+
+기준선 예정: `v0.9-final`. 아래 항목은 우선순위 순서이며 실제 진입 시 별도 계획서 작성 후 확정.
+
+| 후보 | 카테고리 | 전제 조건 |
+|---|---|---|
+| 실 DART / RSS provider 구현 | Data 인프라 | 라이선스 검토(사람) 선행 |
+| Provider resilience 실 적용 (KIS/DART 래핑) | 운영 안정성 | v0.9 skeleton 검증 후 |
+| Prometheus exporter + Grafana 대시보드 | 운영 모니터링 | 외부 노출 규모 확인 후 |
+| CSP / CSRF / rate limit 고도화 | 보안 | 운영 트래픽 수집 후 |
+| Refresh token / 다중 사용자 / OAuth | 인증 고도화 | 단일 사용자 운영 검증 후 |
+| 백테스트 고도화 (walk-forward / 실 비용 모델) | 분석 고도화 | v0.7 데이터 누적 후 |
+| Watchlist 가격 알림 / target return alert | UX 고도화 | 알림 시스템 별도 cycle |
+| Paper/Simulation Trading (MockBroker skeleton) | 트레이딩 준비 | 별도 보안·컴플라이언스 사이클 선행 |
+| LLM 보강 (News sentiment / 재무 자동화) | AI 고도화 | 룰 기반 검증 + 데이터 누적 |
+
+> **자동매매 / 실주문 (FULL_AUTO / SMALL_AUTO / BrokerInterface 구현)** 는 v0.10 에도
+> **Future Backlog** 유지. 별도 보안·컴플라이언스·자본 한도 사이클 선행 없이는 진입 불가.
 
 ---
 
