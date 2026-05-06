@@ -9,7 +9,7 @@
 
 ## 0. v0.7 진행 선언 — Strategy & Backtest Foundation
 
-**v0.7 cycle 진행 중 (계획 단계 — Phase A 진입 대기).** 기준선 `v0.6-final`
+**v0.7 cycle 진행 중 (Phase A 완료).** 기준선 `v0.6-final`
 (HEAD `e729d60` 시점, origin/main 동기화 완료, 5 누적 태그
 `v0.6-fundamental-data-layer` → `v0.6-earnings-event-pipeline` →
 `v0.6-fundamental-score` → `v0.6-frontend-fundamentals` → `v0.6-final` 모두
@@ -34,7 +34,7 @@ v0.7 에서도 추가하지 않는다.
 
 | Phase | 작업 | 상태 | 산출 태그 (예정) |
 |---|---|---|---|
-| A | Strategy interface + 룰 기반 전략 정의 (`StrategyInterface` ABC + `TopGradeStrategy` / `HighScoreStrategy` / `MultiSignalStrategy` + 단위 테스트) | ⏳ | `v0.7-strategy-interface` |
+| A | Strategy interface + 룰 기반 전략 정의 (`StrategyInterface` ABC + `TopGradeStrategy` / `HighScoreStrategy` / `MultiSignalStrategy` + 단위 테스트) | ✅ 완료 | `v0.7-strategy-interface` |
 | B | Backtest engine + 신규 테이블 2개 (`BacktestRun` 26번째 + `BacktestResult` 27번째) + `scripts/run_backtest.py` argparse CLI (default dry-run) + 통합 테스트 | ⏳ | `v0.7-backtest-engine` |
 | C | 비용 모델 (`CostModel` placeholder 0.45% 차감) + 시장 국면별 분리 (`MarketRegimeRepository` 활용) + cost_adjusted_return 컬럼 | ⏳ | `v0.7-backtest-cost-regime` |
 | D | 백엔드 read-only API 3종 (`/api/strategies` + `/api/backtest/runs` + `/api/backtest/runs/{run_id}`) + 프런트 10번째 화면 `/backtest` + Sidebar `백테스트 (β)` 메뉴 | ⏳ | `v0.7-frontend-backtest` |
@@ -94,6 +94,66 @@ v0.7 에서도 추가하지 않는다.
 | D | `frontend/src/api/types.ts` / `hooks/` | 타입 + hook 신규 |
 
 DB 마이그레이션 = `CREATE TABLE backtest_runs ...; CREATE TABLE backtest_results ...;` 두 줄, destructive 0건. 기존 테이블 변경 0건.
+
+### v0.7 Phase A 결과 (요약) — Strategy interface + 룰 기반 전략 3종
+
+> Phase A 는 backend 순수 로직만 추가. DB 모델 / 라우터 / 프런트 / scheduler /
+> Telegram / 자동매매 / 외부 호출 0건. 전략 신호는 매매 주문이 아니라 백테스트
+> / 분석용 신호임이 코드 + 단위 테스트 양쪽에서 명시된다.
+
+- `app/strategy/__init__.py` 신규 — 패키지 진입점. 공개 심볼 (`StrategyInterface`,
+  `StrategySignal`, `ScoreSnapshot`, `TopGradeStrategy`, `HighScoreStrategy`,
+  `MultiSignalStrategy`, 액션 상수 3종 + `STRATEGY_ACTIONS` / `SCORE_SNAPSHOT_FIELDS`)
+  re-export.
+- `app/strategy/interfaces.py` 신규:
+  - `StrategySignal` (frozen dataclass) — `action` (BUY / PASS / AVOID 외 값 거부 →
+    `ValueError`), `confidence` (Decimal, `__post_init__` 에서 `[0, 1]` 자동 clamp +
+    non-Decimal 입력 자동 coerce), `reason` (str), `evidence` (`dict | None`).
+    "주문이 아니다 — quantity / price / account / broker 없음" 명시 docstring.
+  - `ScoreSnapshot` (frozen dataclass) — 14 필드 (`symbol`, `total_score`, `grade`,
+    `technical_score`, `news_score`, `supply_score`, `fundamental_score`,
+    `earnings_score`, `ai_score`, `report_score`, `theme_signal_score`,
+    `risk_level`, `risk_flags`, `evidence`). 수치는 모두 nullable, `risk_flags` 는
+    `default_factory=list` 로 인스턴스 격리.
+  - `StrategyInterface` (ABC) — `name` / `version` 추상 property + `evaluate(snapshot)
+    -> StrategySignal` 추상 method. **외부 API / DB / Telegram / 주문 호출 금지**
+    docstring 명시.
+  - `STRATEGY_ACTIONS` frozenset + `SCORE_SNAPSHOT_FIELDS` frozenset (테스트
+    가드용).
+- `app/strategy/rule_based.py` 신규:
+  - `TopGradeStrategy` v1.0.0 — grade `S` → BUY (conf 0.9), `A` → BUY (conf 0.75),
+    `D` → AVOID (conf 0.75), 그 외 / `None` → PASS (conf 0.5). lowercase 입력
+    자동 normalize.
+  - `HighScoreStrategy` v1.0.0 — `total_score >= 75` → BUY (linear 75→0.6 / 100→1.0),
+    `<= 35` → AVOID (linear 35→0.6 / 0→0.985), 그 외 / `None` → PASS (conf 0.5).
+    confidence 는 `StrategySignal` post-init clamp.
+  - `MultiSignalStrategy` v1.0.0 — AVOID 우선 게이트 (HIGH risk → conf 0.85,
+    `RISK_DISCLOSURE` flag → conf 0.85, `total_score <= 35` → conf 0.7) → BUY 게이트
+    (`total >= 65` AND `fundamental >= 60` AND `news >= 50` AND `(earnings >= 50
+    or None)` AND not HIGH risk AND no RISK_DISCLOSURE → conf 0.7) → 나머지 PASS.
+    BUY 시 evidence-driven boost: `earnings_evidence.surprise_type == "BEAT"` →
+    +0.10, `news_evidence.positive_count > negative_count` → +0.05. `evidence`
+    가 `None` / 비-dict / 비-int count 등 malformed 일 때 raise 0건.
+- `tests/unit/test_rule_based_strategies.py` 신규 — **56 케이스** 단위 테스트:
+  - StrategySignal: action 검증 1 + parametrize 정상 액션 3 + confidence clamp
+    parametrize 7 + non-Decimal coerce 1 = **12**
+  - ScoreSnapshot: 최소 생성 1 + order field 부재 가드 1 (quantity / price /
+    account / broker / order_type / side 모두 필드에 없음 단언) + risk_flags
+    인스턴스 격리 1 = **3**
+  - StrategyInterface: ABC 직접 인스턴스화 차단 1 + 3 구현체 호환 가드 1 = **2**
+  - TopGradeStrategy: parametrize 2 + AVOID 1 + parametrize 5 + lowercase 1 = **9**
+  - HighScoreStrategy: parametrize 10 + None → PASS 1 + confidence 범위 가드 1 = **12**
+  - MultiSignalStrategy: BUY 1 + earnings None BUY 1 + HIGH AVOID 1 + DISCLOSURE
+    AVOID 1 + low total AVOID 1 + mid PASS 1 + 3 component threshold PASS 3 +
+    BEAT boost 1 + news skew boost 1 + combined boost clamp 1 + non-positive skew
+    no boost 1 + missing evidence 1 + malformed evidence 1 = **15**
+  - 3 전략 × 빈 snapshot → PASS 가드 parametrize 3 = **3**
+- 회귀: backend pytest **558 → 614 passed (+56)**. frontend / e2e / build 변경
+  0건. 라우터 / 프런트 / DB 모델 / scheduler / Telegram / 자동매매 / 외부 호출
+  0건. ScoringEngine 본 weight 변경 0건.
+- 안전 범위: `app/strategy/` 전 파일에서 `requests`, `httpx`, `aiohttp`, `urllib`,
+  KIS 클라이언트, DART 클라이언트, Telegram, `app.db.session`, `app.data.repositories`
+  import 0건. `BrokerInterface` 호출 0건.
 
 ### v0.7 누적 태그 (예정)
 

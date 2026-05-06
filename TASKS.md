@@ -689,14 +689,21 @@ read-only 화면** 을 도입한다. 다음 자연 질문 "이 추천이 돈이 
 - ❌ 운영 모니터링 (Sentry / Prometheus / Grafana) — v0.8+ 후보
 - ❌ 백테스트 결과 자동 텔레그램 알림 — read-only 화면만, 자동 발송 0건
 
-### Phase A — Strategy interface + 룰 기반 전략 정의
+### Phase A — Strategy interface + 룰 기반 전략 정의 ✅ 인수
 
-- [ ] `app/strategy/__init__.py` 신규
-- [ ] `app/strategy/interfaces.py` — `StrategyInterface` ABC (`evaluate(snapshot: ScoreSnapshot) -> StrategySignal`, `name: str`, `version: str`) + `StrategySignal` dataclass (action: BUY/PASS/AVOID, confidence, reason) + `ScoreSnapshot` dataclass (recommendation snapshot 의 component scores + evidence 묶음)
-- [ ] `app/strategy/rule_based.py` — `TopGradeStrategy` (grade A → BUY) + `HighScoreStrategy` (total_score >= 75 → BUY, <= 35 → AVOID) + `MultiSignalStrategy` (fundamental ≥ 60 + earnings BEAT + news 양성 + disclosure 0 → BUY)
-- [ ] `tests/unit/test_rule_based_strategies.py` 신규 — 3 전략별 happy / threshold edge / null evidence fallback / `StrategyInterface` 추상 호환 가드 (~15 케이스)
-- 안전 범위: KIS / DART / Telegram 호출 0건, scheduler job 0건, API 라우터 0건, frontend 변경 0건, DB 모델 변경 0건, 자동매매/주문 코드 0건
-- 완료 기준: backend pytest **558 → ~580 passed (+~22)**, 회귀 0건. 태그 `v0.7-strategy-interface`.
+- [x] `app/strategy/__init__.py` 신규 — 패키지 진입점 + 공개 심볼 export (`StrategyInterface` / `StrategySignal` / `ScoreSnapshot` / 3 룰 기반 전략 / 액션 상수)
+- [x] `app/strategy/interfaces.py` — `StrategySignal` dataclass (frozen, `action` STRATEGY_ACTIONS 검증 + `confidence` 자동 [0,1] clamp) + `ScoreSnapshot` dataclass (frozen, 14 필드 모두 nullable + `risk_flags` default_factory + `SCORE_SNAPSHOT_FIELDS` frozenset) + `StrategyInterface` ABC (`name` / `version` 추상 property + `evaluate` 추상 method)
+- [x] `app/strategy/rule_based.py` — `TopGradeStrategy` (S/A → BUY, D → AVOID, conf 0.9/0.75/0.5) + `HighScoreStrategy` (≥75 → BUY linear ramp, ≤35 → AVOID linear ramp) + `MultiSignalStrategy` (HIGH risk / RISK_DISCLOSURE / total≤35 → AVOID; total≥65 + fundamental≥60 + news≥50 + earnings≥50-or-None → BUY; evidence 기반 +0.10 BEAT / +0.05 news skew boost)
+- [x] `tests/unit/test_rule_based_strategies.py` 신규 — **56 케이스**:
+  - StrategySignal action validation (1) + 정상 액션 parametrize (3) + confidence clamp (7) + non-Decimal coercion (1)
+  - ScoreSnapshot 최소 생성 (1) + order field 부재 가드 (1) + risk_flags 인스턴스 격리 (1)
+  - StrategyInterface ABC 직접 인스턴스화 차단 (1) + 3 구현체 호환 가드 (1)
+  - TopGrade S/A → BUY (parametrize 2) + D → AVOID (1) + B/C/Z/empty/None → PASS (parametrize 5) + lowercase normalize (1)
+  - HighScore action threshold parametrize (10) + score=None → PASS (1) + confidence range guard (1)
+  - MultiSignal happy BUY (1) + earnings None BUY (1) + HIGH risk AVOID (1) + RISK_DISCLOSURE flag AVOID (1) + low total AVOID (1) + mid total PASS (1) + 3 component threshold PASS (3) + BEAT boost (1) + news skew boost (1) + combined boost clamp (1) + non-positive skew no boost (1) + missing evidence dict (1) + malformed news_evidence (1)
+  - 3 전략 × 빈 snapshot → PASS 가드 (parametrize 3)
+- 안전 범위: KIS / DART / Telegram 호출 0건, scheduler job 0건, API 라우터 0건, frontend 변경 0건, DB 모델 변경 0건, 자동매매/주문 코드 0건. `ScoreSnapshot` 에 quantity / price / account / broker / order_type / side 필드 부재 (단언으로 가드)
+- 완료 기준: backend pytest **558 → 614 passed (+56)**, 회귀 0건. 태그 `v0.7-strategy-interface`.
 
 ### Phase B — Backtest engine + recommendation_results 활용
 

@@ -11,7 +11,7 @@
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **558 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 Phase C 544 → Phase D 558) |
+| backend pytest | `.\.venv\bin\python.exe -m pytest -q` | **614 passed** (v0.1 296 → v0.3 319 → v0.4 final 382 → v0.5 final 481 → v0.6 final 558 → v0.7 Phase A 614) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **77 passed** (13 파일, jsdom + msw v2) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, vendor-charts 청크 383 kB / gzip 105 kB) |
 | Playwright e2e | `cd frontend && npm run e2e` | **13 passed** (chromium + page.route mock) |
@@ -292,6 +292,48 @@ weight 산식 변경 0건, 신규 POST 0건, KIS / DART / Telegram 호출 0건.
 - 프런트 evidence cell 은 `reason: "no_fundamental_snapshot"` /
   `"no_earnings_event"` 시그널을 명시적으로 검사해서 placeholder "—" 로 렌더 —
   데이터 부족 시 빈 문자열 / 잘못된 숫자가 노출되지 않는다.
+
+## 6.12 v0.7 Phase A — Strategy interface + 룰 기반 전략 단위 테스트
+
+v0.7 Phase A 는 **순수 함수 backend 로직** 만 추가한다. DB 모델 / API 라우터 /
+프런트 / scheduler / 외부 호출 / 자동매매 / 주문 0건. 테스트도 모두 단위
+테스트만 — DB / network / Telegram / fixture seed 의존성 0건.
+
+- `tests/unit/test_rule_based_strategies.py` 신규 — **56 케이스**:
+  - StrategySignal action 검증 (1) + 정상 액션 parametrize (3) + confidence
+    `[0, 1]` 자동 clamp parametrize (7) + non-Decimal coerce (1) = **12**
+  - ScoreSnapshot 최소 생성 (1) + **order field 부재 가드 (1)** (`quantity`,
+    `price`, `account`, `broker`, `order_type`, `side` 모두 필드에 없음 +
+    `SCORE_SNAPSHOT_FIELDS` frozenset 과 `__dataclass_fields__` 동치 단언) +
+    risk_flags 인스턴스 격리 (1) = **3**
+  - StrategyInterface ABC 직접 인스턴스화 차단 (1) + 3 구현체 호환 + name /
+    version 검증 (1) = **2**
+  - TopGradeStrategy parametrize 액션 (8) + lowercase normalize (1) = **9**
+  - HighScoreStrategy threshold parametrize (10) + None → PASS (1) + confidence
+    범위 가드 (1) = **12**
+  - MultiSignalStrategy AVOID 우선 (3) + BUY happy + earnings None (2) + 3
+    component threshold PASS (3) + low total AVOID (1) + mid PASS (1) + BEAT
+    boost (1) + news skew boost (1) + combined clamp (1) + non-positive skew
+    no boost (1) + missing evidence (1) + malformed evidence raise 0건 (1) = **15**
+  - 3 전략 × 빈 snapshot → PASS 가드 parametrize (3) = **3**
+
+핵심 안전 가드:
+
+- `StrategySignal` 은 분석용 신호이지 매매 주문이 아니다. `action` 은
+  `STRATEGY_ACTIONS = {BUY, PASS, AVOID}` 외 값이면 `ValueError`. `confidence`
+  는 `__post_init__` 에서 `[0, 1]` 자동 clamp 되므로 호출자가 음수 / 1.0+ 을
+  넘겨도 panic 없음.
+- `ScoreSnapshot` 에 quantity / price / account / broker / order_type / side
+  필드가 추가되면 단위 테스트가 즉시 깨진다 (`SCORE_SNAPSHOT_FIELDS` frozenset
+  단언). 이는 v0.7+ 에서 strategy 레이어가 broker 레이어와 코드 단위로 격리
+  유지되도록 강제하는 가드.
+- 모든 룰 기반 전략은 빈 / null / malformed `evidence` 입력에 대해 raise 0건 —
+  최소 PASS 로 fallback. 이 보장은 BacktestEngine (Phase B) 이 결정론적으로
+  과거 snapshot 을 replay 할 수 있게 하는 전제.
+- `app/strategy/` 패키지는 `requests` / `httpx` / `aiohttp` / `urllib` /
+  `app.db.session` / `app.data.repositories` / KIS / DART / Telegram /
+  BrokerInterface 를 import 하지 않는다 — 단위 테스트 환경에서 외부 자원
+  접근 0건이 보장된다.
 
 ## 7. 금지 사항
 
