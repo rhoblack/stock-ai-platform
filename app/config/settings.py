@@ -199,6 +199,35 @@ class Settings:
         default_factory=lambda: os.getenv("SENTRY_ENVIRONMENT") or None,
     )
 
+    # v0.10 Phase A -- Provider resilience runtime settings.
+    # PROVIDER_RESILIENCE_ENABLED=false (default) keeps all wrapper opt-in logic
+    # inactive.  Set to true in production once providers are hardened.
+    # Per-provider enable flags (DART_ENABLED, RSS_NEWS_ENABLED) are added in
+    # Phase B and Phase C respectively.
+    provider_resilience_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("PROVIDER_RESILIENCE_ENABLED"), False),
+    )
+    provider_default_timeout_s: float = field(
+        default_factory=lambda: float(os.getenv("PROVIDER_DEFAULT_TIMEOUT_S") or "10.0"),
+    )
+    provider_default_max_attempts: int = field(
+        default_factory=lambda: _as_int(os.getenv("PROVIDER_DEFAULT_MAX_ATTEMPTS"), 3),
+    )
+    provider_default_base_delay_s: float = field(
+        default_factory=lambda: float(os.getenv("PROVIDER_DEFAULT_BASE_DELAY_S") or "0.5"),
+    )
+    provider_default_max_delay_s: float = field(
+        default_factory=lambda: float(os.getenv("PROVIDER_DEFAULT_MAX_DELAY_S") or "10.0"),
+    )
+    provider_circuit_breaker_failure_threshold: int = field(
+        default_factory=lambda: _as_int(os.getenv("PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD"), 5),
+    )
+    provider_circuit_breaker_reset_timeout_s: float = field(
+        default_factory=lambda: float(
+            os.getenv("PROVIDER_CIRCUIT_BREAKER_RESET_TIMEOUT_S") or "60.0"
+        ),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

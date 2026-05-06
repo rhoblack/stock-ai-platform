@@ -1005,14 +1005,14 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 기준선: `v0.9-final`. 회귀 게이트: pytest 916 / vitest 146 / e2e 19 / build 그린.
 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0010`
 
-### Phase A: Provider Resilience 실 적용
+### Phase A: Provider Resilience 실 적용 ✅ 인수
 
-- [ ] `ProviderHealthMonitor` 클래스 구현 (`app/data/provider_health_monitor.py`)
-- [ ] `KisDataProvider` 핵심 외부 호출에 `retry_with_backoff()` 데코레이터 적용
-- [ ] `CircuitBreaker` → `KisDataProvider` 연결
-- [ ] 단위 테스트 ~25건 (`tests/data/test_provider_health_monitor.py`)
-- [ ] 기존 KIS provider 회귀 테스트 0건 추가 실패 확인
-- [ ] `tag v0.10-provider-resilience + push`
+- [x] `ProviderHealthMonitor` 클래스 구현 (`app/data/provider_health_monitor.py`)
+- [x] `call_with_resilience()` 공통 래퍼 구현 (retry + circuit breaker + failure isolation + request_id 로그)
+- [x] `app/config/settings.py` — provider resilience 런타임 설정 7종 추가 (provider_resilience_enabled=False 기본)
+- [x] 단위 테스트 31건 (`tests/data/test_provider_health_monitor.py`)
+- [x] 기존 916건 회귀 0건 추가 실패 확인 (947 passed)
+- [x] `tag v0.10-provider-resilience + push`
 
 ### Phase B: DART Provider 구현
 

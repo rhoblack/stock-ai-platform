@@ -1,17 +1,17 @@
 # TESTING.md
 
-> 본 문서는 **v0.9 Phase D 시점** 기준으로 갱신된다 (`v0.9-frontend`
-> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.9 신규 테스트 카테고리를
+> 본 문서는 **v0.10 Phase A 시점** 기준으로 갱신된다 (`v0.10-provider-resilience`
+> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.10 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.9 Phase D 시점)
+## 1. 현재 회귀 게이트 (v0.10 Phase A 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **916 passed** (v0.9 Phase C 기준, 백엔드 변경 없음) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **947 passed** (v0.10 Phase A: 916 → 947, +31 신규) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **146 passed** (19 파일, jsdom + msw v2; Phase C 117 → Phase D 146; +29 신규) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
