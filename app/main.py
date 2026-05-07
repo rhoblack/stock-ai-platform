@@ -13,6 +13,7 @@ from app.api import (
     metrics_router,
     preferences_router,
     router as api_router,
+    validation_router,
     watchlist_router,
 )
 from app.auth.brute_force import BruteForceGuard
@@ -164,6 +165,7 @@ def create_app() -> FastAPI:
     app.include_router(preferences_router)
     app.include_router(health_router)
     app.include_router(metrics_router)
+    app.include_router(validation_router)
     app.include_router(api_router)
 
     # v0.11 Phase C -- initialise Prometheus metrics bundle when the

@@ -637,6 +637,71 @@ class BacktestComparisonResponse(_BaseSchema):
     strategies: List[BacktestComparisonStrategySchema] = []
 
 
+# ----- v0.13 Phase C — Validation Report API -----
+
+
+class ScoreDeltaSummarySchema(_BaseSchema):
+    """Aggregated score_delta statistics across backtest_results.evidence_json."""
+
+    total_scored: int
+    policy_enabled_count: int
+    avg_delta: Optional[str] = None
+    positive_delta_count: int
+    negative_delta_count: int
+    neutral_delta_count: int
+    data_source_counts: Dict[str, int]
+
+
+class ValidationStrategySummarySchema(_BaseSchema):
+    strategy_name: str
+    run_count: int
+    signal_count: int
+    buy_count: int
+    win_rate_5d: Optional[str] = None
+    avg_return_5d: Optional[str] = None
+    cost_adjusted_avg_return_5d: Optional[str] = None
+    max_drawdown: Optional[str] = None
+
+
+class ValidationRegimeSummarySchema(_BaseSchema):
+    regime: str
+    buy_count: int
+    win_rate_5d: Optional[str] = None
+    avg_return_5d: Optional[str] = None
+
+
+class ValidationSectorSummarySchema(_BaseSchema):
+    sector: str
+    buy_count: int
+    win_rate_5d: Optional[str] = None
+    avg_return_5d: Optional[str] = None
+
+
+class ValidationReportSchema(_BaseSchema):
+    generated_at: datetime
+    run_count: int
+    signal_count: int
+    buy_count: int
+    win_rate_5d: Optional[str] = None
+    avg_return_5d: Optional[str] = None
+    score_delta: ScoreDeltaSummarySchema
+
+
+class ValidationStrategyResponse(_BaseSchema):
+    count: int
+    items: List[ValidationStrategySummarySchema]
+
+
+class ValidationRegimeResponse(_BaseSchema):
+    count: int
+    items: List[ValidationRegimeSummarySchema]
+
+
+class ValidationSectorResponse(_BaseSchema):
+    count: int
+    items: List[ValidationSectorSummarySchema]
+
+
 class MarketCapRankingSchema(_BaseSchema):
     rank_date: date_type
     market: str

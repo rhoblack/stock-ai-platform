@@ -1265,18 +1265,19 @@ DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic r
 - [x] 단위 테스트 18건 (`tests/unit/test_score_delta.py`) — policy OFF / FAKE bypass / CSV·MANUAL·PROVIDER attenuation / multi-component / None score / rounding / as_dict() / ScoringEngine weight 단언
 - [x] `tag v0.13-score-delta + push` — **게이트: pytest 1241 / vitest 165 / build 그린**
 
-### Phase C: Validation Report read-only API + UI
+### Phase C: Validation Report read-only API ✅ 완료 (`v0.13-validation-api`)
 
-- [ ] `app/api/validation_routes.py` 신규 — `GET /api/validation/report` + `/by-strategy` + `/by-regime` + `/by-sector` (GET only, POST/PUT/DELETE 405)
-- [ ] `app/api/schemas.py` — `ValidationReportSchema` 등 6종 추가
-- [ ] `app/main.py` — validation_routes 등록
-- [ ] 통합 테스트 ~18건 (`tests/integration/test_validation_report.py`) — happy/empty/404/405/forbidden field
-- [ ] `frontend/src/api/types.ts` — ValidationReport 타입 추가
-- [ ] `frontend/src/hooks/useValidationReport.ts` 신규
-- [ ] `frontend/src/pages/Validation/index.tsx` 신규 (12번째 화면 `/validation`)
-- [ ] `frontend/src/tests/Validation.test.tsx` 신규 (~7건)
-- [ ] `frontend/src/tests/mswServer.ts` 핸들러 추가
-- [ ] `tag v0.13-validation-report + push`
+- [x] `app/api/validation_routes.py` 신규 — `GET /api/validation/report` + `/by-strategy` + `/by-regime` + `/by-sector` (GET only, POST/PUT/PATCH/DELETE 405)
+- [x] `app/api/schemas.py` — `ScoreDeltaSummarySchema` / `ValidationStrategySummarySchema` / `ValidationRegimeSummarySchema` / `ValidationSectorSummarySchema` / `ValidationReportSchema` / `ValidationStrategyResponse` / `ValidationRegimeResponse` / `ValidationSectorResponse` 8종 추가
+- [x] `app/api/__init__.py` — `validation_router` export 추가
+- [x] `app/main.py` — `validation_router` 등록
+- [x] 통합 테스트 36건 (`tests/integration/test_validation_report.py`) — happy/empty/malformed skip/data_source bucket/policy_enabled_count/delta sign count/forbidden field/405×16(4 endpoint × 4 method)/socket monkeypatch
+- [ ] `frontend/src/api/types.ts` — ValidationReport 타입 추가 — **Phase D 범위**
+- [ ] `frontend/src/hooks/useValidationReport.ts` 신규 — **Phase D 범위**
+- [ ] `frontend/src/pages/Validation/index.tsx` 신규 (12번째 화면 `/validation`) — **Phase D 범위**
+- [ ] `frontend/src/tests/Validation.test.tsx` 신규 (~7건) — **Phase D 범위**
+- [ ] `frontend/src/tests/mswServer.ts` 핸들러 추가 — **Phase D 범위**
+- [x] `tag v0.13-validation-api + push` — **게이트: pytest 1277 / vitest 165 / build 그린**
 
 ### Phase D: Backtest Export CLI
 

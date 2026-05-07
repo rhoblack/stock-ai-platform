@@ -5,6 +5,7 @@ from app.api.health_routes import router as health_router
 from app.api.metrics_routes import router as metrics_router
 from app.api.preferences_routes import router as preferences_router
 from app.api.routes import router
+from app.api.validation_routes import router as validation_router
 from app.api.watchlist_routes import router as watchlist_router
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "metrics_router",
     "preferences_router",
     "router",
+    "validation_router",
     "watchlist_router",
 ]
