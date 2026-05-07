@@ -1,10 +1,10 @@
 # TESTING.md
 
-> 본 문서는 **v0.12 Phase A 시점** 기준으로 갱신된다 (`v0.12-provider-ingestion`
+> 본 문서는 **v0.12 Phase B 시점** 기준으로 갱신된다 (`v0.12-walk-forward`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.12 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.12 Phase A 시점)
+## 1. 현재 회귀 게이트 (v0.12 Phase B 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
@@ -12,7 +12,7 @@ provider transport injection 3중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1149 passed, 1 deselected** (v0.12 Phase A: 1119 → 1149, +30 신규 — provider data ingestion 4 어댑터 + DTO data_source 필드 + ScoringEngine weight 회귀 단언) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1167 passed, 1 deselected** (v0.12 Phase B: 1149 → 1167, +17 신규 — WalkForwardBacktestEngine + generate_folds + CLI --walk-forward) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **158 passed** (변경 없음 — Phase A 는 백엔드 전용) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.40s) |
 | Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (변경 없음 — Phase A 는 백엔드 전용) |
@@ -1570,6 +1570,57 @@ provenance 태그 + DB body 컬럼 부재 + ScoringEngine weight 회귀 + secret
 - Alembic 새 revision 0건 — `data_source` 는 runtime-only (DB 컬럼 미생성)
 - 신규 mutation 라우터 0건
 - 신규 pip 의존성 0건
+
+## 6.32 v0.12 Phase B — Walk-forward Backtest Engine 테스트
+
+`tests/integration/test_walk_forward_engine.py` 신규 **17 케이스**.
+`WalkForwardBacktestEngine` + `generate_folds()` + CLI `--walk-forward` 커버.
+
+### 6.32.1 generate_folds() 순수 논리 (DB 없음, 5건)
+
+- **basic** — Jan01~Apr30, train=30, validate=30, gap=0 → 3 폴드; 폴드 0 날짜 단언
+  (IS Jan01..Jan30, OOS Jan31..Mar01)
+- **no room** — 범위 10일, train=30, validate=20 → 빈 목록
+- **with gap** — gap=5 시 `validate_start = train_end + 6`
+- **oos_windows_do_not_overlap** — 연속 폴드의 OOS 창이 `[n].validate_end + 1 = [n+1].validate_start`
+- **exact_boundary** — train=5, validate=5, end=Jan10 → validate_end=Jan10 포함 (inclusive 경계)
+
+### 6.32.2 Engine dry-run (4건)
+
+- **no_db_writes** — `dry_run=True` 후 `BacktestRunRepository.list_recent()` = []
+- **fold_count_and_dates** — `generate_folds()` 기대치와 폴드 날짜 정확 일치
+- **gap_reflected** — `gap_days=7` → `FoldResult.is_oos_gap == 7` (모든 폴드)
+- **zero_folds_tiny_range** — 날짜 범위 부족 → `total_folds=0`, avg OOS metrics None
+
+### 6.32.3 Engine commit (3건)
+
+- **single_backtest_run** — `dry_run=False` 후 `backtest_runs` 행 정확히 1건, `status=SUCCESS`
+- **summary_json_walk_forward_folds** — `summary_json["walk_forward_folds"]` 리스트; 각 엔트리에
+  `fold_index`, `train_start`, `validate_start`, `oos_buy_count` 포함
+- **config_json_mode** — `config_json["mode"]=="walk_forward"` + `train_window_days`, `validate_window_days`, `gap_days` 기록
+
+### 6.32.4 집계 (1건)
+
+- **avg_oos_metrics** — `avg_oos_win_rate_5d` = 폴드별 OOS `win_rate_5d` 산술 평균 (None 폴드 제외)
+
+### 6.32.5 CLI (2건)
+
+- **requires_both_dates** — `--walk-forward` + `--from-date` 또는 `--to-date` 누락 → exit 2
+- **dry_run_exits_zero** — `--walk-forward` + 유효 날짜 + tmp SQLite → exit 0
+
+### 6.32.6 직렬화 (2건)
+
+- **summary_as_dict** — `WalkForwardSummary.as_dict()` 필수 키 14종 포함
+- **fold_result_as_dict** — `FoldResult.as_dict()` IS/OOS metric 키 14종 포함
+
+### 6.32.7 회귀 기준
+
+- backend pytest **1149 → 1167 passed (+17)** — 회귀 0건
+- `WalkForwardBacktestEngine` 내 per-fold `BacktestEngine` 실행은 항상 `dry_run=True` — 폴드별 DB 행 0건
+- commit 시 정확히 1건의 `BacktestRun` 영속; fold metadata는 `summary_json["walk_forward_folds"]` — Alembic revision 0건
+- 외부 HTTP 호출 0건 (BacktestEngine 기존 정책 계승)
+- 신규 pip 의존성 0건
+- 신규 DB 컬럼 / Alembic revision 0건
 
 ## 7. 금지 사항
 

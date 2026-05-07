@@ -4,6 +4,11 @@ Default behaviour is dry-run: build snapshots, evaluate the chosen strategy,
 report counts + win-rate + avg-return + missing-horizon counts, then rollback.
 Pass ``--commit`` to persist a ``BacktestRun`` + N ``BacktestResult`` rows.
 
+Pass ``--walk-forward`` to run WalkForwardBacktestEngine instead of the plain
+engine.  Requires ``--from-date`` and ``--to-date``.  ``--train-window-days``
+(default 60) and ``--validate-window-days`` (default 20) control window sizes;
+``--gap-days`` (default 0) inserts a gap between IS and OOS windows.
+
 This CLI **never** calls KIS / DART / Telegram and **never** places orders. It
 only reads from existing tables (``recommendations``, ``recommendation_results``,
 ``data_snapshots``) and writes (when committed) to the new ``backtest_runs`` /
@@ -16,6 +21,8 @@ Examples
     python -m scripts.run_backtest --strategy high_score --from-date 2026-04-01
     python -m scripts.run_backtest --strategy multi_signal --from-date 2026-04-01 --to-date 2026-05-04 --commit
     python -m scripts.run_backtest --strategy top_grade --db-url sqlite:///./trial.db --limit 50 --commit
+    python -m scripts.run_backtest --strategy top_grade --walk-forward --from-date 2025-01-01 --to-date 2026-04-30
+    python -m scripts.run_backtest --strategy high_score --walk-forward --from-date 2025-01-01 --to-date 2026-04-30 --train-window-days 90 --validate-window-days 30 --gap-days 5 --commit
 """
 
 from __future__ import annotations
@@ -28,6 +35,7 @@ from typing import Any
 from sqlalchemy import create_engine
 
 from app.backtest.engine import BacktestEngine, BacktestRunSummary
+from app.backtest.walk_forward import WalkForwardBacktestEngine, WalkForwardSummary
 from app.config.settings import get_settings
 from app.db.base import Base
 from app.db.session import create_session_factory
@@ -84,7 +92,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--limit",
         type=int,
         default=None,
-        help="Cap evaluated recommendations (most recent first). Default: no cap.",
+        help="Cap evaluated recommendations (most recent first). Default: no cap. Ignored in walk-forward mode.",
+    )
+    # Walk-forward options
+    parser.add_argument(
+        "--walk-forward",
+        dest="walk_forward",
+        action="store_true",
+        help="Run WalkForwardBacktestEngine instead of plain BacktestEngine.",
+    )
+    parser.add_argument(
+        "--train-window-days",
+        dest="train_window_days",
+        type=int,
+        default=60,
+        help="IS (in-sample) window size in calendar days (default: 60). Walk-forward only.",
+    )
+    parser.add_argument(
+        "--validate-window-days",
+        dest="validate_window_days",
+        type=int,
+        default=20,
+        help="OOS (out-of-sample) window size in calendar days (default: 20). Walk-forward only.",
+    )
+    parser.add_argument(
+        "--gap-days",
+        dest="gap_days",
+        type=int,
+        default=0,
+        help="Gap in calendar days between IS end and OOS start (default: 0). Walk-forward only.",
     )
     return parser.parse_args(argv)
 
@@ -116,6 +152,42 @@ def run_backtest(
             start_date=from_date,
             end_date=to_date,
             limit=limit,
+            dry_run=not commit,
+        )
+        if commit:
+            session.commit()
+        else:
+            session.rollback()
+    finally:
+        session.close()
+    return summary
+
+
+def run_walk_forward_backtest(
+    *,
+    strategy_name: str,
+    commit: bool,
+    from_date: date,
+    to_date: date,
+    train_window_days: int = 60,
+    validate_window_days: int = 20,
+    gap_days: int = 0,
+    database_url: str | None = None,
+) -> WalkForwardSummary:
+    factory = _build_session_factory(database_url)
+    session = factory()
+    try:
+        strategy = get_strategy(strategy_name)
+        engine = WalkForwardBacktestEngine(
+            session,
+            train_window_days=train_window_days,
+            validate_window_days=validate_window_days,
+            gap_days=gap_days,
+        )
+        summary = engine.run(
+            strategy=strategy,
+            start_date=from_date,
+            end_date=to_date,
             dry_run=not commit,
         )
         if commit:
@@ -170,26 +242,80 @@ def _print_summary(summary: BacktestRunSummary, *, commit: bool) -> None:
     print(f"  notes                         : {summary.notes}")
 
 
+def _print_walk_forward_summary(summary: WalkForwardSummary, *, commit: bool) -> None:
+    mode = "COMMIT (DB persisted)" if commit else "DRY-RUN (no DB writes)"
+    print(f"Walk-Forward Backtest - {mode}")
+    print(f"  strategy_name       : {summary.strategy_name}")
+    print(f"  strategy_version    : {summary.strategy_version}")
+    print(f"  run_date            : {summary.run_date}")
+    print(f"  start_date          : {summary.start_date}")
+    print(f"  end_date            : {summary.end_date}")
+    print(f"  train_window_days   : {summary.train_window_days}")
+    print(f"  validate_window_days: {summary.validate_window_days}")
+    print(f"  gap_days            : {summary.gap_days}")
+    print(f"  total_folds         : {summary.total_folds}")
+    print(f"  avg_oos_win_rate_5d : {_fmt(summary.avg_oos_win_rate_5d)}")
+    print(f"  avg_oos_avg_ret_5d  : {_fmt(summary.avg_oos_avg_return_5d)}")
+    if summary.fold_results:
+        print("  folds               :")
+        for fold in summary.fold_results:
+            print(
+                f"    [{fold.fold_index}] "
+                f"IS {fold.train_start}..{fold.train_end}  "
+                f"OOS {fold.validate_start}..{fold.validate_end}  "
+                f"gap={fold.is_oos_gap}  "
+                f"oos_buys={fold.buy_count}  "
+                f"oos_wr5d={_fmt(fold.oos_metrics.win_rate_5d)}  "
+                f"oos_ar5d={_fmt(fold.oos_metrics.avg_return_5d)}",
+            )
+    if summary.backtest_run_id is not None:
+        print(f"  backtest_run_id     : {summary.backtest_run_id}")
+
+
 def _fmt(value: Any) -> str:
     return "—" if value is None else str(value)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    try:
-        summary = run_backtest(
-            strategy_name=args.strategy,
-            commit=args.commit,
-            from_date=args.from_date,
-            to_date=args.to_date,
-            limit=args.limit,
-            database_url=args.db_url,
-        )
-    except UnknownStrategyError as exc:
-        print(f"Strategy error: {exc}", file=sys.stderr)
-        return 2
 
-    _print_summary(summary, commit=args.commit)
+    if args.walk_forward:
+        if args.from_date is None or args.to_date is None:
+            print(
+                "error: --walk-forward requires both --from-date and --to-date",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            summary = run_walk_forward_backtest(
+                strategy_name=args.strategy,
+                commit=args.commit,
+                from_date=args.from_date,
+                to_date=args.to_date,
+                train_window_days=args.train_window_days,
+                validate_window_days=args.validate_window_days,
+                gap_days=args.gap_days,
+                database_url=args.db_url,
+            )
+        except UnknownStrategyError as exc:
+            print(f"Strategy error: {exc}", file=sys.stderr)
+            return 2
+        _print_walk_forward_summary(summary, commit=args.commit)
+    else:
+        try:
+            summary = run_backtest(
+                strategy_name=args.strategy,
+                commit=args.commit,
+                from_date=args.from_date,
+                to_date=args.to_date,
+                limit=args.limit,
+                database_url=args.db_url,
+            )
+        except UnknownStrategyError as exc:
+            print(f"Strategy error: {exc}", file=sys.stderr)
+            return 2
+        _print_summary(summary, commit=args.commit)
+
     return 0
 
 

@@ -1184,15 +1184,15 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - [x] v0.10/v0.11 누적 회귀 0건 — backend pytest 1119 → 1149 (+30)
 - [ ] `tag v0.12-provider-ingestion + push`
 
-### Phase B: Walk-forward Backtest Engine
+### Phase B: Walk-forward Backtest Engine ✅ 인수
 
-- [ ] `app/backtest/walk_forward_engine.py` 신규 — `WalkForwardBacktestEngine` 클래스
-- [ ] train / validate window sliding (예: 60/20일, CLI 옵션)
-- [ ] per-fold metric (win_rate / avg_return / max_drawdown / IS-OOS gap) 계산
-- [ ] fold 결과를 `backtest_runs.notes` JSON 에 versioned schema 로 저장 (`{"walk_forward": {"version": 1, "folds": [...], "is_oos_gap": ...}}`) — **Alembic revision 0건**
-- [ ] `scripts/run_backtest.py` 보강 — `--walk-forward --train-window-days 60 --validate-window-days 20` CLI 옵션
-- [ ] 단위 테스트 ~15건 (`tests/integration/test_walk_forward_engine.py`)
-- [ ] v0.7 BacktestEngine 회귀 0건
+- [x] `app/backtest/walk_forward.py` 신규 — `WalkForwardBacktestEngine` + `FoldResult` + `WalkForwardSummary` + `generate_folds()`
+- [x] train/validate window sliding: `train_window_days=60`, `validate_window_days=20`, `gap_days=0` 기본값; 각 step은 `validate_window_days`씩 슬라이드해 OOS 겹침 없음
+- [x] per-fold IS/OOS metrics (`win_rate_5d` / `avg_return_5d` 등) + `avg_oos_win_rate_5d` / `avg_oos_avg_return_5d` 집계
+- [x] fold metadata를 `backtest_runs.summary_json["walk_forward_folds"]` 에 저장 — **Alembic revision 0건**
+- [x] `scripts/run_backtest.py` 보강 — `--walk-forward`, `--train-window-days`, `--validate-window-days`, `--gap-days` CLI 옵션
+- [x] 통합 테스트 17건 (`tests/integration/test_walk_forward_engine.py`) — 폴드 생성 순수논리 5건 + 엔진 dry/commit 9건 + CLI 2건 + 직렬화 1건
+- [x] v0.7 BacktestEngine 회귀 0건 — backend pytest 1149→1167 (+17, 1 deselected 유지)
 - [ ] `tag v0.12-walk-forward + push`
 
 ### Phase C: Multi-strategy Comparison + Regime/Sector Breakdown
