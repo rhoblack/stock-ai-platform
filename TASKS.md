@@ -1236,7 +1236,7 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 
 ---
 
-## v0.13 — Provider Score Policy & Validation Report (시작 선언)
+## v0.13 — Provider Score Policy & Validation Report ✅ 마감
 
 기준선: `v0.12-final`. 회귀 게이트: pytest 1194 / vitest 165 / e2e 21 / build 그린.
 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0013`. 채택 시나리오: **Scenario X —
@@ -1288,25 +1288,26 @@ DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic r
 
 **게이트: vitest 175 passed (165 → 175, +10) / build 그린 / e2e 불변**
 
-### Phase D: Backtest Export CLI
+### Phase D: Backtest Export CLI — v0.14+ 이연
 
-- [ ] `scripts/export_backtest.py` 신규 — `--run-id`, `--format csv/json`, `--output PATH`, `--dry-run`
-- [ ] fold / comparison / sector breakdown 포함
-- [ ] export 출력 파일에 API key / secret / source_file_path 포함 0건 (forbidden field guard)
-- [ ] 통합 테스트 ~8건 (`tests/integration/test_backtest_export.py`) — CSV/JSON 출력 / 금지 필드 / dry-run / 404
-- [ ] `tag v0.13-backtest-export + push`
+> 이번 사이클에서 구현하지 않고 v0.14+ 로 이연. 기능 코드 수정 없이 문서 마감 우선.
 
-### Phase E: 마감 (문서)
+- [ ] `scripts/export_backtest.py` 신규 — `--run-id`, `--format csv/json`, `--output PATH`, `--dry-run` **(v0.14+ 이연)**
+- [ ] fold / comparison / sector breakdown 포함 **(v0.14+ 이연)**
+- [ ] export 출력 파일에 API key / secret / source_file_path 포함 0건 (forbidden field guard) **(v0.14+ 이연)**
+- [ ] 통합 테스트 ~8건 (`tests/integration/test_backtest_export.py`) **(v0.14+ 이연)**
 
-- [ ] `RELEASE_NOTES_v0.13.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.14 후보)
-- [ ] `README.md` v0.13 갱신 (기능 목록 / 제외 범위 / 회귀 기준선)
-- [ ] `PROJECT_STATUS.md` §0 v0.13 마감 선언으로 교체
-- [ ] `ROADMAP.md` v0.13 행 ✅ 마감
-- [ ] `TESTING.md` 기준선 갱신 (~1255 pytest / ~172 vitest / 21 e2e)
-- [ ] `ARCHITECTURE.md` v0.13 마감 시점 반영
-- [ ] `API_SPEC.md` `/validation/report` 엔드포인트 + score_delta evidence 안내
-- [ ] `INTEGRATION_RUNBOOK.md` score policy enable 절차 + export CLI 안내
-- [ ] `tag v0.13-final + push`
+### Phase E: 마감 (문서) ✅ 완료 (`v0.13-final`)
+
+- [x] `RELEASE_NOTES_v0.13.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.14 후보)
+- [x] `README.md` v0.13 갱신 (기능 목록 / 제외 범위 / 회귀 기준선 / 누적 사이클 표)
+- [x] `PROJECT_STATUS.md` §0 v0.13 마감 선언으로 교체 (이전 §0 → §0-1, v0.12 마감 → §0-2)
+- [x] `ROADMAP.md` v0.13 행 ✅ 마감
+- [x] `TESTING.md` 기준선 기확인 (1277 pytest / 175 vitest / 21 e2e — Phase D 시 이미 갱신)
+- [x] `ARCHITECTURE.md` v0.13 마감 시점 반영
+- [x] `API_SPEC.md` `/validation/report` 엔드포인트 + score_delta evidence 안내
+- [x] `INTEGRATION_RUNBOOK.md` score policy enable 절차 안내
+- [x] `tag v0.13-final + push`
 
 ---
 

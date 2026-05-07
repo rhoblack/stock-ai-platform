@@ -1,12 +1,27 @@
 # API_SPEC.md
 
-> 본 문서는 **v0.11 마감 시점** 기준이다 (마감 태그 `v0.11-final`).
+> 본 문서는 **v0.13 마감 시점** 기준이다 (마감 태그 `v0.13-final`).
 > v0.5 §14 테마 + v0.6 §15 재무·실적 + v0.7 §16 백테스트 + v0.8 §17 인증 +
 > v0.8 §18 Watchlist + v0.9 §19 Watchlist 고도화 + v0.9 §20 UserPreference +
 > v0.10 §21 Provider Health (read-only) + v0.11 Phase D 의 6 신규 필드 (24h
-> aggregates + recent_failures) +
-> 추천 / 보유 evidence 화이트리스트 + Strategy / Backtest 응답에 broker / 주문 필드
-> 0건 가드가 모두 반영되어 있다.
+> aggregates + recent_failures) + v0.12 §22 백테스트 확장 (folds + comparison) +
+> v0.13 §23 Validation Report + score_delta evidence 안내가 모두 반영되어 있다.
+>
+> **v0.13 신규 엔드포인트 (write 라우터 0건 추가, read-only GET 4건):**
+> - `GET /api/validation/report` — 전체 요약 (`run_count` / `signal_count` / `buy_count` /
+>   `win_rate_5d` / `avg_return_5d` / `score_delta` 집계). `score_delta.data_source_counts` 는
+>   PROVIDER/CSV/MANUAL/FAKE 소스별 집계. **POST/PUT/PATCH/DELETE → 405**.
+> - `GET /api/validation/report/by-strategy` — 전략별 집계 (`strategy_name` /
+>   `run_count` / `signal_count` / `buy_count` / `win_rate_5d` / `avg_return_5d` /
+>   `cost_adjusted_avg_return_5d` / `max_drawdown`).
+> - `GET /api/validation/report/by-regime` — 시장 국면별 집계 (`regime` /
+>   `buy_count` / `win_rate_5d` / `avg_return_5d`).
+> - `GET /api/validation/report/by-sector` — 섹터별 집계 (`sector` /
+>   `buy_count` / `win_rate_5d` / `avg_return_5d`). Stock LEFT JOIN, 매핑 없는 경우 `UNKNOWN`.
+>
+> **score_delta evidence (v0.13):** `RecommendationItemSchema` / `HoldingCheckSchema` 에
+> `score_delta?: ScoreDeltaSummary` nullable 필드 추가. `evidence_json` raw 미노출 —
+> `_SCORE_DELTA_EVIDENCE_FIELDS` whitelist 추출만. `PROVIDER_SCORE_POLICY_ENABLED=False` 기본.
 >
 > **v0.11 신규 엔드포인트 (write 라우터 0건 추가, read-only GET 1건):**
 > - `GET /metrics` — Prometheus text format. `PROMETHEUS_ENABLED=false` (기본)
@@ -15,7 +30,7 @@
 >   일체 노출 0건). 자세한 metric 카탈로그는 `app/monitoring/prometheus.py` 의
 >   `PrometheusMetrics.build` 참조.
 >
-> v0.11 cycle 의 누적 write 라우터 변동 0건 (v0.9 의 11건 그대로 유지).
+> v0.13 cycle 의 누적 write 라우터 변동 0건 (v0.9 의 11건 그대로 유지).
 >
 > **v0.9 Phase C 신규 엔드포인트 (v0.8 5건 + v0.9 6건 = 총 11건 write 라우터):**
 > - `PATCH /api/watchlists/{id}` — name 변경 / is_default 토글 (이전 default 자동 demote)

@@ -1,6 +1,6 @@
 # Architecture
 
-> 본 문서는 **v0.13 Phase C 시점** 기준으로 부분 갱신된다.
+> 본 문서는 **v0.13 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.13-final`).
 > **v0.13 Phase A** — `app/scoring/provider_policy.py` 신규: `ProviderScorePolicy` +
 > `DATA_SOURCE_RELIABILITY` (PROVIDER=1.00 / CSV=0.90 / MANUAL=0.80) + `_BYPASS_SOURCES={"FAKE"}`.
 > `settings.provider_score_policy_enabled=False` (default OFF). ScoringEngine weight 변경 0건.
@@ -9,13 +9,16 @@
 > 파라미터 추가 — None 이면 delta 미기록, ProviderScorePolicy 전달 시 `market_context_json`의
 > `score_delta` 키에 기록. `app/api/routes.py` `_SCORE_DELTA_EVIDENCE_FIELDS` whitelist 추가.
 > Alembic revision 0건 — 기존 `evidence_json` JSON 컬럼 재활용.
-> 최종 게이트(Phase B): pytest 1241 / vitest 165 / build 그린.
 > **v0.13 Phase C** — `app/api/validation_routes.py` 신규 (prefix `/api/validation`):
 > `GET /report` / `GET /report/by-strategy` / `GET /report/by-regime` / `GET /report/by-sector`.
 > `app/api/schemas.py` 8종 추가 (`ScoreDeltaSummarySchema` + 7개 Validation 스키마).
 > score_delta 집계: `backtest_results.evidence_json["score_delta"]` whitelist 읽기 —
 > raw 노출 없음, malformed 자동 skip. sector 집계는 Stock LEFT JOIN으로 처리.
-> 최종 게이트(Phase C): pytest 1277 / vitest 165 / build 그린.
+> **v0.13 Phase D** — 프런트 12번째 화면 `/validation`: `ValidationPage` + `ScoreDeltaCard` +
+> 전략·국면·섹터 표 + data_source chip. `ClipboardCheck` sidebar 아이콘.
+> `useValidationReport` / `useValidationByStrategy` / `useValidationByRegime` / `useValidationBySector`
+> TanStack Query hooks (`staleTime: 60_000`). Backtest Export CLI 는 v0.14+ 이연.
+> 최종 게이트(v0.13-final): pytest **1277** / vitest **175** / e2e **21** / build 그린.
 >
 > 본 문서는 **v0.12 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.12-final`).
 > v0.12 는 v0.11 위에 다음 4개 Phase 를 추가했다:

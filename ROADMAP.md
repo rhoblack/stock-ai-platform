@@ -1,14 +1,13 @@
 # Roadmap
 
-> 본 문서는 **v0.13 시작 시점** 기준으로 갱신되었다 (기준 태그 `v0.12-final`).
-> v0.12 **Provider Data Scoring & Backtest Validation** 5 phase 완료 (마감 태그
-> `v0.12-final`). v0.13 **Provider Score Policy & Validation Report** 착수.
-> 채택 시나리오: **Scenario X** — ProviderScorePolicy 승수 엔진 (ScoringEngine
-> weight 변경 0건) + score_delta in evidence_json + Validation Report GET API +
-> Backtest Export CLI. Alembic revision 0건. DART/RSS/Prometheus/Provider Data
-> Ingestion 모두 default OFF 유지. 자동매매 / MockBroker / FULL_AUTO 는 여전히
-> **Future Backlog**. ScoringEngine weight 직접 보강 / Grafana / paper trading /
-> 인증 고도화는 v0.14+ 연기.
+> 본 문서는 **v0.13 마감 시점** 기준으로 갱신되었다 (마감 태그 `v0.13-final`).
+> v0.13 **Provider Score Policy & Validation Report** 4 phase 완료 (마감 태그
+> `v0.13-final`). 채택 시나리오: **Scenario X** — ProviderScorePolicy 승수 엔진
+> (ScoringEngine weight 변경 0건) + score_delta in evidence_json + Validation Report
+> GET API + Validation Report UI 12번째 화면. Alembic revision 0건. Backtest Export
+> CLI 는 v0.14+ 이연. DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지.
+> 자동매매 / MockBroker / FULL_AUTO 는 여전히 **Future Backlog**.
+> ScoringEngine weight 직접 보강 / Grafana / paper trading / 인증 고도화는 v0.14+ 연기.
 
 ## 진행 이력 요약
 
@@ -26,7 +25,7 @@
 | v0.10 Real Provider Readiness & Resilience | ProviderHealthMonitor + call_with_resilience + DART provider skeleton (DART_ENABLED=false, transport 주입형) + RSS/Atom provider skeleton (RSS_NEWS_ENABLED=false, stdlib xml.etree only) + GET /api/health/providers (read-only) + Settings ProviderHealthPanel | ✅ 마감 | `v0.10-final` |
 | v0.11 Real Provider Transport & Observability | DART/RSS 실 httpx transport (default OFF 유지) + provider observability (failure history ring buffer + summary_24h + optional Prometheus `/metrics`) + `/api/health/providers` 24h aggregates + Settings 패널 보강 | ✅ 마감 | `v0.11-final` |
 | v0.12 Provider Data Scoring & Backtest Validation | Provider 데이터 → DB ingestion (existing producer 자동 흡수, ScoringEngine weight 변경 0건) + walk-forward backtest engine + 다중 전략 비교 + read-only API/UI 확장 + recommendation evidence 에 `data_source` chip | ✅ 마감 | `v0.12-final` |
-| v0.13 Provider Score Policy & Validation Report | ProviderScorePolicy 승수 엔진 (weight 변경 0건) + score_delta in evidence_json + Validation Report GET API (`/by-strategy` / `/by-regime` / `/by-sector`) + Backtest Export CLI (stdlib csv) | ⏳ 진행 중 | `v0.13-final` (예정) |
+| v0.13 Provider Score Policy & Validation Report | ProviderScorePolicy 승수 엔진 (weight 변경 0건) + score_delta in evidence_json + Validation Report GET API (`/by-strategy` / `/by-regime` / `/by-sector`) + Validation Report UI 12번째 화면 (Backtest Export CLI 는 v0.14+ 이연) | ✅ 마감 | `v0.13-final` |
 
 ---
 

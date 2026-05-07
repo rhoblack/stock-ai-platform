@@ -4,28 +4,25 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.12 Provider Data Scoring & Backtest Validation — 마감 완료.**
-> 최종 마감 태그 `v0.12-final`. v0.12 는 v0.11 의 **실 DART/RSS HTTP transport**
-> 위에 **Provider Data Ingestion → walk-forward backtest 검증 → multi-strategy
-> 비교 → read-only API/UI 확장** 을 완성한 사이클이다.
-> **Phase A** (`app/data/ingestion.py` 4 어댑터, `data_source` provenance DTO,
-> `PROVIDER_DATA_INGESTION_ENABLED=False` 기본, +30 pytest) →
-> **Phase B** (`WalkForwardBacktestEngine` + `generate_folds()`, IS/OOS fold
-> sliding, `summary_json["walk_forward_folds"]`, +17 pytest) →
-> **Phase C** (`MultiStrategyRunner` + `SectorBreakdownEntry` +
-> `aggregate_sector_breakdown()`, `summary_json["multi_strategy_comparison"]`,
-> +16 pytest) →
-> **Phase D** (`GET /api/backtest/runs/{id}/folds` + `/comparison`, 5 Pydantic
-> 스키마, `useBacktestFolds` / `useBacktestComparison` hooks, fold/comparison 표
-> + sector breakdown + best strategy 배지 + `data_source` chip UI, +12 pytest / +7
-> vitest).
+> **v0.13 Provider Score Policy & Validation Report — 마감 완료.**
+> 최종 마감 태그 `v0.13-final`. v0.13 은 v0.12 위에 **ProviderScorePolicy 승수 엔진
+> + Score Delta in evidence_json + Validation Report read-only API/UI** 를 완성한
+> 사이클이다.
+> **Phase A** (`app/scoring/provider_policy.py` — `ProviderScorePolicy` 승수 엔진,
+> `PROVIDER_SCORE_POLICY_ENABLED=False` 기본, FAKE=bypass, +29 pytest) →
+> **Phase B** (`app/scoring/score_delta.py` — `ScoreDeltaResult` + `compute_score_delta()`,
+> `RecommendationEngine` / `HoldingCheckEngine` evidence_json 기록, Alembic 0건, +18 pytest) →
+> **Phase C** (`app/api/validation_routes.py` — `GET /api/validation/report` + `/by-strategy`
+> + `/by-regime` + `/by-sector`, POST→405, forbidden field guard, +36 pytest) →
+> **Phase D** (프런트 12번째 화면 `/validation` — `ValidationPage` + `ScoreDeltaCard` +
+> 전략·국면·섹터 표, `ClipboardCheck` sidebar, `useValidationReport` hooks, +10 vitest).
 > 자동매매 / 실주문 / Broker 구현 / LLM / Telegram 자동 발송 은 여전히 **0건**.
 > 모든 provider 는 default OFF 유지 — `DART_ENABLED=false` /
 > `RSS_NEWS_ENABLED=false` / `PROMETHEUS_ENABLED=false` /
-> `PROVIDER_DATA_INGESTION_ENABLED=false` 기본. ScoringEngine weight 변경 0건.
-> Alembic 신규 revision 0건.
+> `PROVIDER_DATA_INGESTION_ENABLED=false` / `PROVIDER_SCORE_POLICY_ENABLED=false` 기본.
+> ScoringEngine weight 변경 0건. Alembic 신규 revision 0건.
 >
-> 최신 통과 회귀 게이트 — **백엔드 pytest 1194 (1 deselected) / frontend vitest 165 /
+> 최신 통과 회귀 게이트 — **백엔드 pytest 1277 / frontend vitest 175 /
 > Playwright e2e 21 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
 > SMALL_AUTO 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface` 는
 > ABC placeholder 만 유지). 인증 (`AUTH_ENABLED=false` 기본) 이므로 기존
@@ -66,7 +63,9 @@
 > `v0.11-dart-transport` → `v0.11-rss-transport` → `v0.11-observability` →
 > `v0.11-health-extended` → `v0.11-final` →
 > `v0.12-provider-ingestion` → `v0.12-walk-forward` → `v0.12-multi-strategy` →
-> `v0.12-scoring-readonly` → **`v0.12-final`**.
+> `v0.12-scoring-readonly` → `v0.12-final` →
+> `v0.13-provider-policy` → `v0.13-score-delta` → `v0.13-validation-api` →
+> `v0.13-validation-ui` → **`v0.13-final`**.
 >
 > 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
@@ -87,7 +86,9 @@
 > [`RELEASE_NOTES_v0.11.md`](./RELEASE_NOTES_v0.11.md) (v0.11 Real Provider Transport
 > & Observability, 1119 / 158 / 21) /
 > [`RELEASE_NOTES_v0.12.md`](./RELEASE_NOTES_v0.12.md) (v0.12 Provider Data Scoring
-> & Backtest Validation, **1194 / 165 / 21**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.13 참조.
+> & Backtest Validation, 1194 / 165 / 21) /
+> [`RELEASE_NOTES_v0.13.md`](./RELEASE_NOTES_v0.13.md) (v0.13 Provider Score Policy
+> & Validation Report, **1277 / 175 / 21**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.14 참조.
 
 ## 1. 프로젝트 목표
 
@@ -95,7 +96,7 @@
 증권사 리포트·테마 인텔리전스 + News·공시 데이터 라인 + 재무·실적 인텔리전스 +
 Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 
-현재까지 마감된 사이클 (v0.1 ~ v0.11) 의 누적 기능:
+현재까지 마감된 사이클 (v0.1 ~ v0.13) 의 누적 기능:
 
 - 한국투자증권 API 기반 read-only 데이터 수집
 - 시가총액 TOP 500 종목 유니버스 관리
@@ -106,7 +107,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - 신규 추천 TOP 5 + 1/3/5/20일 후 성과 검증
 - 텔레그램 알림 (DRY_RUN 기본)
 - FastAPI **read-only** 대시보드 API (17+ GET, **POST 0건**)
-- **PC 대시보드 SPA** (11 화면, Vite + React + TypeScript) — v0.2 → v0.8
+- **PC 대시보드 SPA** (12 화면, Vite + React + TypeScript) — v0.2 → v0.13
 - **KRX 휴장일 정적 캘린더 + MarketStatusBanner** — v0.3
 - **StockDetail 일봉 라인 차트 (Recharts) + 30/60/120/250 days 선택자** — v0.3
 - **GitHub Actions CI** (3 잡: backend pytest / frontend vitest+build / Playwright e2e) — v0.3
@@ -151,9 +152,13 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **Walk-forward Backtest Engine (v0.12)** — `WalkForwardBacktestEngine` + `generate_folds()` (60/20일 기본 sliding, IS/OOS 겹침 없음) + IS/OOS `win_rate_5d` / `avg_return_5d` 집계 + `summary_json["walk_forward_folds"]` 직렬화 + CLI `--walk-forward` / `--train-window-days` / `--validate-window-days` / `--gap-days`
 - **Multi-strategy Comparison + Sector Breakdown (v0.12)** — `MultiStrategyRunner` + `SectorBreakdownEntry` + `aggregate_sector_breakdown()` + `summary_json["multi_strategy_comparison"]` 직렬화 + `best_strategy_by_win_rate_5d` / `_by_avg_return_5d` ranking + CLI `--multi` / `--strategies`
 - **Backtest read-only API 확장 (v0.12)** — `GET /api/backtest/runs/{id}/folds` + `GET /api/backtest/runs/{id}/comparison` (GET only, mutation 405). fold 표 / comparison 표 / sector breakdown / best strategy 배지 / `data_source` chip (PROVIDER=파랑 / FAKE=황 / CSV=보라 / MANUAL=회색) 프런트 보강
-- 테스트 가능한 구조 (backend pytest **1194**, vitest **165**, e2e **21**, build)
+- **ProviderScorePolicy 승수 엔진 (v0.13)** — `PROVIDER=1.00` / `CSV=0.90` / `MANUAL=0.80` / `FAKE=bypass`. `PROVIDER_SCORE_POLICY_ENABLED=False` 기본 — 명시 enable 시에만 적용. ScoringEngine weight 변경 0건
+- **Score Delta in evidence_json (v0.13)** — `ScoreDeltaResult` (`score_before`/`score_after`/`delta`/`components[]`) ROUND_HALF_UP 4dp. `RecommendationEngine` / `HoldingCheckEngine` 선택 파라미터 — Alembic 0건 (기존 `evidence_json` JSON 컬럼 재활용)
+- **Validation Report read-only API 4종 (v0.13)** — `GET /api/validation/report` + `/by-strategy` + `/by-regime` + `/by-sector`. POST/PUT/PATCH/DELETE → 405. forbidden field guard (`evidence_json` raw / `source_file_path` 미노출)
+- **Validation Report 프런트 12번째 화면 (v0.13)** — `/validation` (전체 요약 카드 + ScoreDelta 카드 + 전략·국면·섹터 표 + data_source chip). `ClipboardCheck` sidebar 아이콘. `useValidationReport` TanStack Query hooks (`staleTime: 60_000`)
+- 테스트 가능한 구조 (backend pytest **1277**, vitest **175**, e2e **21**, build)
 
-## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.12 일관 정책)
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.13 일관 정책)
 
 다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
 별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.
@@ -202,6 +207,8 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **(v0.11)** Provider toggle GUI / mutation API — `.env` + 재시작만 그대로, GUI 토글 0건 (v0.12+ 인증·보안 검토 후)
 - **(v0.11)** WebSocket / SSE 실시간 갱신 — Provider Health 패널은 30s staleTime + 60s refetchInterval polling, 실시간 push 는 v0.12+
 - **(v0.11)** `GET /api/health/jobs` 분리 — 여전히 보류, 기존 `/api/jobs` 가 동일 정보 제공 (v0.12+)
+- **(v0.13)** Backtest Export CLI (`scripts/export_backtest.py`) — v0.14+ 이연 (기능 코드 수정 없이 문서 마감 우선)
+- **(v0.13)** ProviderScorePolicy → producer 자동 통합 — `ProviderScorePolicy` 는 독립 유틸로 존재하지만 실 producer 에 자동 연결 미완성. v0.14+ (누적 backtest 검증 기반)
 
 위 항목은 모두 [`ROADMAP.md`](./ROADMAP.md) 의 Future Backlog 로 분류되어 있고,
 각 항목은 진입 전제 조건 (예: 인증 / 컴플라이언스 / 자본 한도) 이 명시되어
@@ -266,7 +273,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 9. FastAPI 대시보드 API
 10. 테스트와 문서화
 
-## 6. 누적 사이클 상태 (v0.1 ~ v0.11)
+## 6. 누적 사이클 상태 (v0.1 ~ v0.13)
 
 | 사이클 | 상태 | 회귀 게이트 | 최종 태그 |
 |---|---|---|---|
@@ -301,6 +308,16 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 | v0.11 Phase C — Provider Observability + Prometheus exporter (`ProviderHealthMonitor` ring buffer + `Summary24h` + `prometheus-client` `/metrics` default 404) | ✅ 인수 | pytest 1112 (+21) | `v0.11-observability` |
 | v0.11 Phase D — Provider Health API/UI 24h aggregates (`success_rate_24h` / `recent_failures[5]` + `SuccessRateBar` + `RecentFailuresList`) | ✅ 인수 | pytest 1119 (+7) / vitest 158 (+5) / e2e 21 (+1) | `v0.11-health-extended` |
 | v0.11 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 1119 / vitest 158 / e2e 21 / build | `v0.11-final` |
+| v0.12 Phase A — Provider Data Ingestion (4 어댑터, `data_source` provenance, `PROVIDER_DATA_INGESTION_ENABLED=false`) | ✅ 인수 | pytest 1149 (+30) | `v0.12-provider-ingestion` |
+| v0.12 Phase B — Walk-forward Backtest Engine (`WalkForwardBacktestEngine` + `generate_folds()`, IS/OOS sliding) | ✅ 인수 | pytest 1166 (+17) | `v0.12-walk-forward` |
+| v0.12 Phase C — Multi-strategy Comparison + Sector Breakdown (`MultiStrategyRunner`, `aggregate_sector_breakdown()`) | ✅ 인수 | pytest 1182 (+16) | `v0.12-multi-strategy` |
+| v0.12 Phase D — Backtest read-only API 확장 + fold/comparison UI + `data_source` chip | ✅ 인수 | pytest 1194 (+12) / vitest 165 (+7) / e2e 21 | `v0.12-scoring-readonly` |
+| v0.12 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 1194 / vitest 165 / e2e 21 / build | `v0.12-final` |
+| v0.13 Phase A — ProviderScorePolicy 승수 엔진 + ScoringEngine weight 회귀 단언 | ✅ 인수 | pytest 1223 (+29) | `v0.13-provider-policy` |
+| v0.13 Phase B — Score Delta in evidence_json (`ScoreDeltaResult`, Alembic 0건) | ✅ 인수 | pytest 1241 (+18) | `v0.13-score-delta` |
+| v0.13 Phase C — Validation Report read-only API 4종 (POST→405, forbidden field guard) | ✅ 인수 | pytest 1277 (+36) | `v0.13-validation-api` |
+| v0.13 Phase D — Validation Report 12번째 화면 `/validation` + vitest 10건 | ✅ 인수 | vitest 175 (+10) / e2e 21 | `v0.13-validation-ui` |
+| v0.13 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 1277 / vitest 175 / e2e 21 / build | `v0.13-final` |
 
 ### 영역별 상태
 

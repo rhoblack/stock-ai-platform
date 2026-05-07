@@ -1,15 +1,22 @@
 # INTEGRATION_RUNBOOK.md
 
-> 본 문서는 **v0.11 마감 시점** 기준이다 (마감 태그 `v0.11-final`).
+> 본 문서는 **v0.13 마감 시점** 기준이다 (마감 태그 `v0.13-final`).
 > v0.5 §10 (News) / §11 (Disclosure) / §12 (테마) +
 > v0.6 §13 (Fundamental CSV) / §14 (Earnings CSV) / §15 (read-only API) +
 > v0.7 §16 (백테스트 CLI + read-only API + 화면) +
 > v0.8 §17 (Alembic + 인증 + Watchlist) +
 > v0.9 §18 (Security Middleware + 구조화 로깅 + Watchlist PATCH/DELETE + UserPreference) +
 > v0.10 (Provider Resilience Runtime + DART/RSS provider skeleton + `GET /api/health/providers`) +
-> v0.11 (DART/RSS HTTP transport + Provider Observability + Prometheus exporter optional + 24h aggregates)
-> 모두 반영. Alembic 현재 head: `0004_user_preferences` (v0.11 신규 revision 0건 —
-> ProviderHealthMonitor / Prometheus 모두 in-memory bounded ring buffer).
+> v0.11 (DART/RSS HTTP transport + Provider Observability + Prometheus exporter optional + 24h aggregates) +
+> v0.13 §19 (ProviderScorePolicy enable 절차 + Validation Report read-only API/UI)
+> 모두 반영. Alembic 현재 head: `0004_user_preferences` (v0.13 신규 revision 0건 —
+> score_delta 는 기존 `evidence_json` JSON 컬럼 재활용).
+>
+> **v0.13 신규 운영 절차** — ProviderScorePolicy 를 활성화하려면 운영자가 `.env` 에
+> `PROVIDER_SCORE_POLICY_ENABLED=true` 를 명시 설정해야 동작. 기본 OFF 유지.
+> Validation Report 는 `GET /api/validation/report` (+ `/by-strategy` / `/by-regime` /
+> `/by-sector`) — 모두 read-only, POST/PUT/PATCH/DELETE → 405. 프런트 `/validation` 화면에서
+> 전략·국면·섹터별 backtest 검증 결과를 확인 가능.
 >
 > v0.11 신규 운영 절차 — DART/RSS 실 transport 도입 시 운영자가 `.env` 에
 > `DART_ENABLED=true` / `DART_API_KEY=...` / `RSS_NEWS_ENABLED=true` /

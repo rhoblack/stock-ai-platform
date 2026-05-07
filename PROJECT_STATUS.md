@@ -7,22 +7,27 @@
 
 ---
 
-## 0. v0.13 시작 선언 — Provider Score Policy & Validation Report
+## 0. v0.13 마감 선언 — Provider Score Policy & Validation Report
 
-**v0.13 cycle 시작.** `v0.12-final` 위에 **Provider Score Policy Engine +
-Score Delta in evidence_json + Validation Report Read-only API + Backtest
-Export CLI** 구현 예정. 채택 시나리오: **Scenario X**.
+**v0.13 cycle 마감.** `v0.12-final` 위에 **Provider Score Policy Engine +
+Score Delta in evidence_json + Validation Report Read-only API/UI** 4 Phase 완료.
+최종 마감 태그 `v0.13-final`.
 
 - 시작 일자: **2026-05-07 (Asia/Seoul)**
-- 기준 게이트: pytest **1194 passed** (1 deselected) / vitest **165 passed** / e2e **21 passed** / build 그린
-- 기준 태그: `v0.12-final` → 예상 마감 태그: `v0.13-final`
+- 마감 일자: **2026-05-08 (Asia/Seoul)**
+- 최종 게이트:
+  - backend pytest **1277 passed** (36.15s)
+  - frontend vitest **175 passed** (21 파일)
+  - frontend build **그린** (`tsc --noEmit && vite build`)
+  - Playwright e2e **21 passed** (chromium)
+- 기준 태그: `v0.12-final` → 마감 태그: `v0.13-final`
 - Alembic head: `0004_user_preferences` (v0.13 신규 revision **0건** — score_delta 는 기존 `evidence_json` JSON 컬럼 재활용; Validation Report 는 기존 `backtest_runs` / `backtest_results` 테이블 쿼리)
-- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0013`
+- 세부 결과: [`RELEASE_NOTES_v0.13.md`](./RELEASE_NOTES_v0.13.md)
 
 ### v0.13 채택 결론 (시나리오 비교 요약)
 
 `PLANS.md` `PLAN-0013` 4 시나리오 비교 후 채택: **Scenario X — Provider Score
-Policy + Score Delta + Validation Report + Backtest Export CLI**.
+Policy + Score Delta + Validation Report** (Backtest Export CLI 는 v0.14+ 이연).
 
 | 시나리오 | 내용 | 결정 |
 |---|---|---|
@@ -39,7 +44,7 @@ Policy + Score Delta + Validation Report + Backtest Export CLI**.
 | B | Score Delta in evidence_json — `score_before`/`score_after`/`delta`/`components[]` (Alembic 0건) + 단위 테스트 18건 | `v0.13-score-delta` ✅ | **1223→1241 (+18)** |
 | C | Validation Report Read-only API — `GET /api/validation/report` + `/by-strategy` + `/by-regime` + `/by-sector` (POST→405) + 통합 테스트 36건 | `v0.13-validation-api` ✅ | **1241→1277 (+36)** |
 | D | Validation Report UI + Score Delta UI — React 화면 확장 + vitest 10건 | `v0.13-validation-ui` ✅ | **vitest 165→175 (+10)** |
-| E | Backtest Export CLI + 마감 — `scripts/export_backtest.py` (stdlib csv, pip 0건) + `RELEASE_NOTES_v0.13.md` + 4 게이트 최종 확인 | `v0.13-final` | pytest ~1277 / vitest ~175 |
+| E | 마감 문서 — `RELEASE_NOTES_v0.13.md` + README/PROJECT_STATUS/ROADMAP/TASKS 갱신 + 4 게이트 최종 확인 (Backtest Export CLI 는 v0.14+ 이연) | `v0.13-final` ✅ | **pytest 1277 / vitest 175 / e2e 21 / build 그린** |
 
 ### v0.13 핵심 정책
 
@@ -57,7 +62,14 @@ Policy + Score Delta + Validation Report + Backtest Export CLI**.
 
 ---
 
-## 0-1. v0.12 마감 선언 — Provider Data Scoring & Backtest Validation (강등: 이전 §0)
+## 0-1. v0.13 시작 선언 — Provider Score Policy & Validation Report (강등: 이전 §0)
+
+**v0.13 cycle 시작.** 채택 시나리오: **Scenario X**. 시작 일자: **2026-05-07**.
+기준 게이트: pytest 1194 / vitest 165 / e2e 21 / build 그린. 세부 계획: `PLAN-0013`.
+
+---
+
+## 0-2. v0.12 마감 선언 — Provider Data Scoring & Backtest Validation (강등: 이전 §0-1)
 
 **v0.12 cycle 마감.** `v0.11-final` 위에 **Provider Data Scoring & Backtest
 Validation** 5 phase 완료. 최종 마감 태그 `v0.12-final`.
