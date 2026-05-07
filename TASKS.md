@@ -1014,16 +1014,18 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] 기존 916건 회귀 0건 추가 실패 확인 (947 passed)
 - [x] `tag v0.10-provider-resilience + push`
 
-### Phase B: DART Provider 구현
+### Phase B: DART Provider 구현 ✅ 인수
 
-- [ ] `app/config.py` 에 `DART_ENABLED: bool = False` / `DART_API_KEY: str = ""` 추가
-- [ ] `DartFundamentalProvider` 구현 (`app/data/dart_provider.py`)
-- [ ] `DartEarningsProvider` 구현
-- [ ] `DartDisclosureProvider` 구현
-- [ ] `retry_with_backoff()` + `CircuitBreaker` Phase A 것 적용
-- [ ] `DART_ENABLED=false` 시 graceful skip 검증
-- [ ] 단위 테스트 ~20건 (`tests/data/test_dart_provider.py`)
-- [ ] `SensitiveFilter` 에 `DART_API_KEY` 마스킹 패턴 추가
+- [x] `app/config/settings.py` 에 DART 런타임 6종 추가 (`dart_enabled=False` / `dart_api_key=""` / `dart_base_url` / `dart_timeout_s` / `dart_max_attempts` / `dart_provider_name`)
+- [x] `DartFundamentalProvider` 구현 (`app/data/dart_provider.py`) — `fnlttSinglAcnt` 단일 재무제표 endpoint mock
+- [x] `DartEarningsProvider` 구현 — 동일 endpoint 의 actual 만 추출 (consensus 는 `None`, DART 비공개)
+- [x] `DartDisclosureProvider` 구현 — `/api/list.json` 공시 목록 mock
+- [x] `call_with_resilience()` (Phase A 의 retry + circuit breaker + failure isolation) 을 DART 호출 경계 100% 적용
+- [x] `DART_ENABLED=false` 시 `DartNotConfiguredError` raise — provider 인스턴스화 / transport 호출 0건 검증
+- [x] 단위 테스트 49건 (`tests/data/test_dart_provider.py`, mock fixture 기반)
+- [x] `SensitiveFilter` 에 `crtfc_key` / `crtfckey` / `dart_key` 패턴 명시 추가 — `dart_api_key` / `DART_API_KEY` 는 기존 `api_key` 패턴 매칭 (테스트로 보강)
+- [x] 본문 / 전문 / 원문 / `body` / `full_text` / `paragraph` / `raw_text` / `html_body` 등 forbidden 필드는 parser 가 strip — DTO 자체에 해당 필드 부재 단언
+- [x] 외부 네트워크 호출 0건 가드 (`httpx.Client` 미생성 단언 테스트)
 - [ ] `tag v0.10-dart-provider + push`
 
 ### Phase C: RSS/News Provider 준비

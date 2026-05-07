@@ -14,5 +14,7 @@ Requires-Dist: uvicorn<1.0,>=0.30
 Requires-Dist: apscheduler<4.0,>=3.10
 Requires-Dist: PyJWT<3.0,>=2.8
 Requires-Dist: slowapi<1.0,>=0.1.9
+Requires-Dist: python-json-logger<3.0,>=2.0
+Requires-Dist: sentry-sdk<3.0,>=2.0
 Provides-Extra: dev
 Requires-Dist: pytest<9.0,>=8.0; extra == "dev"

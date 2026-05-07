@@ -1,17 +1,17 @@
 # TESTING.md
 
-> 본 문서는 **v0.10 Phase A 시점** 기준으로 갱신된다 (`v0.10-provider-resilience`
+> 본 문서는 **v0.10 Phase B 시점** 기준으로 갱신된다 (`v0.10-dart-provider`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.10 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.10 Phase A 시점)
+## 1. 현재 회귀 게이트 (v0.10 Phase B 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q` | **947 passed** (v0.10 Phase A: 916 → 947, +31 신규) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **995 passed, 1 deselected** (v0.10 Phase B: 947 → 995, +48 신규 — DART provider skeleton + parser/mapper + masking) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **146 passed** (19 파일, jsdom + msw v2; Phase C 117 → Phase D 146; +29 신규) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
@@ -981,6 +981,101 @@ MSW v2 + TanStack Query + renderWithProviders + renderStockDetail() 헬퍼.
   Telegram 발송 0건 (e2e + unit 모두 외부 호출 0건 확인)
 - `useUserPreferences` 는 `retry: false` 상속 (test QueryClient 의 `retry: false`
   와 충돌 없음) — per-query retry override 없음
+
+## 6.23 v0.10 Phase A — Provider Resilience runtime 테스트
+
+`tests/data/test_provider_health_monitor.py` 신규 31 케이스. `ProviderHealthMonitor` /
+`call_with_resilience()` / Settings 7종 / circuit breaker 전이 / failure isolation /
+retry 분기를 외부 호출 없이 검증한다. 회귀 기준: backend pytest **916 → 947 (+31)**.
+
+## 6.24 v0.10 Phase B — DART Provider skeleton 테스트
+
+`tests/data/test_dart_provider.py` 신규 **49 케이스**. `app/data/dart_provider.py`
+의 mock-fixture 기반 parser / mapper / resilience / 비밀값 마스킹 / 본문 저장 금지
+가드. **외부 네트워크 호출 0건** — DART API 는 어떤 케이스에서도 호출되지 않으며
+`httpx.Client` 인스턴스화 자체를 단언으로 금지한다.
+
+### 6.24.1 Settings (3 케이스)
+
+- `DART_ENABLED` 기본 `False`
+- `DART_API_KEY` 기본 `""`
+- `DART_BASE_URL` / `DART_TIMEOUT_S` / `DART_MAX_ATTEMPTS` / `DART_PROVIDER_NAME`
+  기본값 (https://opendart.fss.or.kr / 10.0 / 3 / `dart`)
+
+### 6.24.2 Disabled / not-configured 가드 (4 케이스)
+
+- `DART_ENABLED=false` → `DartNotConfiguredError`, transport 미호출
+- `create_dart_providers` factory 도 동일 raise
+- `DART_ENABLED=true` + `DART_API_KEY=""` → `DartNotConfiguredError`
+- transport 미주입 → `DartNotConfiguredError` (Phase B 는 주입형 only)
+
+### 6.24.3 DART status → ProviderErrorKind 매핑 (10 케이스)
+
+- `000` → 정상 (None)
+- `010` / `011` / `012` / `013` / `020` / `100` / `101` → CLIENT_ERROR (재시도 안 함)
+- `800` / `900` → SERVER_ERROR (재시도)
+- 미정의 / `None` → UNKNOWN
+
+### 6.24.4 Parser / Mapper (12 케이스)
+
+- `parse_fundamentals` happy path (매출액 / 영업이익 / 당기순이익 / 자산총계 /
+  부채총계 / 자본총계, ``thstrm_amount`` 우선) — 자본금 등 whitelist 외 항목은
+  무시
+- `list` 키가 배열이 아니면 `DartParseError`
+- forbidden body 필드 (`body` / `full_text` / `원문` / `본문` 등) strip 후
+  parser 가 통과 — DTO 자체에 해당 attribute 부재 단언
+- `parse_earnings` actual 만 추출 (consensus 는 `None`, DART 비공개)
+- `parse_disclosures` happy path — 4 row 중 valid 2 / 본 row 2개 (rcept_no
+  누락 + rcept_dt 형식 오류) 는 자동 skip
+- `parse_disclosure_item` malformed (rcept_no 누락 / rcept_dt 누락 / 비-dict)
+  → `None`
+- 기본 `source_url` = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=<rcept_no>`
+- 빈 list → `[]`
+- 누락 list → `DartParseError`
+- 공시 forbidden body 필드 strip + DTO 부재 단언
+
+### 6.24.5 Provider 통합 (resilience + isolation, 9 케이스)
+
+- `DartFundamentalProvider` transport 호출 시 `crtfc_key` 자동 주입 + monitor
+  success_count 1 증가 단언
+- 다중 symbol 중 SERVER_ERROR 1건 + 정상 1건 → 첫 종목 skip / 둘째 채워짐 /
+  monitor failure_count 1 / success_count 1
+- TIMEOUT 응답 → 빈 결과 + `last_error_kind == "TIMEOUT"` (예외 미전파)
+- transport 가 RuntimeError raise → 빈 결과 + `last_error_kind == "UNKNOWN"`
+  (failure isolation)
+- circuit breaker 임계 2 + 4 종목 → 2회 실패 후 OPEN, 나머지 2 종목은 transport
+  호출 0건 (fast-fail)
+- `DartEarningsProvider` actual 만 추출 + consensus None 단언
+- `DartDisclosureProvider` `since` cutoff 필터 (1 row 통과)
+- `DartDisclosureProvider` 다중 symbol 시 corp_code per-request 단언
+- `create_dart_providers` 3 provider 동시 생성
+
+### 6.24.6 DTO body 필드 부재 (3 케이스)
+
+- `FundamentalSnapshotDTO` / `EarningsEventDTO` / `DisclosureItemDTO` 모두
+  `body` / `content` / `full_text` / `paragraph` / `raw_text` / `html_body` /
+  `본문` / `원문` / `전문` 필드 부재 (parametrize 단언)
+
+### 6.24.7 SensitiveFilter 마스킹 (8 케이스)
+
+- `dart_api_key` / `DART_API_KEY` / `crtfc_key` / `CRTFC_KEY` / `crtfckey` /
+  `dart_key` 6 변형 모두 `***` 마스킹
+- `dart_base_url` / `corp_code` / `report_nm` 안전 필드는 미마스킹
+- 실제 provider 가 ERROR/WARNING 로그를 emit 할 때 `DART_API_KEY` 평문이
+  로그에 등장하지 않음 (caplog 단언)
+
+### 6.24.8 외부 네트워크 0건 가드 (1 케이스)
+
+- `httpx.Client` 를 monkeypatch 로 `AssertionError` 화 → 모든 provider 호출
+  경로에서 호출 0건 (Phase D 의 실 transport 도입 전까지 강제)
+
+### 6.24.9 회귀 기준
+
+- backend pytest **947 → 995 passed (+48)** — 회귀 0건, 1 deselected (
+  `test_settings_defaults` 로컬 .env 충돌, 관례 유지)
+- 외부 네트워크 호출 0건 (`httpx.Client` 미생성 단언 + transport 주입형)
+- 본문 저장 필드 0건 (parser strip + DTO 필드 부재 단언)
+- DART_API_KEY / crtfc_key 평문 로그 0건 (caplog 단언)
 
 ## 7. 금지 사항
 

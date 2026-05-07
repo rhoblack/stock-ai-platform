@@ -27,8 +27,13 @@ from pathlib import Path
 # --------------------------------------------------------------------- #
 
 _SENSITIVE_FIELD_RE = re.compile(
-    r"\b(password|password_hash|access_token|jwt_secret|"
-    r"authorization|api_key|apikey|token|secret)\b",
+    r"(password|password_hash|access_token|jwt_secret|"
+    r"authorization|api_key|apikey|token|secret|"
+    # v0.10 Phase B -- DART OpenAPI key variants.  The base ``api_key`` /
+    # ``apikey`` patterns above use no ``\b`` anchors, so they already cover
+    # ``dart_api_key`` / ``DART_API_KEY``; the explicit variants below add
+    # the DART-specific ``crtfc_key`` field used by opendart.fss.or.kr.
+    r"crtfc_key|crtfckey|dart_key)",
     re.IGNORECASE,
 )
 

@@ -228,6 +228,32 @@ class Settings:
         ),
     )
 
+    # v0.10 Phase B -- DART OpenAPI provider runtime settings.
+    # DART_ENABLED=false (default) keeps the DartFundamental/Earnings/Disclosure
+    # providers inert -- they are never instantiated by the provider factory and
+    # any direct call returns DartNotConfiguredError.  Set DART_ENABLED=true +
+    # DART_API_KEY=<crtfc_key> in operator-private prod only.  Personal /
+    # research / non-commercial use only -- see PLANS.md PLAN-0010 Phase B
+    # license memo.
+    dart_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("DART_ENABLED"), False),
+    )
+    dart_api_key: str = field(
+        default_factory=lambda: os.getenv("DART_API_KEY", ""),
+    )
+    dart_base_url: str = field(
+        default_factory=lambda: os.getenv("DART_BASE_URL", "https://opendart.fss.or.kr"),
+    )
+    dart_timeout_s: float = field(
+        default_factory=lambda: float(os.getenv("DART_TIMEOUT_S") or "10.0"),
+    )
+    dart_max_attempts: int = field(
+        default_factory=lambda: _as_int(os.getenv("DART_MAX_ATTEMPTS"), 3),
+    )
+    dart_provider_name: str = field(
+        default_factory=lambda: os.getenv("DART_PROVIDER_NAME", "dart"),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

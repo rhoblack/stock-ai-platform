@@ -11,6 +11,7 @@ app/analysis/score_producers.py
 app/analysis/technical_analyzer.py
 app/api/__init__.py
 app/api/auth_routes.py
+app/api/preferences_routes.py
 app/api/routes.py
 app/api/schemas.py
 app/api/watchlist_routes.py
@@ -28,8 +29,11 @@ app/config/__init__.py
 app/config/logging.py
 app/config/settings.py
 app/data/__init__.py
+app/data/dart_provider.py
 app/data/dtos.py
 app/data/interfaces.py
+app/data/provider_health_monitor.py
+app/data/provider_resilience.py
 app/data/collectors/__init__.py
 app/data/collectors/daily_price_collector.py
 app/data/collectors/disclosure_collector.py
@@ -69,6 +73,7 @@ app/data/repositories/stock_indicators.py
 app/data/repositories/stock_universes.py
 app/data/repositories/stocks.py
 app/data/repositories/theme_stock_mappings.py
+app/data/repositories/user_preferences.py
 app/data/repositories/users.py
 app/data/repositories/watchlist_items.py
 app/data/repositories/watchlists.py
@@ -87,7 +92,10 @@ app/decision/risk_engine.py
 app/decision/scoring_engine.py
 app/middleware/__init__.py
 app/middleware/rate_limit.py
+app/middleware/request_id.py
 app/middleware/security_headers.py
+app/monitoring/__init__.py
+app/monitoring/sentry.py
 app/notification/__init__.py
 app/notification/dispatchers.py
 app/notification/notification_service.py

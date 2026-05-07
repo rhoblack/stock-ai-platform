@@ -22,7 +22,7 @@
 | Phase | 내용 | 태그 | 실측 게이트 |
 |---|---|---|---|
 | A | `ProviderHealthMonitor` + `call_with_resilience()` + settings 7종 + 테스트 31건 | `v0.10-provider-resilience` ✅ | pytest 916→947 (+31) |
-| B | DART Provider 구현 (DartFundamental/Earnings/Disclosure, DART_ENABLED=false) | `v0.10-dart-provider` ⏳ | pytest +20 예상 |
+| B | DART Provider skeleton (DartFundamental/Earnings/Disclosure, DART_ENABLED=false, transport 주입형, parser/mapper + body 필드 strip + crtfc_key 마스킹 + 테스트 49건) | `v0.10-dart-provider` ✅ | pytest 947→995 (+48) |
 | C | RSS/News Provider 준비 (RssNewsProvider, RSS_NEWS_ENABLED=false, 메타데이터만) | `v0.10-rss-provider` ⏳ | pytest +15 예상 |
 | D | 운영 모니터링 강화 (GET /api/health/providers + /jobs + 프런트 패널) | `v0.10-health-api` ⏳ | pytest +10 / vitest +5 예상 |
 | E | 마감 문서 + 4 게이트 최종 확인 | `v0.10-final` ⏳ | 4 게이트 그린 |
