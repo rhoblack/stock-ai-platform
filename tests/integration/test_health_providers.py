@@ -27,7 +27,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterator
 
 import pytest
@@ -392,3 +392,227 @@ def test_health_providers_rejects_delete(fresh_monitor):
     client = _make_client(settings)
     r = client.delete("/api/health/providers")
     assert r.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# v0.11 Phase D additions -- 24h aggregates + recent_failures
+# ---------------------------------------------------------------------------
+
+
+def test_health_providers_unregistered_phase_d_fields_have_safe_defaults(
+    fresh_monitor,
+):
+    """Default-OFF / never-registered providers must surface the new
+    Phase D fields with neutral defaults (zero / None / empty list).
+    """
+    settings = _build_settings()
+    client = _make_client(settings)
+    body = client.get("/api/health/providers").json()
+    for item in body["items"]:
+        assert item["call_count_24h"] == 0
+        assert item["success_count_24h"] == 0
+        assert item["failure_count_24h"] == 0
+        assert item["success_rate_24h"] is None
+        assert item["avg_attempts_24h"] is None
+        assert item["recent_failures"] == []
+
+
+def test_health_providers_24h_aggregates_reflect_recorded_calls(
+    fresh_monitor: ProviderHealthMonitor,
+):
+    fresh_monitor.register("dart")
+    fresh_monitor.record_result(
+        "dart", ProviderCallResult.ok("ok", attempts=1)
+    )
+    fresh_monitor.record_result(
+        "dart", ProviderCallResult.ok("ok", attempts=2)
+    )
+    fresh_monitor.record_result(
+        "dart",
+        ProviderCallResult.fail(
+            ProviderErrorKind.TIMEOUT, "msg", attempts=3
+        ),
+    )
+
+    settings = _build_settings(dart_enabled=True, dart_api_key="K")
+    client = _make_client(settings)
+    body = client.get("/api/health/providers").json()
+    dart = next(it for it in body["items"] if it["provider_name"] == "dart")
+    assert dart["call_count_24h"] == 3
+    assert dart["success_count_24h"] == 2
+    assert dart["failure_count_24h"] == 1
+    assert dart["success_rate_24h"] == pytest.approx(2 / 3)
+    assert dart["avg_attempts_24h"] == pytest.approx((1 + 2 + 3) / 3)
+
+
+def test_health_providers_recent_failures_capped_at_five_newest_first(
+    fresh_monitor: ProviderHealthMonitor,
+):
+    """recent_failures must surface at most the five newest failure
+    records; the route reverses the deque so newest entries appear
+    first.
+    """
+    fresh_monitor.register("dart")
+    # Inject failure records directly with distinct timestamps so we
+    # can verify the reverse-newest-first ordering deterministically.
+    from app.data.provider_health_monitor import (  # noqa: PLC0415
+        FailureRecord,
+    )
+
+    base = datetime(2026, 5, 7, 12, 0, tzinfo=timezone.utc)
+    stats = fresh_monitor._providers["dart"]
+    for i in range(8):
+        stats.recent_failures.append(
+            FailureRecord(
+                timestamp=base + timedelta(minutes=i),
+                error_kind=ProviderErrorKind.SERVER_ERROR,
+                attempts=i + 1,
+            )
+        )
+
+    settings = _build_settings(dart_enabled=True, dart_api_key="K")
+    client = _make_client(settings)
+    body = client.get("/api/health/providers").json()
+    dart = next(it for it in body["items"] if it["provider_name"] == "dart")
+    failures = dart["recent_failures"]
+    # Exactly 5 surfaced (capped by _RECENT_FAILURE_LIMIT).
+    assert len(failures) == 5
+    # Each entry carries only timestamp + error_kind -- no message text.
+    for entry in failures:
+        assert set(entry.keys()) == {"timestamp", "error_kind"}
+        assert entry["error_kind"] == "SERVER_ERROR"
+    # Newest first: entry 0 must be the latest record (i=7), entry 4
+    # must correspond to i=3.
+    assert failures[0]["timestamp"] == (base + timedelta(minutes=7)).isoformat()
+    assert failures[-1]["timestamp"] == (base + timedelta(minutes=3)).isoformat()
+
+
+def test_health_providers_recent_failures_omits_message_text(
+    fresh_monitor: ProviderHealthMonitor,
+):
+    """Even though monitor.last_error_message stores transport detail,
+    recent_failures items must not include a message field.
+    """
+    fresh_monitor.register("rss")
+    fresh_monitor.record_result(
+        "rss",
+        ProviderCallResult.fail(
+            ProviderErrorKind.TIMEOUT,
+            # Canary string -- must never appear in /api/health/providers.
+            "GET https://example.com/feed.xml?api_key=LEAKMEXYZ failed",
+            attempts=2,
+        ),
+    )
+
+    settings = _build_settings(
+        rss_news_enabled=True, rss_feed_urls="https://example.com/feed.xml"
+    )
+    client = _make_client(settings)
+    raw = client.get("/api/health/providers").text
+    body = client.get("/api/health/providers").json()
+    rss = next(it for it in body["items"] if it["provider_name"] == "rss")
+    # recent_failures has 1 entry without message text.
+    assert len(rss["recent_failures"]) == 1
+    assert "message" not in rss["recent_failures"][0]
+    assert "error_message" not in rss["recent_failures"][0]
+    assert "LEAKMEXYZ" not in raw
+
+
+def test_health_providers_phase_d_response_secret_paranoid(
+    fresh_monitor: ProviderHealthMonitor,
+):
+    """Combined Phase D paranoid check: even with credentials populated
+    AND failures recorded, the response body must not echo any secret.
+    Extends the v0.10 secret discipline test with the new fields.
+    """
+    fresh_monitor.register("dart")
+    fresh_monitor.record_result(
+        "dart",
+        ProviderCallResult.fail(
+            ProviderErrorKind.SERVER_ERROR,
+            "GET https://opendart.fss.or.kr/api/x?crtfc_key=LEAKDART failed",
+            attempts=4,
+        ),
+    )
+    fresh_monitor.register("rss")
+    fresh_monitor.record_result(
+        "rss",
+        ProviderCallResult.fail(
+            ProviderErrorKind.CLIENT_ERROR,
+            "GET https://private.example.com/feed?api_key=LEAKRSS failed",
+            attempts=1,
+        ),
+    )
+
+    settings = _build_settings(
+        dart_enabled=True,
+        dart_api_key="DART-CRTFC-SUPERSECRET",
+        rss_news_enabled=True,
+        rss_feed_urls="https://private.example.com/feed?api_key=URLSECRETXYZ",
+        kis_app_key="KIS-APP-KEY-PLAINTEXT",
+        kis_app_secret="KIS-APP-SECRET-PLAINTEXT",
+    )
+    client = _make_client(settings)
+    raw = client.get("/api/health/providers").text
+
+    forbidden = [
+        "DART-CRTFC-SUPERSECRET",
+        "URLSECRETXYZ",
+        "LEAKDART",
+        "LEAKRSS",
+        "KIS-APP-KEY-PLAINTEXT",
+        "KIS-APP-SECRET-PLAINTEXT",
+        "crtfc_key",
+        "dart_api_key",
+        "DART_API_KEY",
+        "rss_feed_urls",
+        "kis_app_key",
+        "kis_app_secret",
+        "access_token",
+        "password",
+        "?api_key=",
+        "last_error_message",
+    ]
+    for s in forbidden:
+        assert s not in raw, f"Phase D response leaks {s!r}"
+
+
+def test_health_providers_summary_24h_handles_zero_call_window_safely(
+    fresh_monitor: ProviderHealthMonitor,
+):
+    """A provider that was registered but never produced a 24h call
+    (e.g. reset() called recently) must surface success_rate_24h=None
+    rather than crashing the route.
+    """
+    fresh_monitor.register("dart")
+    settings = _build_settings(dart_enabled=True, dart_api_key="K")
+    client = _make_client(settings)
+    body = client.get("/api/health/providers").json()
+    dart = next(it for it in body["items"] if it["provider_name"] == "dart")
+    assert dart["call_count_24h"] == 0
+    assert dart["success_rate_24h"] is None
+    assert dart["avg_attempts_24h"] is None
+    assert dart["recent_failures"] == []
+
+
+def test_health_providers_phase_d_fields_present_in_extra_provider(
+    fresh_monitor: ProviderHealthMonitor,
+):
+    """Experimental providers appended after the canonical 3 must also
+    carry Phase D fields with sensible defaults.
+    """
+    fresh_monitor.register("experimental")
+    fresh_monitor.record_result(
+        "experimental", ProviderCallResult.ok("ok", attempts=1)
+    )
+    settings = _build_settings()
+    client = _make_client(settings)
+    body = client.get("/api/health/providers").json()
+    extra = next(
+        it for it in body["items"] if it["provider_name"] == "experimental"
+    )
+    assert extra["call_count_24h"] == 1
+    assert extra["success_count_24h"] == 1
+    assert extra["success_rate_24h"] == 1.0
+    assert extra["avg_attempts_24h"] == 1.0
+    assert extra["recent_failures"] == []

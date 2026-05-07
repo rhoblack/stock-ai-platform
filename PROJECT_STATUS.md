@@ -39,7 +39,7 @@ Transport + Observability**.
 | A | DART HTTP Transport — `HttpxDartTransport` (lazy httpx import) + factory 자동 주입 + `_SensitiveQueryStringFilter` (httpx URL secret 마스킹) + respx mock 테스트 27건 | `v0.11-dart-transport` ✅ | pytest 1045→1072 (+27) |
 | B | RSS HTTP Transport — `HttpxRssTransport` (lazy httpx import, follow_redirects=True) + factory 자동 주입 + 공유 `SensitiveQueryStringFilter` (Phase A 에서 `app/config/logging.py` 로 추출) + respx mock 테스트 19건 | `v0.11-rss-transport` ✅ | pytest 1072→1091 (+19) |
 | C | Provider Observability Layer — bounded ring buffer (CallRecord/FailureRecord) + Summary24h + optional Prometheus exporter (`/metrics` 404 default, Counter+Gauge+Histogram, isolated CollectorRegistry per test) + `_emit_prometheus` lazy hook | `v0.11-observability` ✅ | pytest 1091→1112 (+21) |
-| D | `/api/health/providers` 확장 + Settings 패널 보강 (success_rate_24h / recent_failures) | `v0.11-health-extended` ⏳ | pytest +8 / vitest +6 / e2e +1 |
+| D | `/api/health/providers` 확장 (`call_count_24h` / `success_count_24h` / `failure_count_24h` / `success_rate_24h` / `avg_attempts_24h` / `recent_failures[5]`) + monitor 공개 accessor (`get_summary_24h` / `get_recent_failures`) + Settings 패널 보강 (`SuccessRateBar` / `avg_attempts` 셀 / `RecentFailuresList` 카드) | `v0.11-health-extended` ✅ | pytest 1112→1119 (+7) / vitest 153→158 (+5) / e2e 20→21 (+1) |
 | E | 마감 — `RELEASE_NOTES_v0.11.md` + 4 게이트 최종 확인 | `v0.11-final` ⏳ | 4 게이트 그린 |
 
 ### v0.11 핵심 정책

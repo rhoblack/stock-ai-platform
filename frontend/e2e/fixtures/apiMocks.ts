@@ -719,19 +719,29 @@ const WATCHLIST_DETAIL_1 = {
 }
 
 const PROVIDER_HEALTH_DEFAULT_OFF = {
-  // v0.10 Phase D — DART / RSS default-OFF; KIS configured but unregistered
-  // (no calls have flowed through call_with_resilience in the e2e fixture).
+  // v0.10 / v0.11 Phase D — DART / RSS default-OFF; KIS configured but
+  // unregistered (no calls flowed through call_with_resilience in the
+  // e2e fixture).  Phase D adds the 24h aggregates + recent_failures
+  // surface so the panel exercises the new cells.
   items: [
     {
       provider_name: 'kis',
       enabled: true,
       configured: true,
-      circuit_state: 'UNREGISTERED',
-      call_count: 0,
-      success_count: 0,
-      failure_count: 0,
-      last_error_kind: null,
-      last_called_at: null,
+      circuit_state: 'CLOSED',
+      call_count: 50,
+      success_count: 49,
+      failure_count: 1,
+      last_error_kind: 'TIMEOUT',
+      last_called_at: '2026-05-07T12:00:00Z',
+      call_count_24h: 50,
+      success_count_24h: 49,
+      failure_count_24h: 1,
+      success_rate_24h: 0.98,
+      avg_attempts_24h: 1.05,
+      recent_failures: [
+        { timestamp: '2026-05-07T11:30:00Z', error_kind: 'TIMEOUT' },
+      ],
     },
     {
       provider_name: 'dart',
@@ -743,6 +753,12 @@ const PROVIDER_HEALTH_DEFAULT_OFF = {
       failure_count: 0,
       last_error_kind: null,
       last_called_at: null,
+      call_count_24h: 0,
+      success_count_24h: 0,
+      failure_count_24h: 0,
+      success_rate_24h: null,
+      avg_attempts_24h: null,
+      recent_failures: [],
     },
     {
       provider_name: 'rss',
@@ -754,6 +770,12 @@ const PROVIDER_HEALTH_DEFAULT_OFF = {
       failure_count: 0,
       last_error_kind: null,
       last_called_at: null,
+      call_count_24h: 0,
+      success_count_24h: 0,
+      failure_count_24h: 0,
+      success_rate_24h: null,
+      avg_attempts_24h: null,
+      recent_failures: [],
     },
   ],
   count: 3,

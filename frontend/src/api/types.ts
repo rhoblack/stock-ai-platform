@@ -769,6 +769,11 @@ export type ProviderCircuitState =
   | 'HALF_OPEN'
   | 'UNREGISTERED'
 
+export interface RecentFailureSummary {
+  timestamp: string
+  error_kind: string
+}
+
 export interface ProviderHealthItem {
   provider_name: string
   enabled: boolean
@@ -779,6 +784,13 @@ export interface ProviderHealthItem {
   failure_count: number
   last_error_kind: string | null
   last_called_at: string | null
+  // v0.11 Phase D additions — rolling 24h aggregates + recent failure log
+  call_count_24h: number
+  success_count_24h: number
+  failure_count_24h: number
+  success_rate_24h: number | null
+  avg_attempts_24h: number | null
+  recent_failures: RecentFailureSummary[]
 }
 
 export interface ProviderHealthResponse {

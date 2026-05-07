@@ -1052,6 +1052,12 @@ provider 별 read-only 스냅샷을 반환한다.
 | failure_count | int | 실패 횟수 |
 | last_error_kind | string? | 마지막 실패의 `ProviderErrorKind` enum 값 (`TIMEOUT` 등) |
 | last_called_at | string? | ISO-8601 UTC, in-memory 만 (재시작 시 초기화) |
+| call_count_24h | int | **(v0.11 Phase D)** 최근 24h 호출 수 (ring buffer 집계) |
+| success_count_24h | int | **(v0.11 Phase D)** 최근 24h 성공 수 |
+| failure_count_24h | int | **(v0.11 Phase D)** 최근 24h 실패 수 |
+| success_rate_24h | float? | **(v0.11 Phase D)** 0.0~1.0; 24h call_count=0 일 때 `null` |
+| avg_attempts_24h | float? | **(v0.11 Phase D)** retry 평균; 24h call_count=0 일 때 `null` |
+| recent_failures | list | **(v0.11 Phase D)** 최신 5건, 각 항목은 `{timestamp, error_kind}` 만 (message text 0건) |
 
 **상태 조합 의미:**
 

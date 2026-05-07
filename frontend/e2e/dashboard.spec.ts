@@ -210,6 +210,85 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     }
   })
 
+  test('Settings Provider Health panel surfaces v0.11 Phase D 24h aggregates and recent failures', async ({
+    page,
+  }) => {
+    await page.goto('/settings')
+    await expect(page.getByTestId('provider-health-panel')).toBeVisible()
+    await expect(page.getByTestId('provider-health-table')).toBeVisible()
+
+    // KIS fixture: 50 calls, 49 success, success_rate=0.98, 1 TIMEOUT failure.
+    await expect(page.getByTestId('provider-success-rate-kis')).toBeVisible()
+    await expect(page.getByTestId('provider-success-rate-kis')).toContainText(
+      '98.0%',
+    )
+    await expect(page.getByTestId('provider-avg-attempts-kis')).toContainText(
+      '1.05',
+    )
+
+    // DART/RSS unregistered → success-rate placeholder shows the dash.
+    await expect(page.getByTestId('provider-success-rate-dart')).toContainText(
+      '—',
+    )
+    await expect(page.getByTestId('provider-avg-attempts-rss')).toContainText(
+      '—',
+    )
+
+    // Recent failures section: only KIS has a failure in the fixture.
+    await expect(
+      page.getByTestId('provider-recent-failures-section'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('provider-recent-failures-card-kis'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('provider-recent-failure-kis-0'),
+    ).toContainText('TIMEOUT')
+
+    // DART / RSS have empty recent_failures so their cards do not render.
+    await expect(
+      page.getByTestId('provider-recent-failures-card-dart'),
+    ).toHaveCount(0)
+    await expect(
+      page.getByTestId('provider-recent-failures-card-rss'),
+    ).toHaveCount(0)
+
+    // Read-only: panel still has 0 buttons / switches / checkboxes.
+    const buttonsInsidePanel = await page
+      .getByTestId('provider-health-panel')
+      .locator('button, [role="switch"], input[type="checkbox"]')
+      .count()
+    expect(buttonsInsidePanel).toBe(0)
+
+    // Phase D paranoid secret scan: page text + raw payload free of
+    // last_error_message / api_key / etc.
+    for (const forbidden of [
+      'crtfc_key',
+      'dart_api_key',
+      'last_error_message',
+      'feed_url',
+    ]) {
+      await expect(page.getByText(forbidden)).toHaveCount(0)
+    }
+    const payload = await page.evaluate(async () => {
+      const r = await fetch('/api/health/providers')
+      return r.json()
+    })
+    const raw = JSON.stringify(payload)
+    for (const forbidden of [
+      'crtfc_key',
+      'dart_api_key',
+      'rss_feed_urls',
+      'kis_app_secret',
+      'last_error_message',
+      'access_token',
+      'password',
+      '?api_key=',
+    ]) {
+      expect(raw).not.toContain(forbidden)
+    }
+  })
+
   test('Settings shows masked secrets only — no plaintext leak', async ({ page }) => {
     await page.goto('/settings')
     await expect(page.getByTestId('settings-freeze-banner')).toBeVisible()

@@ -1125,15 +1125,19 @@ DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에
 - [x] v0.10 monitor 31 + DART skeleton 49 + DART http 27 + RSS skeleton 33 + RSS http 19 = 159 케이스 회귀 0건
 - [ ] `tag v0.11-observability + push`
 
-### Phase D: `/api/health/providers` 확장 + Settings 패널 보강
+### Phase D: `/api/health/providers` 확장 + Settings 패널 보강 ✅ 인수
 
-- [ ] `ProviderHealthItem` schema 확장 — `success_rate_24h: float?` / `avg_attempts_24h: float?` / `recent_failures: list[FailureSummary]` (last 5, `(timestamp, error_kind)` 만)
-- [ ] `last_error_message` 응답 미포함 정책 유지 (URL secret 누출 차단)
-- [ ] `frontend/src/api/types.ts` schema 동기화
-- [ ] `frontend/src/components/common/ProviderHealthPanel.tsx` 보강 — success_rate_24h progress bar + recent_failures 미니 list
-- [ ] backend pytest +8 (`tests/integration/test_health_providers.py`)
-- [ ] vitest +6 (`frontend/src/tests/ProviderHealthPanel.test.tsx`)
-- [ ] e2e +1 (Settings 패널 신규 cell visible + secret 단언 강화)
+- [x] `ProviderHealthItem` schema 확장 — `call_count_24h` / `success_count_24h` / `failure_count_24h` / `success_rate_24h: float?` / `avg_attempts_24h: float?` / `recent_failures: list[RecentFailureSummary]` (last 5)
+- [x] `RecentFailureSummary` 신규 schema — `{timestamp, error_kind}` 만 (message text 0건, URL secret 누출 차단 정책 유지)
+- [x] `ProviderHealthMonitor` 에 `get_summary_24h(name)` / `get_recent_failures(name, limit=5)` 공개 accessor 추가 (`_providers` private 직접 참조 제거)
+- [x] `_build_item` + `_serialise_recent_failures` — newest-first 정렬 후 `_RECENT_FAILURE_LIMIT=5` cap
+- [x] `last_error_message` 응답 미포함 정책 유지
+- [x] `frontend/src/api/types.ts` schema 동기화 (`RecentFailureSummary` + `ProviderHealthItem` 6 신규 필드)
+- [x] `frontend/src/components/common/ProviderHealthPanel.tsx` 보강 — `SuccessRateBar` (≥99% emerald / ≥95% amber / <95% red / null slate) + `avg_attempts` 셀 + `RecentFailuresList` + `ProviderRecentFailuresSection` (실패가 1건 이상인 provider 만 카드 노출)
+- [x] backend pytest +7 (`tests/integration/test_health_providers.py`) — happy / cap / newest-first / message 미노출 / paranoid secret + 16 forbidden / zero-window 안전 / experimental provider
+- [x] vitest +5 (`frontend/src/tests/ProviderHealthPanel.test.tsx`) — success_rate / avg_attempts cell / recent_failures newest-first / empty placeholder / secret 미렌더링 / read-only
+- [x] e2e +1 (`Settings Provider Health panel surfaces v0.11 Phase D 24h aggregates and recent failures`) — KIS fixture progress bar + DART/RSS 빈 placeholder + 패널 내 button 0건 + 16 forbidden secret 0건
+- [x] MSW + e2e fixtures 신규 필드 sync (KIS 50 calls / 1 TIMEOUT failure 시연용)
 - [ ] `tag v0.11-health-extended + push`
 
 ### Phase E: 마감 (문서)

@@ -233,7 +233,10 @@ export const handlers = [
       updated_at: '2026-05-06T00:00:00',
     }),
   ),
-  // v0.10 Phase D — Provider Health (read-only)
+  // v0.10 Phase D / v0.11 Phase D — Provider Health (read-only)
+  // Phase D adds call_count_24h / success_count_24h / failure_count_24h /
+  // success_rate_24h / avg_attempts_24h / recent_failures.  Default fixture
+  // is fully default-OFF so empty placeholders render naturally.
   http.get('*/api/health/providers', () =>
     HttpResponse.json({
       items: [
@@ -247,6 +250,12 @@ export const handlers = [
           failure_count: 0,
           last_error_kind: null,
           last_called_at: null,
+          call_count_24h: 0,
+          success_count_24h: 0,
+          failure_count_24h: 0,
+          success_rate_24h: null,
+          avg_attempts_24h: null,
+          recent_failures: [],
         },
         {
           provider_name: 'dart',
@@ -258,6 +267,12 @@ export const handlers = [
           failure_count: 0,
           last_error_kind: null,
           last_called_at: null,
+          call_count_24h: 0,
+          success_count_24h: 0,
+          failure_count_24h: 0,
+          success_rate_24h: null,
+          avg_attempts_24h: null,
+          recent_failures: [],
         },
         {
           provider_name: 'rss',
@@ -269,6 +284,12 @@ export const handlers = [
           failure_count: 0,
           last_error_kind: null,
           last_called_at: null,
+          call_count_24h: 0,
+          success_count_24h: 0,
+          failure_count_24h: 0,
+          success_rate_24h: null,
+          avg_attempts_24h: null,
+          recent_failures: [],
         },
       ],
       count: 3,

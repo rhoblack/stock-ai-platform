@@ -318,6 +318,38 @@ class ProviderHealthMonitor:
         for name in list(self._providers):
             self.reset(name)
 
+    # -- v0.11 Phase D public accessors ------------------------------------
+    # These wrap the internal ``_providers`` dict so callers (e.g. the
+    # /api/health/providers builder) can read ring-buffer state without
+    # poking into the private attribute.
+
+    def get_summary_24h(self, name: str) -> Summary24h | None:
+        """Return the rolling 24-hour aggregate for ``name``.
+
+        Returns ``None`` when the provider was never registered so the
+        caller can render a neutral placeholder instead of zeros.
+        """
+        stats = self._providers.get(name)
+        return stats.summary_24h() if stats is not None else None
+
+    def get_recent_failures(
+        self, name: str, *, limit: int = 5
+    ) -> list[FailureRecord]:
+        """Return the most recent failure records for ``name``.
+
+        ``limit`` caps the slice (the underlying deque is bounded by
+        :data:`FAILURE_HISTORY_MAXLEN` already).  Newest entries last;
+        callers that want newest-first should reverse the result.
+        """
+        stats = self._providers.get(name)
+        if stats is None:
+            return []
+        if limit <= 0:
+            return []
+        # ``recent_failures`` is a deque; slicing requires a list copy.
+        records = list(stats.recent_failures)
+        return records[-limit:]
+
 
 # ---------------------------------------------------------------------------
 # v0.11 Phase C -- Prometheus side-channel (lazy, optional)

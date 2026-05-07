@@ -1,4 +1,4 @@
-"""v0.10 Phase D -- read-only provider health API.
+"""v0.10 Phase D / v0.11 Phase D -- read-only provider health API.
 
 Endpoint:
 
@@ -23,11 +23,22 @@ Policy
 * **Decimal / datetime serialisation** -- ``call_count`` /
   ``success_count`` / ``failure_count`` are plain ints; ``last_called_at``
   is the monitor's pre-formatted ISO-8601 string (or ``null``).
+
+v0.11 Phase D additions
+-----------------------
+* ``call_count_24h`` / ``success_count_24h`` / ``failure_count_24h`` /
+  ``success_rate_24h`` / ``avg_attempts_24h`` -- rolling 24-hour
+  aggregates from ``ProviderStats.summary_24h()``.  Float fields are
+  ``null`` when the window is empty (no UI division-by-zero).
+* ``recent_failures`` -- last five :class:`FailureRecord` entries from
+  the bounded ``recent_failures`` deque, exposed as
+  ``[{"timestamp": ..., "error_kind": ...}]``.  No ``error_message``
+  is included for the same reason ``last_error_message`` is omitted.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -43,6 +54,22 @@ from app.data.provider_health_monitor import (
 # Schemas
 # ---------------------------------------------------------------------------
 
+# How many failure records to surface per provider.  Bounded by the
+# underlying deque (``FAILURE_HISTORY_MAXLEN = 50``) regardless of
+# what the caller requests.
+_RECENT_FAILURE_LIMIT = 5
+
+
+class RecentFailureSummary(BaseModel):
+    """One failure entry surfaced by ``recent_failures``.
+
+    Carries only the timestamp and the enumerated error kind -- no
+    transport message text (which could contain URL query secrets).
+    """
+
+    timestamp: str
+    error_kind: str
+
 
 class ProviderHealthItem(BaseModel):
     """One row in the provider-health response.
@@ -51,6 +78,11 @@ class ProviderHealthItem(BaseModel):
     is intentionally **omitted** -- the monitor stores it for log
     correlation, but echoing it through HTTP risks leaking transport
     detail (e.g. URL query strings, partial response bodies).
+
+    v0.11 Phase D: ``call_count_24h`` / ``success_count_24h`` /
+    ``failure_count_24h`` / ``success_rate_24h`` / ``avg_attempts_24h``
+    + ``recent_failures`` (last 5) added.  All new fields are nullable
+    so the UI can render a neutral placeholder when the window is empty.
     """
 
     provider_name: str
@@ -62,6 +94,13 @@ class ProviderHealthItem(BaseModel):
     failure_count: int
     last_error_kind: Optional[str] = None
     last_called_at: Optional[str] = None
+    # v0.11 Phase D additions
+    call_count_24h: int = 0
+    success_count_24h: int = 0
+    failure_count_24h: int = 0
+    success_rate_24h: Optional[float] = None
+    avg_attempts_24h: Optional[float] = None
+    recent_failures: List[RecentFailureSummary] = []
 
 
 class ProviderHealthResponse(BaseModel):
@@ -112,6 +151,27 @@ def _is_configured(provider: str, settings: Settings) -> bool:
     return False
 
 
+def _serialise_recent_failures(
+    monitor: ProviderHealthMonitor, provider: str
+) -> list[RecentFailureSummary]:
+    """Pull the last ``_RECENT_FAILURE_LIMIT`` failures, newest first.
+
+    Each entry carries only ``(timestamp, error_kind)`` -- no message
+    text, mirroring the v0.10 / v0.11 Phase C secret-discipline policy
+    on ``CallRecord`` / ``FailureRecord``.
+    """
+    records = monitor.get_recent_failures(provider, limit=_RECENT_FAILURE_LIMIT)
+    # ``get_recent_failures`` returns oldest-first (deque order); the UI
+    # expects newest-first so the freshest failure appears at the top.
+    return [
+        RecentFailureSummary(
+            timestamp=rec.timestamp.isoformat(),
+            error_kind=rec.error_kind.value,
+        )
+        for rec in reversed(records)
+    ]
+
+
 def _build_item(
     provider: str,
     settings: Settings,
@@ -133,7 +193,16 @@ def _build_item(
             failure_count=0,
             last_error_kind=None,
             last_called_at=None,
+            call_count_24h=0,
+            success_count_24h=0,
+            failure_count_24h=0,
+            success_rate_24h=None,
+            avg_attempts_24h=None,
+            recent_failures=[],
         )
+
+    summary = monitor.get_summary_24h(provider)
+    recent_failures = _serialise_recent_failures(monitor, provider)
     return ProviderHealthItem(
         provider_name=provider,
         enabled=enabled,
@@ -144,6 +213,12 @@ def _build_item(
         failure_count=int(stats["failure_count"]),
         last_error_kind=stats["last_error_kind"],
         last_called_at=stats["last_called_at"],
+        call_count_24h=summary.call_count_24h if summary else 0,
+        success_count_24h=summary.success_count_24h if summary else 0,
+        failure_count_24h=summary.failure_count_24h if summary else 0,
+        success_rate_24h=summary.success_rate_24h if summary else None,
+        avg_attempts_24h=summary.avg_attempts if summary else None,
+        recent_failures=recent_failures,
     )
 
 

@@ -1,10 +1,10 @@
 # TESTING.md
 
-> 본 문서는 **v0.11 Phase C 시점** 기준으로 갱신된다 (`v0.11-observability`
+> 본 문서는 **v0.11 Phase D 시점** 기준으로 갱신된다 (`v0.11-health-extended`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.11 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.11 Phase C 시점)
+## 1. 현재 회귀 게이트 (v0.11 Phase D 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` 가 httpx 요청을 transport
@@ -12,7 +12,10 @@ layer 에서 인터셉트, monkeypatch `httpx.Client` 가드 병행).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1112 passed, 1 deselected** (v0.11 Phase C: 1091 → 1112, +21 신규 — Provider observability ring buffer + Summary24h + Prometheus exporter optional + /metrics route) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1119 passed, 1 deselected** (v0.11 Phase D: 1112 → 1119, +7 신규 — `/api/health/providers` 확장 + recent_failures cap + paranoid secret) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **158 passed** (v0.11 Phase D: 153 → 158, +5 신규 — `SuccessRateBar` / `avg_attempts` cell / `RecentFailuresList` 카드 + secret 미렌더링) |
+| frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.40s) |
+| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (v0.11 Phase D: 20 → 21, +1 — Settings Provider Health 패널의 Phase D cell + 16 forbidden secret 단언) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **153 passed** (Phase D: 146 → 153, +7 신규 — ProviderHealthPanel) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.41s) |
 | Playwright e2e | `cd frontend && npm run e2e` | **20 passed** (Phase D: 19 → 20, +1 신규 — Settings Provider Health 패널) |
@@ -1428,6 +1431,66 @@ factory 자동 주입 + secret 마스킹 (Phase A 의 `SensitiveQueryStringFilte
 - ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
 - Alembic 새 revision 0건 (ring buffer 도 in-memory bounded)
 - 신규 mutation 라우터 0건 (`/metrics` GET only, POST/PUT/DELETE 405)
+
+## 6.30 v0.11 Phase D — `/api/health/providers` 확장 + Settings 패널 보강
+
+총 **13 케이스 신규**: backend 7 + vitest 5 + e2e 1. v0.10 Phase D 의 Provider
+Health API + Settings panel 위에 Phase C 의 ring buffer / `summary_24h()` 를
+read-only 노출. provider toggle / mutation 0건 정책 그대로.
+
+### 6.30.1 Backend `tests/integration/test_health_providers.py` (+7 케이스)
+
+- Unregistered / disabled provider 도 새 필드 (`call_count_24h` /
+  `success_rate_24h` / `avg_attempts_24h` / `recent_failures`) 가 안전한
+  defaults 노출
+- 24h 집계 정확도 (3 record → success_rate=2/3, avg_attempts=2.0)
+- `recent_failures` 5건 cap + newest-first 정렬 (8 record → 5건만, 가장 최근이
+  첫 entry)
+- `recent_failures` 항목에 `message` / `error_message` 필드 부재 단언
+  (canary `LEAKMEXYZ` 응답 미포함)
+- 16종 forbidden substring paranoid scan (Phase A `LEAKDART` + Phase B
+  `LEAKRSS` + DART/RSS/KIS credential / `crtfc_key` / `dart_api_key` /
+  `rss_feed_urls` / `kis_app_secret` / `last_error_message` 등)
+- 0 호출 윈도우 안전 처리 (`success_rate_24h=null`, `avg_attempts_24h=null`)
+- experimental provider (canonical 3 외) 도 Phase D 필드 노출
+
+### 6.30.2 Frontend `frontend/src/tests/ProviderHealthPanel.test.tsx` (+5 케이스)
+
+- `success_rate_24h` 99.0% 표시 + `avg_attempts_24h` 1.07 표시 + 빈 fixture
+  `—` placeholder
+- `recent_failures` 3건 newest-first 렌더링 (testid `provider-recent-failure-
+  dart-{0..2}`); KIS (0 failures) / RSS (unregistered) 카드 미렌더링
+- 모든 provider 가 빈 `recent_failures` 일 때 `provider-recent-failures-section`
+  자체 미렌더링
+- hypothetical 백엔드 누출 시나리오 (`message: "...?crtfc_key=LEAKMEXYZ"`) →
+  DOM 에 `LEAKMEXYZ` / `crtfc_key` / `opendart` / `api_key` 0건 (paranoid
+  `container.textContent` 단언)
+- Phase D 추가 후에도 패널 read-only 유지 — button / checkbox / switch /
+  textbox 0건
+
+### 6.30.3 e2e `dashboard.spec.ts` (+1 케이스)
+
+- `/settings` 진입 시 KIS 의 success_rate `98.0%` / avg_attempts `1.05` /
+  recent_failures 카드 (TIMEOUT) 모두 visible
+- DART/RSS 의 빈 placeholder (`—`) 표시
+- 패널 내 button / switch / checkbox 0건
+- 페이지 텍스트 + raw `/api/health/providers` payload 양쪽에서 16종 forbidden
+  substring (Phase D 추가 `?api_key=` / `feed_url` 포함) 0건
+
+### 6.30.4 회귀 기준
+
+- backend pytest **1112 → 1119 passed (+7)** — 회귀 0건
+- frontend vitest **153 → 158 passed (+5)** — 20 파일
+- frontend build 그린 (3.40s)
+- Playwright e2e **20 → 21 passed (+1)**
+- v0.10 Phase D 17 + v0.11 Phase A/B/C 누적 192 케이스 회귀 0건
+- 외부 네트워크 호출 0건 (Phase D 추가도 in-memory only)
+- API key / token / URL query secret / `last_error_message` / 메시지 텍스트
+  응답·UI·로그 노출 0건
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
+- Alembic 새 revision 0건
+- 신규 mutation 라우터 0건 (`/api/health/providers` GET only)
+- 신규 pip 의존성 0건 (Phase C 의 prometheus-client 그대로)
 
 ## 7. 금지 사항
 
