@@ -1272,12 +1272,21 @@ DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic r
 - [x] `app/api/__init__.py` — `validation_router` export 추가
 - [x] `app/main.py` — `validation_router` 등록
 - [x] 통합 테스트 36건 (`tests/integration/test_validation_report.py`) — happy/empty/malformed skip/data_source bucket/policy_enabled_count/delta sign count/forbidden field/405×16(4 endpoint × 4 method)/socket monkeypatch
-- [ ] `frontend/src/api/types.ts` — ValidationReport 타입 추가 — **Phase D 범위**
-- [ ] `frontend/src/hooks/useValidationReport.ts` 신규 — **Phase D 범위**
-- [ ] `frontend/src/pages/Validation/index.tsx` 신규 (12번째 화면 `/validation`) — **Phase D 범위**
-- [ ] `frontend/src/tests/Validation.test.tsx` 신규 (~7건) — **Phase D 범위**
-- [ ] `frontend/src/tests/mswServer.ts` 핸들러 추가 — **Phase D 범위**
+- [x] `frontend/src/api/types.ts` — ValidationReport 8종 타입 추가 (ScoreDeltaSummary / ValidationReportResponse / ValidationStrategySummary / ValidationStrategyResponse / ValidationRegimeSummary / ValidationRegimeResponse / ValidationSectorSummary / ValidationSectorResponse)
+- [x] `frontend/src/api/validation.ts` 신규 — fetchValidationReport / fetchValidationByStrategy / fetchValidationByRegime / fetchValidationBySector
+- [x] `frontend/src/hooks/useValidationReport.ts` 신규 — 4 hooks (staleTime: 60_000)
+- [x] `frontend/src/pages/Validation/index.tsx` 신규 (12번째 화면 `/validation`) — 전체요약 카드 / ScoreDelta 카드 / 전략표 / 국면표 / 섹터표 / loading·error·empty state / data-testid 완비
+- [x] `frontend/src/router.tsx` — ValidationPage lazy import + `/validation` route 추가
+- [x] `frontend/src/components/layout/Sidebar.tsx` — ClipboardCheck 아이콘 검증리포트 메뉴 (12번째) + v0.13 footer 갱신
+- [x] `frontend/src/tests/mswServer.ts` — 4 validation GET 핸들러 추가 (by-strategy/by-regime/by-sector/report)
+- [x] `frontend/src/tests/Validation.test.tsx` 신규 — **10건** (page wrapper / empty state / happy summary / strategy table / regime row / sector row / error state / forbidden field guard / empty data_source chips / null cost_adjusted dash)
+- [x] `frontend/e2e/fixtures/apiMocks.ts` — VALIDATION_REPORT_EMPTY fixture + 4 route patterns
+- [x] `frontend/e2e/dashboard.spec.ts` — sidebar "11 → 12 menus" + 검증리포트 navigation check + `/validation` no-automation 경로 추가
 - [x] `tag v0.13-validation-api + push` — **게이트: pytest 1277 / vitest 165 / build 그린**
+
+### Phase D: Validation Report Frontend ✅ 완료 (`v0.13-validation-ui`)
+
+**게이트: vitest 175 passed (165 → 175, +10) / build 그린 / e2e 불변**
 
 ### Phase D: Backtest Export CLI
 

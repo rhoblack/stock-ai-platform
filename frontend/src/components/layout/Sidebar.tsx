@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   Activity,
   BarChart3,
+  ClipboardCheck,
   FlaskConical,
   History,
   LayoutDashboard,
@@ -22,7 +23,7 @@ interface NavItem {
   matchPrefix?: string
 }
 
-// 11 dashboard menus (v0.8 Phase D adds 관심종목).
+// 12 dashboard menus (v0.13 Phase D adds 검증 리포트).
 const NAV_ITEMS: NavItem[] = [
   { to: '/today', label: '오늘의 리포트', Icon: LayoutDashboard },
   { to: '/recommendations', label: '추천 종목', Icon: BarChart3 },
@@ -33,6 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/themes', label: '테마 (β)', Icon: Tags, matchPrefix: '/themes' },
   { to: '/backtest', label: '백테스트 (β)', Icon: FlaskConical },
   { to: '/watchlist', label: '관심종목', Icon: Star },
+  { to: '/validation', label: '검증 리포트', Icon: ClipboardCheck },
   { to: '/jobs', label: '시스템 로그 / 잡', Icon: ScrollText, matchPrefix: '/jobs' },
   { to: '/settings', label: '설정', Icon: SettingsIcon },
 ]
@@ -46,7 +48,7 @@ export function Sidebar() {
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold">Stock AI</span>
-          <span className="text-xs text-muted-foreground">v0.8 dashboard</span>
+          <span className="text-xs text-muted-foreground">v0.13 dashboard</span>
         </div>
       </div>
       <nav className="flex flex-col gap-1 px-3 pb-4 pt-2" aria-label="primary">
@@ -69,7 +71,7 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="mt-auto px-5 py-4 text-xs text-muted-foreground">
-        <p>v0.8 User & Watchlist Foundation</p>
+        <p>v0.13 Validation Report</p>
         <p className="mt-1">자동매매 / 실 주문 미포함</p>
       </div>
     </aside>

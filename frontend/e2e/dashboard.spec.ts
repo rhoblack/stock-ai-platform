@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', () => {
-  test('all 11 sidebar menus are reachable and render their main content', async ({
+  test('all 12 sidebar menus are reachable and render their main content', async ({
     page,
   }) => {
     await page.goto('/')
@@ -43,6 +43,10 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     // v0.8 Phase D — 관심종목
     await nav.getByRole('link', { name: '관심종목' }).click()
     await expect(page.getByTestId('watchlist-page')).toBeVisible()
+
+    // v0.13 Phase D — 검증 리포트
+    await nav.getByRole('link', { name: '검증 리포트' }).click()
+    await expect(page.getByTestId('validation-page')).toBeVisible()
 
     await nav.getByRole('link', { name: '시스템 로그 / 잡' }).click()
     await expect(page.getByTestId('job-row-101')).toBeVisible()
@@ -541,6 +545,8 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
       '/themes',
       '/themes/41',
       '/backtest',
+      '/watchlist',
+      '/validation',
       '/jobs',
       '/jobs/101',
       '/settings',

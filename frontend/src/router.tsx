@@ -48,6 +48,10 @@ const WatchlistPage = lazy(() =>
 const LoginPage = lazy(() =>
   import('./pages/Login').then(m => ({ default: m.LoginPage })),
 )
+// v0.13 Phase D
+const ValidationPage = lazy(() =>
+  import('./pages/Validation').then(m => ({ default: m.ValidationPage })),
+)
 
 export function AppRoutes() {
   return (
@@ -70,6 +74,7 @@ export function AppRoutes() {
         <Route path="themes/:themeId" element={<ThemeDetailPage />} />
         <Route path="backtest" element={<BacktestPage />} />
         <Route path="watchlist" element={<WatchlistPage />} />
+        <Route path="validation" element={<ValidationPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:jobId" element={<JobsPage />} />
         <Route path="settings" element={<SettingsPage />} />

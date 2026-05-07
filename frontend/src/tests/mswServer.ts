@@ -318,6 +318,36 @@ export const handlers = [
     }),
   ),
 
+  // v0.13 Phase D — Validation Report (read-only, default empty)
+  http.get('*/api/validation/report/by-strategy', () =>
+    HttpResponse.json({ count: 0, items: [] }),
+  ),
+  http.get('*/api/validation/report/by-regime', () =>
+    HttpResponse.json({ count: 0, items: [] }),
+  ),
+  http.get('*/api/validation/report/by-sector', () =>
+    HttpResponse.json({ count: 0, items: [] }),
+  ),
+  http.get('*/api/validation/report', () =>
+    HttpResponse.json({
+      generated_at: '2026-05-08T00:00:00',
+      run_count: 0,
+      signal_count: 0,
+      buy_count: 0,
+      win_rate_5d: null,
+      avg_return_5d: null,
+      score_delta: {
+        total_scored: 0,
+        policy_enabled_count: 0,
+        avg_delta: null,
+        positive_delta_count: 0,
+        negative_delta_count: 0,
+        neutral_delta_count: 0,
+        data_source_counts: {},
+      },
+    }),
+  ),
+
   http.put('*/api/users/me/preferences', async ({ request }) => {
     const body = await request.json() as Record<string, unknown>
     return HttpResponse.json({

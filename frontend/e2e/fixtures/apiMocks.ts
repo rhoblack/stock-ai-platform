@@ -801,6 +801,24 @@ const SETTINGS_SAFE = {
   feature_custom_ai_training: false,
 }
 
+const VALIDATION_REPORT_EMPTY = {
+  generated_at: '2026-05-08T00:00:00',
+  run_count: 0,
+  signal_count: 0,
+  buy_count: 0,
+  win_rate_5d: null,
+  avg_return_5d: null,
+  score_delta: {
+    total_scored: 0,
+    policy_enabled_count: 0,
+    avg_delta: null,
+    positive_delta_count: 0,
+    negative_delta_count: 0,
+    neutral_delta_count: 0,
+    data_source_counts: {},
+  },
+}
+
 const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; method?: string }> = [
   { pattern: /\/health$/, payload: HEALTH },
   // v0.8 Phase D — auth + watchlist
@@ -837,6 +855,11 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; meth
   { pattern: /\/api\/settings$/, payload: SETTINGS_SAFE },
   // v0.10 Phase D — read-only Provider Health snapshot.
   { pattern: /\/api\/health\/providers$/, payload: PROVIDER_HEALTH_DEFAULT_OFF },
+  // v0.13 Phase D — Validation Report (read-only, default empty; more specific first)
+  { pattern: /\/api\/validation\/report\/by-strategy(\?|$)/, payload: { count: 0, items: [] } },
+  { pattern: /\/api\/validation\/report\/by-regime(\?|$)/, payload: { count: 0, items: [] } },
+  { pattern: /\/api\/validation\/report\/by-sector(\?|$)/, payload: { count: 0, items: [] } },
+  { pattern: /\/api\/validation\/report(\?|$)/, payload: VALIDATION_REPORT_EMPTY },
 ]
 
 export async function installApiMocks(page: Page): Promise<void> {

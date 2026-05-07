@@ -38,8 +38,8 @@ Policy + Score Delta + Validation Report + Backtest Export CLI**.
 | A | ProviderScorePolicy Engine — `app/scoring/provider_policy.py` + `app/scoring/__init__.py` + `settings.provider_score_policy_enabled=False` + FAKE=bypass + 회귀 단언 28건 | `v0.13-provider-policy` ✅ | **1194→1223 (+29)** — 28건 신규 + test_settings_defaults 해소 1건 |
 | B | Score Delta in evidence_json — `score_before`/`score_after`/`delta`/`components[]` (Alembic 0건) + 단위 테스트 18건 | `v0.13-score-delta` ✅ | **1223→1241 (+18)** |
 | C | Validation Report Read-only API — `GET /api/validation/report` + `/by-strategy` + `/by-regime` + `/by-sector` (POST→405) + 통합 테스트 36건 | `v0.13-validation-api` ✅ | **1241→1277 (+36)** |
-| D | Validation Report UI + Score Delta UI — React 화면 확장 + vitest ~7건 | `v0.13-validation-ui` | vitest 165→~172 (+~7) |
-| E | Backtest Export CLI + 마감 — `scripts/export_backtest.py` (stdlib csv, pip 0건) + `RELEASE_NOTES_v0.13.md` + 4 게이트 최종 확인 | `v0.13-final` | pytest ~1255 (+~61) / vitest ~172 (+~7) |
+| D | Validation Report UI + Score Delta UI — React 화면 확장 + vitest 10건 | `v0.13-validation-ui` ✅ | **vitest 165→175 (+10)** |
+| E | Backtest Export CLI + 마감 — `scripts/export_backtest.py` (stdlib csv, pip 0건) + `RELEASE_NOTES_v0.13.md` + 4 게이트 최종 확인 | `v0.13-final` | pytest ~1277 / vitest ~175 |
 
 ### v0.13 핵심 정책
 

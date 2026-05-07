@@ -821,6 +821,68 @@ export interface BacktestComparisonResponse {
   strategies: BacktestComparisonStrategyItem[]
 }
 
+// ----- v0.13 Phase C/D — Validation Report API -----
+
+export interface ScoreDeltaSummary {
+  total_scored: number
+  policy_enabled_count: number
+  avg_delta: string | null
+  positive_delta_count: number
+  negative_delta_count: number
+  neutral_delta_count: number
+  data_source_counts: Record<string, number>
+}
+
+export interface ValidationReportResponse {
+  generated_at: string
+  run_count: number
+  signal_count: number
+  buy_count: number
+  win_rate_5d: string | null
+  avg_return_5d: string | null
+  score_delta: ScoreDeltaSummary
+}
+
+export interface ValidationStrategySummary {
+  strategy_name: string
+  run_count: number
+  signal_count: number
+  buy_count: number
+  win_rate_5d: string | null
+  avg_return_5d: string | null
+  cost_adjusted_avg_return_5d: string | null
+  max_drawdown: string | null
+}
+
+export interface ValidationStrategyResponse {
+  count: number
+  items: ValidationStrategySummary[]
+}
+
+export interface ValidationRegimeSummary {
+  regime: string
+  buy_count: number
+  win_rate_5d: string | null
+  avg_return_5d: string | null
+}
+
+export interface ValidationRegimeResponse {
+  count: number
+  items: ValidationRegimeSummary[]
+}
+
+export interface ValidationSectorSummary {
+  sector: string
+  buy_count: number
+  win_rate_5d: string | null
+  avg_return_5d: string | null
+}
+
+export interface ValidationSectorResponse {
+  count: number
+  items: ValidationSectorSummary[]
+}
+
 // ----- v0.10 Phase D — Provider Health -----
 
 export type ProviderCircuitState =
