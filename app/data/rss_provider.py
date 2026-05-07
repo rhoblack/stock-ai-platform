@@ -55,6 +55,7 @@ from typing import Any, Callable, Iterable, Mapping
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
+from app.config.logging import install_sensitive_qs_filter
 from app.config.settings import Settings, get_settings
 from app.data.dtos import NewsItemDTO
 from app.data.interfaces import NewsProviderInterface
@@ -63,7 +64,7 @@ from app.data.provider_health_monitor import (
     call_with_resilience,
     get_health_monitor,
 )
-from app.data.provider_resilience import ProviderCallResult
+from app.data.provider_resilience import ProviderCallResult, ProviderErrorKind
 
 logger = logging.getLogger(__name__)
 
@@ -546,6 +547,146 @@ class RssNewsProvider(NewsProviderInterface):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# v0.11 Phase B -- real httpx-backed transport implementation.
+#
+# Mirrors the Phase A ``HttpxDartTransport`` pattern from
+# ``app.data.dart_provider``:
+#   * Lazy ``httpx`` import inside ``__init__`` so the module-level import
+#     of :mod:`app.data.rss_provider` from a process that has monkeypatched
+#     ``httpx.Client`` (the v0.10 no-network guard) only blows up when
+#     the operator actually constructs the transport (requires
+#     RSS_NEWS_ENABLED=true + RSS_FEED_URLS configured).
+#   * One :class:`httpx.Client` per provider lifetime; idempotent
+#     ``close()`` released by ``__del__``.
+#   * Returns the response body as bytes via ``ProviderCallResult.ok`` so
+#     the existing :func:`parse_feed` (RSS 2.0 + Atom) consumes it
+#     without modification.
+#   * Shares :func:`install_sensitive_qs_filter` with the DART transport
+#     so any feed URL containing ``?api_key=...`` / ``?token=...`` is
+#     masked in httpx INFO logs.
+# ---------------------------------------------------------------------------
+
+
+class HttpxRssTransport:
+    """Real httpx-backed transport for RSS / Atom feed downloads.
+
+    Each call issues a single ``GET <feed_url>`` and maps the response
+    body to ``ProviderCallResult``:
+
+      * HTTP 200 → ``ok(response.content)`` (raw bytes; parser handles
+        encoding)
+      * HTTP 4xx → CLIENT_ERROR (not retried)
+      * HTTP 5xx → SERVER_ERROR (retried)
+      * ``httpx.TimeoutException`` → TIMEOUT
+      * any other ``httpx.HTTPError`` → UNKNOWN, exception-class-name
+        only in error_message (``str(exc)`` may carry the URL with
+        secret query params, so we never include it)
+
+    ``follow_redirects=True`` because RSS feeds frequently relocate
+    (301 / 302) when publishers reorganise paths.  httpx's default
+    redirect cap of 20 prevents loops.
+    """
+
+    def __init__(
+        self,
+        *,
+        settings: Settings | None = None,
+        client: Any | None = None,
+        user_agent: str = "stock-ai-platform/0.11 RSS transport",
+    ) -> None:
+        self._settings = settings or get_settings()
+        # Lazy import: keeps module-level imports of rss_provider free
+        # of httpx side effects (matters for the v0.10 monkeypatch
+        # guard when the caller injects their own transport).
+        import httpx  # noqa: PLC0415
+
+        # Mask any sensitive query-string in httpx INFO logs (e.g.
+        # ``HTTP Request: GET https://example.com/feed?api_key=...``).
+        # Idempotent: re-installing on the same logger is a no-op.
+        install_sensitive_qs_filter("httpx")
+
+        if client is None:
+            client = httpx.Client(
+                timeout=self._settings.rss_timeout_s,
+                headers={"User-Agent": user_agent},
+                follow_redirects=True,
+            )
+        self._client = client
+        self._httpx = httpx
+
+    def __call__(self, feed_url: str) -> ProviderCallResult:
+        """Issue a single GET request and map the response to ProviderCallResult.
+
+        ``feed_url`` is the full URL (no template) -- no query params are
+        added by the transport.  We never log the URL ourselves (the
+        provider layer logs only the host + path via
+        :func:`_safe_url_for_log`); the httpx INFO line is masked by the
+        installed filter.
+        """
+        try:
+            response = self._client.get(feed_url)
+        except self._httpx.TimeoutException:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.TIMEOUT,
+                f"RSS request timed out after {self._settings.rss_timeout_s}s",
+            )
+        except self._httpx.HTTPError as exc:
+            # Connection / TLS / redirect-loop / etc.  Some httpx exception
+            # ``__str__`` includes the request URL -- never echo it.
+            return ProviderCallResult.fail(
+                ProviderErrorKind.UNKNOWN,
+                f"RSS transport error: {type(exc).__name__}",
+            )
+
+        status_code = response.status_code
+
+        if status_code >= 500:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.SERVER_ERROR,
+                f"RSS HTTP {status_code}",
+            )
+        if status_code >= 400:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.CLIENT_ERROR,
+                f"RSS HTTP {status_code}",
+            )
+        if status_code != 200:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.UNKNOWN,
+                f"RSS HTTP {status_code}",
+            )
+
+        # Body is whatever the server returned.  ``parse_feed`` handles
+        # XML decoding (or raises RssParseError on non-XML, which the
+        # provider isolates).
+        return ProviderCallResult.ok(response.content)
+
+    def close(self) -> None:
+        """Release the underlying httpx.Client (idempotent)."""
+        try:
+            self._client.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def __del__(self) -> None:  # pragma: no cover -- GC-time cleanup
+        self.close()
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+
+def _default_transport(settings: Settings) -> "HttpxRssTransport":
+    """Construct the production httpx-backed transport.
+
+    Separated so tests can verify factory wiring without touching the
+    real :class:`HttpxRssTransport` constructor.
+    """
+    return HttpxRssTransport(settings=settings)
+
+
 def create_rss_provider(
     *,
     settings: Settings | None = None,
@@ -553,9 +694,19 @@ def create_rss_provider(
     monitor: ProviderHealthMonitor | None = None,
     feed_categories: Mapping[str, str] | None = None,
 ) -> RssNewsProvider:
-    """Construct a RssNewsProvider after verifying the operator opted in."""
+    """Construct a RssNewsProvider after verifying the operator opted in.
+
+    v0.11 Phase B: when ``transport=None`` and the operator has set
+    ``RSS_NEWS_ENABLED=true`` + ``RSS_FEED_URLS``, the factory
+    auto-injects :class:`HttpxRssTransport`.  Tests that pass their own
+    transport keep the v0.10 zero-network behaviour (the
+    ``test_no_httpx_client_constructed`` guard remains valid for the
+    test-injected path).
+    """
     settings = settings or get_settings()
     _check_enabled(settings)
+    if transport is None:
+        transport = _default_transport(settings)
     return RssNewsProvider(
         settings=settings,
         transport=transport,
@@ -570,6 +721,7 @@ __all__ = [
     "RssParseError",
     "RssNewsProvider",
     "RssTransport",
+    "HttpxRssTransport",
     "create_rss_provider",
     "dedup_items",
     "parse_feed",

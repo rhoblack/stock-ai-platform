@@ -1095,16 +1095,18 @@ DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에
 - [x] httpx exception `__str__` → `result.error_message` 미반영 (예외 클래스명만 노출, URL secret 누출 차단)
 - [ ] `tag v0.11-dart-transport + push`
 
-### Phase B: RSS HTTP Transport
+### Phase B: RSS HTTP Transport ✅ 인수
 
-- [ ] `app/data/rss_provider.py` 에 `HttpxRssTransport` 구현 (`RssTransport` protocol 구현체)
-- [ ] `create_rss_provider` factory — `transport=None` + `RSS_NEWS_ENABLED=true` 시 자동 주입
-- [ ] HTTP 200 → `ProviderCallResult.ok(response.content)`; 4xx → CLIENT_ERROR; 5xx → SERVER_ERROR
-- [ ] `follow_redirects=True` + `httpx` 기본 max redirect cap
-- [ ] respx mock 테스트 ~12건 (`tests/data/test_rss_http_transport.py`) — RSS 2.0 / Atom fixture 응답 + 비-XML / 4xx / 5xx / timeout
-- [ ] feed URL query secret 평문 로그 0건 (`_safe_url_for_log` 단언 강화)
-- [ ] `RSS_NEWS_ENABLED=false` 시 `httpx.Client` 미생성 유지
-- [ ] v0.10 Phase C 33 케이스 회귀 0건
+- [x] `_SensitiveQueryStringFilter` + `install_sensitive_qs_filter` 를 Phase A `dart_provider.py` 에서 `app/config/logging.py` 로 추출 — DART/RSS 공유, 누적 idempotent 설치
+- [x] `app/data/rss_provider.py` 에 `HttpxRssTransport` 구현 (`RssTransport` protocol, lazy httpx import)
+- [x] `create_rss_provider` factory — `transport=None` + `RSS_NEWS_ENABLED=true` + `RSS_FEED_URLS` 설정 시 `_default_transport` 자동 주입
+- [x] HTTP 200 → `ProviderCallResult.ok(response.content)`; 4xx → CLIENT_ERROR; 5xx → SERVER_ERROR; TimeoutException → TIMEOUT; 기타 HTTPError → UNKNOWN (예외 클래스명만 message)
+- [x] `follow_redirects=True` + httpx 기본 max redirect cap (20)
+- [x] respx mock 테스트 19건 (`tests/data/test_rss_http_transport.py`) — RSS 2.0 / Atom + 4xx / 5xx / timeout / connect / 비-XML 격리 / factory + resilience + secret 마스킹 + zero-network
+- [x] feed URL query secret (`?api_key=PRIVATE-FEED-SECRET-XYZ`) caplog / `result.error_message` / `monitor.last_error_message` 평문 0건
+- [x] `RSS_NEWS_ENABLED=false` / 빈 `RSS_FEED_URLS` 시 `httpx.Client` 미생성 (AssertionError 가드)
+- [x] v0.10 Phase C 33 케이스 회귀 0건 (호출자 transport 주입 path 가드 유효)
+- [x] DART Phase A 49+27 케이스 회귀 0건 (filter 추출 후에도 동일 동작)
 - [ ] `tag v0.11-rss-transport + push`
 
 ### Phase C: Provider Observability Layer

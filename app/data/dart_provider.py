@@ -59,12 +59,12 @@ All exceptions raised by the transport callable are caught by
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Mapping
 
+from app.config.logging import install_sensitive_qs_filter
 from app.config.settings import Settings, get_settings
 from app.data.dtos import (
     DisclosureItemDTO,
@@ -792,54 +792,6 @@ class DartDisclosureProvider(_DartProviderBase, DisclosureProviderInterface):
 # ---------------------------------------------------------------------------
 
 
-# httpx's own logger emits an INFO line per request that includes the full
-# URL: ``HTTP Request: GET https://opendart.../api/...?crtfc_key=ABC...``.
-# That URL carries the API key as a query parameter, so we install a small
-# filter on the httpx logger that masks any sensitive query value before
-# the message is emitted.  Idempotent: re-installing on the same logger
-# detects the existing filter via the marker attribute.
-_SENSITIVE_QS_RE = re.compile(
-    r"(?P<key>crtfc_key|api_key|apikey|access_token|token|secret|password)"
-    r"=(?P<val>[^&\s\"']+)",
-    re.IGNORECASE,
-)
-_QS_MASK = "***"
-
-
-class _SensitiveQueryStringFilter(logging.Filter):
-    """Mask sensitive query-string values in any log message.
-
-    We rewrite the formatted message so that ``?crtfc_key=ABC&foo=1``
-    becomes ``?crtfc_key=***&foo=1`` -- the rest of the URL (host, path,
-    non-secret query params) is preserved so operators can still see
-    which endpoint failed.
-    """
-
-    _MARKER = "_dart_sensitive_qs_filter_installed"
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            msg = record.getMessage()
-        except Exception:  # noqa: BLE001 -- defensive; never block log
-            return True
-        if "=" not in msg:
-            return True
-        masked = _SENSITIVE_QS_RE.sub(rf"\g<key>={_QS_MASK}", msg)
-        if masked != msg:
-            record.msg = masked
-            record.args = None
-        return True
-
-
-def _install_sensitive_qs_filter(logger_name: str) -> None:
-    """Idempotently attach the sensitive-query-string filter to a logger."""
-    target = logging.getLogger(logger_name)
-    if getattr(target, _SensitiveQueryStringFilter._MARKER, False):
-        return
-    target.addFilter(_SensitiveQueryStringFilter())
-    setattr(target, _SensitiveQueryStringFilter._MARKER, True)
-
-
 class HttpxDartTransport:
     """Real httpx-backed transport for DART OpenAPI calls.
 
@@ -872,7 +824,7 @@ class HttpxDartTransport:
         # Install secret-masking filter on httpx's request logger BEFORE
         # building the client so the very first request line is masked.
         # Idempotent: only takes effect once per process.
-        _install_sensitive_qs_filter("httpx")
+        install_sensitive_qs_filter("httpx")
 
         if client is None:
             client = httpx.Client(

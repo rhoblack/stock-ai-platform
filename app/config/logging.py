@@ -37,6 +37,67 @@ _SENSITIVE_FIELD_RE = re.compile(
     re.IGNORECASE,
 )
 
+
+# --------------------------------------------------------------------- #
+# Sensitive query-string masking (v0.11 Phase A / B — shared by every    #
+# httpx-backed provider transport)                                       #
+# --------------------------------------------------------------------- #
+#
+# httpx's "httpx" logger emits one INFO line per outbound request that
+# includes the full URL: ``HTTP Request: GET https://...?crtfc_key=ABC``.
+# RSS feed URLs may also embed ``?api_key=...`` / ``?token=...`` for
+# private feeds.  The filter below rewrites the formatted log message so
+# any matching ``key=value`` pair becomes ``key=***`` BEFORE the record
+# is emitted.  Both DART and RSS transports install it on the ``httpx``
+# logger via :func:`install_sensitive_qs_filter` (idempotent).
+
+_SENSITIVE_QS_RE = re.compile(
+    r"(?P<key>crtfc_key|api_key|apikey|access_token|token|secret|password)"
+    r"=(?P<val>[^&\s\"']+)",
+    re.IGNORECASE,
+)
+_QS_MASK = "***"
+
+
+class SensitiveQueryStringFilter(logging.Filter):
+    """Mask sensitive query-string values in any log message.
+
+    A formatted message ``"HTTP Request: GET https://x.y?crtfc_key=ABC&page=2"``
+    becomes ``"HTTP Request: GET https://x.y?crtfc_key=***&page=2"`` --
+    only the value of registered sensitive keys is replaced; the rest
+    of the URL (host, path, non-secret query params) is preserved so
+    operators can still see which endpoint failed.
+    """
+
+    _MARKER = "_sensitive_qs_filter_installed"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:  # noqa: BLE001 -- never block log emission
+            return True
+        if "=" not in msg:
+            return True
+        masked = _SENSITIVE_QS_RE.sub(rf"\g<key>={_QS_MASK}", msg)
+        if masked != msg:
+            record.msg = masked
+            record.args = None
+        return True
+
+
+def install_sensitive_qs_filter(logger_name: str = "httpx") -> None:
+    """Idempotently attach :class:`SensitiveQueryStringFilter` to a logger.
+
+    Re-installing on the same logger is a no-op -- detected via a marker
+    attribute set on the logger object so repeated provider construction
+    does not stack duplicate filters.
+    """
+    target = logging.getLogger(logger_name)
+    if getattr(target, SensitiveQueryStringFilter._MARKER, False):
+        return
+    target.addFilter(SensitiveQueryStringFilter())
+    setattr(target, SensitiveQueryStringFilter._MARKER, True)
+
 _MASK = "***"
 
 

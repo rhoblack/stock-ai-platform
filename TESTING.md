@@ -1,10 +1,10 @@
 # TESTING.md
 
-> 본 문서는 **v0.11 Phase A 시점** 기준으로 갱신된다 (`v0.11-dart-transport`
+> 본 문서는 **v0.11 Phase B 시점** 기준으로 갱신된다 (`v0.11-rss-transport`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.11 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.11 Phase A 시점)
+## 1. 현재 회귀 게이트 (v0.11 Phase B 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` 가 httpx 요청을 transport
@@ -12,7 +12,7 @@ layer 에서 인터셉트, monkeypatch `httpx.Client` 가드 병행).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1072 passed, 1 deselected** (v0.11 Phase A: 1045 → 1072, +27 신규 — HttpxDartTransport + respx mock + 비밀값 마스킹 + factory 자동 주입) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1091 passed, 1 deselected** (v0.11 Phase B: 1072 → 1091, +19 신규 — HttpxRssTransport + respx mock + URL query secret 마스킹 + factory 자동 주입) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **153 passed** (Phase D: 146 → 153, +7 신규 — ProviderHealthPanel) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.41s) |
 | Playwright e2e | `cd frontend && npm run e2e` | **20 passed** (Phase D: 19 → 20, +1 신규 — Settings Provider Health 패널) |
@@ -1293,6 +1293,80 @@ factory 자동 주입 + secret 마스킹 + 자원 정리. **외부 네트워크 
   `result.error_message` 단언)
 - 신규 의존성 1종: `respx>=0.21,<0.22` (테스트 only, BSD-3 license)
 - DART provider default OFF 정책 유지 — `DART_ENABLED=false` 기본
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
+- Alembic 새 revision 0건
+
+## 6.28 v0.11 Phase B — RSS HTTP Transport 테스트
+
+`tests/data/test_rss_http_transport.py` 신규 **19 케이스**. v0.10 Phase C 의
+transport 주입형 RSS skeleton 위에 실 httpx 전송 (`HttpxRssTransport`) +
+factory 자동 주입 + secret 마스킹 (Phase A 의 `SensitiveQueryStringFilter`
+공유). **외부 네트워크 호출 0건**.
+
+부수 변경: Phase A `dart_provider.py` 안의 `_SensitiveQueryStringFilter` /
+`_install_sensitive_qs_filter` 를 `app/config/logging.py` 로 추출
+(`SensitiveQueryStringFilter` / `install_sensitive_qs_filter`) — DART 와 RSS
+양쪽 transport 가 같은 헬퍼 import. 추출 후 DART 49 + Phase A 27 케이스 회귀
+0건.
+
+### 6.28.1 HTTP / 응답 → ProviderCallResult 매핑 (8 케이스)
+
+- HTTP 200 + RSS 2.0 XML body → `ok(bytes)` (parser 가 디코딩)
+- HTTP 200 + Atom XML body → `ok(bytes)`
+- HTTP 4xx → `CLIENT_ERROR` (status code 메시지에 포함)
+- HTTP 5xx → `SERVER_ERROR`
+- `httpx.ReadTimeout` → `TIMEOUT`
+- `httpx.ConnectError` → `UNKNOWN`, **예외 클래스명만** message 에 (URL secret
+  carry 차단)
+- HTTP 304 등 예상 외 status → `UNKNOWN`
+- HTTP 200 + 비-XML body → transport 는 `ok(bytes)` 반환; parser 단계에서
+  `RssParseError` 격리 → 빈 list, monitor success_count 증가 (transport
+  성공 / parser 실패 분리)
+
+### 6.28.2 Factory 자동 주입 (4 케이스)
+
+- `create_rss_provider(transport=None)` + `RSS_NEWS_ENABLED=true` +
+  `RSS_FEED_URLS` 설정 → `HttpxRssTransport` 자동 주입, RSS 2.0 fixture →
+  2 NewsItemDTO 정상 반환, monitor success_count 1
+- `RSS_NEWS_ENABLED=false` 시 `_check_enabled` 가 먼저 raise — `httpx.Client`
+  인스턴스화 AssertionError 가드 (v0.10 zero-network guard 보존)
+- `RSS_NEWS_ENABLED=true` + 빈 `RSS_FEED_URLS` 도 동일 가드
+- 호출자가 직접 transport 주입 시 factory 가 `httpx.Client` 미생성 (v0.10
+  monkeypatch 가드 그대로 유효)
+
+### 6.28.3 Resilience 통합 (3 케이스)
+
+- TIMEOUT 응답 → monitor `last_error_kind="TIMEOUT"`, 빈 list 반환
+- 다중 feed (2개) 중 1 feed 503 + 1 feed 200 → 격리, 두 번째 feed 의 2
+  item 만 결과; monitor success_count 1 / failure_count 1
+- 4 feed 모두 5xx + circuit_breaker threshold=2 → 처음 2 feed 만 transport
+  호출, 나머지 fast-fail (respx call_count 합산 = 2)
+
+### 6.28.4 비밀값 마스킹 (3 케이스)
+
+- 200 응답 path → caplog 에 `?api_key=PRIVATE-FEED-SECRET-XYZ` 평문 0건;
+  httpx INFO 로그의 `api_key=` 값은 `***` 로 마스킹 (Phase A 추출된
+  `SensitiveQueryStringFilter` 공유)
+- 500 응답 path → provider WARNING 로그는 `_safe_url_for_log` 가 query/fragment
+  strip → caplog 에 secret 없음; `monitor.last_error_message` 에도 평문 0건
+- `httpx.ConnectError` 가 URL 전체를 carry 해도 transport 가 예외 클래스명만
+  message 에 노출 → `result.error_message` / caplog 평문 0건
+
+### 6.28.5 Zero-network 가드 (1 케이스 + v0.10 33 케이스 회귀)
+
+- `respx.mock(assert_all_called=False)` → `HttpxRssTransport` 인스턴스화만으로
+  outbound HTTP 0건
+- v0.10 RSS 33 케이스 (호출자 transport 주입 path) 회귀 0건
+
+### 6.28.6 회귀 기준
+
+- backend pytest **1072 → 1091 passed (+19)** — 회귀 0건, 1 deselected 유지
+- v0.10 RSS 33 케이스 + DART skeleton 49 + DART http 27 + 모니터 31 + 로깅 12
+  = 192 누적 회귀 0건
+- 외부 네트워크 호출 0건 (`respx` + `httpx.Client` monkeypatch 가드)
+- API key / token / URL query secret 평문 응답·로그·예외 메시지 노출 0건
+- 신규 pip 의존성 0건 (Phase A 의 respx 그대로 사용)
+- RSS provider default OFF 유지 — `RSS_NEWS_ENABLED=false` 기본
 - ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
 - Alembic 새 revision 0건
 
