@@ -7,7 +7,57 @@
 
 ---
 
-## 0. v0.12 마감 선언 — Provider Data Scoring & Backtest Validation
+## 0. v0.13 시작 선언 — Provider Score Policy & Validation Report
+
+**v0.13 cycle 시작.** `v0.12-final` 위에 **Provider Score Policy Engine +
+Score Delta in evidence_json + Validation Report Read-only API + Backtest
+Export CLI** 구현 예정. 채택 시나리오: **Scenario X**.
+
+- 시작 일자: **2026-05-07 (Asia/Seoul)**
+- 기준 게이트: pytest **1194 passed** (1 deselected) / vitest **165 passed** / e2e **21 passed** / build 그린
+- 기준 태그: `v0.12-final` → 예상 마감 태그: `v0.13-final`
+- Alembic head: `0004_user_preferences` (v0.13 신규 revision **0건** — score_delta 는 기존 `evidence_json` JSON 컬럼 재활용; Validation Report 는 기존 `backtest_runs` / `backtest_results` 테이블 쿼리)
+- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0013`
+
+### v0.13 채택 결론 (시나리오 비교 요약)
+
+`PLANS.md` `PLAN-0013` 4 시나리오 비교 후 채택: **Scenario X — Provider Score
+Policy + Score Delta + Validation Report + Backtest Export CLI**.
+
+| 시나리오 | 내용 | 결정 |
+|---|---|---|
+| **X** | ProviderScorePolicy 승수 엔진 (ScoringEngine weight 변경 0건) + evidence_json score_delta + Validation Report GET API + Backtest Export CLI | ✅ **핵심 채택** |
+| Y | ScoringEngine weight 직접 보강 (DART 비중 증가) | ❌ 기각 — 누적 데이터 6개월+ 미달, walk-forward 검증 결과 미확보 → v0.14+ |
+| Z | Paper trading / 가상매매 루프 | ❌ 기각 — 별도 보안·컴플라이언스 사이클 필요 → v0.14+ |
+| W | Grafana + ProviderHealthMonitor 영속화 | ❌ 기각 — 외부 인프라 포함 복잡도 → v0.14+ |
+
+### v0.13 Phase 목표
+
+| Phase | 내용 | 예상 태그 | 예상 pytest |
+|---|---|---|---|
+| A | ProviderScorePolicy Engine — `app/scoring/provider_policy.py` + `PROVIDER_SCORE_POLICY_ENABLED=False` 기본 + FAKE=bypass + 회귀 단언 ~25건 | `v0.13-provider-policy` | 1194→~1219 (+~25) |
+| B | Score Delta in evidence_json — `score_before`/`score_after`/`delta`/`components[]` (Alembic 0건) + 단위 테스트 ~15건 | `v0.13-score-delta` | ~1219→~1234 (+~15) |
+| C | Validation Report Read-only API — `GET /api/validation/report` + `/by-strategy` + `/by-regime` + `/by-sector` (POST→405) + 통합 테스트 ~15건 | `v0.13-validation-api` | ~1234→~1249 (+~15) |
+| D | Validation Report UI + Score Delta UI — React 화면 확장 + vitest ~7건 | `v0.13-validation-ui` | vitest 165→~172 (+~7) |
+| E | Backtest Export CLI + 마감 — `scripts/export_backtest.py` (stdlib csv, pip 0건) + `RELEASE_NOTES_v0.13.md` + 4 게이트 최종 확인 | `v0.13-final` | pytest ~1255 (+~61) / vitest ~172 (+~7) |
+
+### v0.13 핵심 정책
+
+- **ProviderScorePolicy 승수만** — `ScoringEngine` 본 weight (`technical 35% /
+  news 25% / supply 15% / fundamental 15% / ai 10%`) **변경 0건**; `PROVIDER=1.00`
+  (감쇠 없음) / `CSV=0.90` / `MANUAL=0.80` / `FAKE=bypass` (기존 동작 보존)
+- **`PROVIDER_SCORE_POLICY_ENABLED=False` 기본** — 명시 enable 시에만 승수 적용
+- **Alembic revision 0건** — score_delta 는 기존 `evidence_json` JSON 컬럼 재활용;
+  Validation Report 는 기존 `backtest_runs` / `backtest_results` 테이블 쿼리
+- **신규 mutation 라우터 0건** — `/api/validation/*` 모두 GET only (POST→405)
+- **Backtest Export CLI** — `scripts/export_backtest.py` + stdlib `csv` (신규 pip 0건) +
+  forbidden field guard (`evidence_json` / `notes` 등 raw JSON 필드 제외 목록)
+- **DART/RSS/Prometheus/Provider Data Ingestion default OFF 유지** (v0.12 정책 그대로)
+- **자동매매 / 실 KIS 주문 / `BrokerInterface` 구현 0건** (v0.1~v0.13 일관)
+
+---
+
+## 0-1. v0.12 마감 선언 — Provider Data Scoring & Backtest Validation (강등: 이전 §0)
 
 **v0.12 cycle 마감.** `v0.11-final` 위에 **Provider Data Scoring & Backtest
 Validation** 5 phase 완료. 최종 마감 태그 `v0.12-final`.
@@ -82,7 +132,7 @@ Scoring + Backtest Validation**.
 
 ---
 
-## 0-1. v0.11 마감 선언 — Real Provider Transport & Observability (강등: 이전 §0)
+## 0-2. v0.11 마감 선언 — Real Provider Transport & Observability (강등: 이전 §0-1)
 
 **v0.11 cycle 마감.** `v0.10-final` 위에 **Real Provider Transport &
 Observability** 5 phase 완료. 최종 마감 태그 `v0.11-final`.

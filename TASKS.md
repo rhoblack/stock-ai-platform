@@ -1236,11 +1236,72 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 
 ---
 
-## v0.13+ — Backlog
+## v0.13 — Provider Score Policy & Validation Report (시작 선언)
+
+기준선: `v0.12-final`. 회귀 게이트: pytest 1194 / vitest 165 / e2e 21 / build 그린.
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0013`. 채택 시나리오: **Scenario X —
+Provider Score Policy + Score Delta + Validation Report + Backtest Export CLI**.
+ScoringEngine 본 weight 변경 0건 — policy factor 는 producer 출력에 곱해지는 별도 layer.
+DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic revision 0건.
+
+### Phase A: Provider Score Policy Engine
+
+- [ ] `app/scoring/provider_policy.py` 신규 — `ProviderScorePolicy` + `PolicyResult` + `DATA_SOURCE_RELIABILITY` 매핑
+- [ ] `app/config/settings.py` 에 `PROVIDER_SCORE_POLICY_ENABLED: bool = False` 추가
+- [ ] `RealNewsScoreProducer` / `DisclosureRiskProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` 에 policy 통합 (FAKE bypass, PROVIDER/CSV/MANUAL factor 적용)
+- [ ] ScoringEngine weight (`technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%`) 회귀 단언 (Decimal 정확도 포함) — weight 변경 0건
+- [ ] 단위 테스트 ~20건 (`tests/unit/test_provider_policy.py`) — factor 매핑 / FAKE bypass / policy OFF bypass / 경계값
+- [ ] `tag v0.13-provider-policy + push`
+
+### Phase B: Score Delta Recording in Evidence
+
+- [ ] `app/scoring/score_delta.py` 신규 — `ScoreDeltaResult` + `compute_score_delta()`
+- [ ] `RecommendationEngine` — 추천 scoring 시 `score_delta` evidence_json 기록 (Alembic 0건)
+- [ ] `HoldingCheckEngine` — holding scoring 시 `score_delta` evidence_json 기록 (Alembic 0건)
+- [ ] `app/api/routes.py` — recommendation / holding_check evidence whitelist 에 `score_delta` 추가
+- [ ] 통합 테스트 ~15건 (`tests/integration/test_score_delta.py`) — delta 계산 정확도 / whitelist 통과 / forbidden field guard
+- [ ] `tag v0.13-score-delta + push`
+
+### Phase C: Validation Report read-only API + UI
+
+- [ ] `app/api/validation_routes.py` 신규 — `GET /api/validation/report` + `/by-strategy` + `/by-regime` + `/by-sector` (GET only, POST/PUT/DELETE 405)
+- [ ] `app/api/schemas.py` — `ValidationReportSchema` 등 6종 추가
+- [ ] `app/main.py` — validation_routes 등록
+- [ ] 통합 테스트 ~18건 (`tests/integration/test_validation_report.py`) — happy/empty/404/405/forbidden field
+- [ ] `frontend/src/api/types.ts` — ValidationReport 타입 추가
+- [ ] `frontend/src/hooks/useValidationReport.ts` 신규
+- [ ] `frontend/src/pages/Validation/index.tsx` 신규 (12번째 화면 `/validation`)
+- [ ] `frontend/src/tests/Validation.test.tsx` 신규 (~7건)
+- [ ] `frontend/src/tests/mswServer.ts` 핸들러 추가
+- [ ] `tag v0.13-validation-report + push`
+
+### Phase D: Backtest Export CLI
+
+- [ ] `scripts/export_backtest.py` 신규 — `--run-id`, `--format csv/json`, `--output PATH`, `--dry-run`
+- [ ] fold / comparison / sector breakdown 포함
+- [ ] export 출력 파일에 API key / secret / source_file_path 포함 0건 (forbidden field guard)
+- [ ] 통합 테스트 ~8건 (`tests/integration/test_backtest_export.py`) — CSV/JSON 출력 / 금지 필드 / dry-run / 404
+- [ ] `tag v0.13-backtest-export + push`
+
+### Phase E: 마감 (문서)
+
+- [ ] `RELEASE_NOTES_v0.13.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.14 후보)
+- [ ] `README.md` v0.13 갱신 (기능 목록 / 제외 범위 / 회귀 기준선)
+- [ ] `PROJECT_STATUS.md` §0 v0.13 마감 선언으로 교체
+- [ ] `ROADMAP.md` v0.13 행 ✅ 마감
+- [ ] `TESTING.md` 기준선 갱신 (~1255 pytest / ~172 vitest / 21 e2e)
+- [ ] `ARCHITECTURE.md` v0.13 마감 시점 반영
+- [ ] `API_SPEC.md` `/validation/report` 엔드포인트 + score_delta evidence 안내
+- [ ] `INTEGRATION_RUNBOOK.md` score policy enable 절차 + export CLI 안내
+- [ ] `tag v0.13-final + push`
+
+---
+
+## v0.14+ — Backlog
 
 자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) §0 v0.13 후보 참조. 한 줄 요약:
 
-- **ScoringEngine 본 weight 보강** — v0.12 walk-forward 결과 기반으로 정당성 확보 후 (DART/RSS 비중 증가, 누적 데이터 6개월+)
+- **ScoringEngine 본 weight 보강** — v0.13 validation report 결과 기반 (누적 데이터 6개월+ 필요)
 - **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위 시각화 layer (외부 인프라)
 - **ProviderHealthMonitor 영속화** — DB / Redis 백업으로 재시작 후 history 유지
 - **인증 고도화** — refresh token / 다중 사용자 / OAuth / RBAC (단일 사용자 운영 검증 후)
@@ -1248,9 +1309,7 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - **LLM sentiment / 자동 요약** — 룰 기반 검증 후 (외부 LLM API 비용 / 보안 / 라이선스)
 - **WebSocket / SSE 실시간 갱신** — Provider Health / 백테스트 진행 (현재 polling)
 - **`/api/health/jobs` 분리 + Provider toggle GUI** — 인증 + 보안 검토 동반
-- **인증 고도화** — 다중 사용자 / OAuth / SSO / refresh token (단일 사용자 운영 검증 후)
-- **LLM 보강** — News sentiment / 재무 분석 / 자동 전략 생성 (룰 기반 검증 후)
-- **WebSocket / SSE** — 실시간 잡 / 백테스트 진행 (인증 + 모니터링 후)
+- **Paper trading (VirtualAccount / VirtualOrder / SimulationBroker)** — 별도 보안·컴플라이언스 사이클 선행 필수
 - **모바일 / 태블릿 / lightweight-charts 마이그레이션** — UX 고도화
 - **Watchlist 가격 알림 / target return alert** — 알림 시스템 별도 cycle
 - **Future Backlog (자동매매)** — MockBroker / ReplayBroker / APPROVAL / SMALL_AUTO / FULL_AUTO 모두 별도 보안·컴플라이언스 사이클 선행 필수

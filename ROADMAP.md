@@ -1,12 +1,14 @@
 # Roadmap
 
-> 본 문서는 **v0.12 마감 시점** 기준으로 갱신되었다 (마감 태그 `v0.12-final`).
-> v0.12 **Provider Data Scoring & Backtest Validation** 5 phase 완료.
-> 채택 시나리오: **Scenario X** — Provider 데이터 → DB ingestion (ScoringEngine
-> weight 변경 0건) + walk-forward backtest 검증 + multi-strategy 비교 + read-only
-> API/UI 확장. DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지.
-> 자동매매 / MockBroker / FULL_AUTO 는 여전히 **Future Backlog**. ScoringEngine
-> weight 보강 / Grafana / 인증 고도화 / LLM 보강은 v0.13+ 후보로 연기.
+> 본 문서는 **v0.13 시작 시점** 기준으로 갱신되었다 (기준 태그 `v0.12-final`).
+> v0.12 **Provider Data Scoring & Backtest Validation** 5 phase 완료 (마감 태그
+> `v0.12-final`). v0.13 **Provider Score Policy & Validation Report** 착수.
+> 채택 시나리오: **Scenario X** — ProviderScorePolicy 승수 엔진 (ScoringEngine
+> weight 변경 0건) + score_delta in evidence_json + Validation Report GET API +
+> Backtest Export CLI. Alembic revision 0건. DART/RSS/Prometheus/Provider Data
+> Ingestion 모두 default OFF 유지. 자동매매 / MockBroker / FULL_AUTO 는 여전히
+> **Future Backlog**. ScoringEngine weight 직접 보강 / Grafana / paper trading /
+> 인증 고도화는 v0.14+ 연기.
 
 ## 진행 이력 요약
 
@@ -24,6 +26,7 @@
 | v0.10 Real Provider Readiness & Resilience | ProviderHealthMonitor + call_with_resilience + DART provider skeleton (DART_ENABLED=false, transport 주입형) + RSS/Atom provider skeleton (RSS_NEWS_ENABLED=false, stdlib xml.etree only) + GET /api/health/providers (read-only) + Settings ProviderHealthPanel | ✅ 마감 | `v0.10-final` |
 | v0.11 Real Provider Transport & Observability | DART/RSS 실 httpx transport (default OFF 유지) + provider observability (failure history ring buffer + summary_24h + optional Prometheus `/metrics`) + `/api/health/providers` 24h aggregates + Settings 패널 보강 | ✅ 마감 | `v0.11-final` |
 | v0.12 Provider Data Scoring & Backtest Validation | Provider 데이터 → DB ingestion (existing producer 자동 흡수, ScoringEngine weight 변경 0건) + walk-forward backtest engine + 다중 전략 비교 + read-only API/UI 확장 + recommendation evidence 에 `data_source` chip | ✅ 마감 | `v0.12-final` |
+| v0.13 Provider Score Policy & Validation Report | ProviderScorePolicy 승수 엔진 (weight 변경 0건) + score_delta in evidence_json + Validation Report GET API (`/by-strategy` / `/by-regime` / `/by-sector`) + Backtest Export CLI (stdlib csv) | ⏳ 진행 중 | `v0.13-final` (예정) |
 
 ---
 
@@ -403,7 +406,7 @@ provider observability bounded ring buffer + Prometheus 모두 in-memory).
 
 ---
 
-## v0.12 — Provider Data Scoring & Backtest Validation (⏳ 진행 중)
+## v0.12 — Provider Data Scoring & Backtest Validation (✅ 마감)
 
 기준선: `v0.11-final`. 회귀 게이트: pytest 1119 (1 deselected) / vitest 158 /
 e2e 21 / build 그린. **Alembic head 변경 0건 예상** (`0004_user_preferences`
@@ -435,20 +438,59 @@ JSON 재활용).
   응답·로그·UI 평문 노출 0건 (v0.11 5 layer 단언 그대로)
 - 신규 pip 의존성 0건 — v0.11 의 `respx` + `prometheus-client` 그대로 사용
 
-상세 계획: [`PLANS.md`](./PLANS.md) `PLAN-0012`
+상세 계획: [`PLANS.md`](./PLANS.md) `PLAN-0012` / 마감 사유: [`RELEASE_NOTES_v0.12.md`](./RELEASE_NOTES_v0.12.md)
 
 > **자동매매 / 실주문 (FULL_AUTO / SMALL_AUTO / BrokerInterface 구현)** 는 v0.12 에도
 > **Future Backlog** 유지. 별도 보안·컴플라이언스·자본 한도 사이클 선행 없이는 진입 불가.
 
 ---
 
-## v0.13+ 후보
+## v0.13 — Provider Score Policy & Validation Report (⏳ 진행 중)
 
-v0.12 마감 후 진입 가능 후보. 현재는 모두 미착수 — 명시적 진입 요청 전까지 손대지 않는다.
+기준선: `v0.12-final`. 회귀 게이트: pytest 1194 (1 deselected) / vitest 165 /
+e2e 21 / build 그린. **Alembic head 변경 0건** (`0004_user_preferences` 그대로 —
+score_delta 는 기존 `evidence_json` JSON 컬럼 재활용; Validation Report 는 기존
+`backtest_runs` / `backtest_results` 테이블 쿼리).
+
+채택 시나리오: **Scenario X — Provider Score Policy + Score Delta + Validation
+Report + Backtest Export CLI**.
+
+| Phase | 작업 | 상태 | 예상 태그 |
+|---|---|---|---|
+| A | ProviderScorePolicy Engine — `app/scoring/provider_policy.py` + `DATA_SOURCE_RELIABILITY` dict + `apply_policy(score, data_source)` + `PROVIDER_SCORE_POLICY_ENABLED=False` 기본 + FAKE=bypass + 회귀 단언 ~25건 | ⏳ 대기 | `v0.13-provider-policy` |
+| B | Score Delta in evidence_json — `score_before`/`score_after`/`delta`/`components[{name, data_source, factor, before, after}]` JSON 필드 (Alembic 0건) + 단위 테스트 ~15건 | ⏳ 대기 | `v0.13-score-delta` |
+| C | Validation Report Read-only API — `GET /api/validation/report` (전체 summary) + `/by-strategy` + `/by-regime` + `/by-sector` + 통합 테스트 ~15건 | ⏳ 대기 | `v0.13-validation-api` |
+| D | Validation Report UI + Score Delta UI 확장 — React 화면 + vitest ~7건 | ⏳ 대기 | `v0.13-validation-ui` |
+| E | Backtest Export CLI + 마감 — `scripts/export_backtest.py` (stdlib `csv`, pip 0건, forbidden field guard) + `RELEASE_NOTES_v0.13.md` + 4 게이트 최종 확인 | ⏳ 대기 | `v0.13-final` |
+
+**v0.13 핵심 정책 (cycle-wide)**:
+
+- **ProviderScorePolicy 승수만** — `ScoringEngine` 본 weight (`technical 35% /
+  news 25% / supply 15% / fundamental 15% / ai 10%`) **변경 0건**; 승수:
+  `PROVIDER=1.00` / `CSV=0.90` / `MANUAL=0.80` / `FAKE=bypass` (기존 동작 보존)
+- **`PROVIDER_SCORE_POLICY_ENABLED=False` 기본** — OFF 시 전 케이스 기존 동작과 동일 (회귀 0)
+- **Alembic revision 0건** — score_delta `evidence_json` 재활용; Validation Report 기존 테이블만 쿼리
+- **신규 mutation 라우터 0건** — `/api/validation/*` 모두 GET only (POST→405 단언)
+- **Backtest Export CLI** — `scripts/export_backtest.py` + stdlib `csv` + forbidden field guard
+- **DART/RSS/Prometheus/Provider Data Ingestion default OFF 유지** (v0.12 정책 그대로)
+- **자동매매 / 실 KIS 주문 / `BrokerInterface` 구현 0건** (v0.1~v0.13 일관)
+- **신규 pip 의존성 0건** — stdlib `csv` + 기존 의존성만
+
+상세 계획: [`PLANS.md`](./PLANS.md) `PLAN-0013`
+
+> **자동매매 / 실주문 (FULL_AUTO / SMALL_AUTO / BrokerInterface 구현)** 는 v0.13 에도
+> **Future Backlog** 유지. 별도 보안·컴플라이언스·자본 한도 사이클 선행 없이는 진입 불가.
+
+---
+
+## v0.14+ 후보
+
+v0.13 마감 후 진입 가능 후보. 현재는 모두 미착수 — 명시적 진입 요청 전까지 손대지 않는다.
 
 > v0.12 에서 채택된 항목 (Provider 데이터 → DB ingestion / walk-forward backtest
 > engine / 다중 전략 비교 / Backtest read-only API/UI 확장 + `data_source` evidence
-> chip) 은 이 목록에서 제거됨.
+> chip) 과 v0.13 에서 채택된 항목 (ProviderScorePolicy 승수 엔진 / score_delta /
+> Validation Report API / Backtest Export CLI) 은 이 목록에서 제거됨.
 
 ### 9.1 데이터 / 분석 실제화
 
@@ -468,7 +510,7 @@ v0.12 마감 후 진입 가능 후보. 현재는 모두 미착수 — 명시적 
   Alembic revision 동반.
 - **`GET /api/health/jobs` 분리 / Provider Health UI 실시간 갱신** — v0.10 의
   Phase D 가 `GET /api/health/providers` 만 추가; jobs 분리 + WebSocket 갱신은
-  v0.13+.
+  v0.14+.
 - **글로벌 검색** (cmd+k) / 사이드바 collapse / breadcrumb / loading skeleton 통일.
 - **POST 트리거** (잡 수동 실행 / 추천 즉시 생성 / 백테스트 시작) — 인증 동반 필수.
 - **WebSocket / SSE 실시간 잡 / 백테스트 진행 상태** — 현재 polling.
@@ -511,7 +553,8 @@ v0.12 마감 후 진입 가능 후보. 현재는 모두 미착수 — 명시적 
 | Operational Security & Watchlist Polish | rate limit + security headers + brute force + Sentry + 구조화 로깅 + Watchlist API 고도화 + UserPreference + provider 회복성 skeleton | **v0.9 ✅ 마감** — v0.8 위에 운영 필수 보안 + UX 고도화. 자동매매 / 실 Provider 구현 0건 |
 | Real Provider Readiness & Resilience | ProviderHealthMonitor + call_with_resilience + DART/RSS provider skeleton + Provider Health API + UI | **v0.10 ✅ 마감** — provider 4 skeleton + read-only health API. 실 httpx 전송 / DART/RSS score 반영은 v0.11+ |
 | Real Provider Transport & Observability | DART/RSS 실 httpx transport (default OFF 유지) + observability ring buffer + summary_24h + Prometheus exporter optional + `/api/health/providers` 24h aggregates | **v0.11 ✅ 마감** — provider production-ready. DART/RSS score 반영 / 백테스트 고도화 / 인증 고도화 / LLM 보강은 v0.12+ |
-| Provider Data Scoring & Backtest Validation | Provider 데이터 → DB ingestion (existing producer 자동 흡수, ScoringEngine weight 변경 0건) + walk-forward backtest + 다중 전략 비교 + read-only API/UI 확장 + recommendation evidence `data_source` chip | **v0.12 ⏳ 진행 중** — provider 데이터가 처음으로 producer 까지 흐름. Weight 보강 / Grafana / 인증 고도화 / LLM 은 v0.13+ |
+| Provider Data Scoring & Backtest Validation | Provider 데이터 → DB ingestion (existing producer 자동 흡수, ScoringEngine weight 변경 0건) + walk-forward backtest + 다중 전략 비교 + read-only API/UI 확장 + recommendation evidence `data_source` chip | **v0.12 ✅ 마감** — provider 데이터가 처음으로 producer 까지 흐름. Weight 보강 / Grafana / 인증 고도화 / LLM 은 v0.14+ |
+| Provider Score Policy & Validation Report | ProviderScorePolicy 승수 엔진 (weight 변경 0건) + score_delta in evidence_json + Validation Report GET API + Backtest Export CLI | **v0.13 ⏳ 진행 중** — data_source provenance 를 policy engine 으로 연결. ScoringEngine weight 직접 보강은 v0.14+ |
 | Backtest 엔진 | walk-forward 검증, Grid Search 튜닝, 시장 국면별 성과 분석 | Strategy 모듈 선행 |
 | MockBroker / ReplayBroker / SimulationBroker | 가상 계좌 / 가상 주문·체결 / 가상 시나리오 / 스트레스 테스트 | BrokerInterface 구현 진입 |
 | 전용 ML 모델 | Market Regime / Strategy Selection / Risk Prediction. 추천 성과 기반 재학습. LLM 과 전용 AI 역할 분리 | Backtest 데이터 누적 후행 |

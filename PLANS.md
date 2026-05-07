@@ -3204,3 +3204,222 @@ v0.11 의 transport 와 v0.5/v0.6 의 producer 를 처음으로 연결한다. Sc
 - 자동매매 / 실 KIS 주문 / Broker 코드 0건
 - DART_API_KEY / crtfc_key / RSS feed URL query secret 평문 노출 0건
 - ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 (회귀 단언)
+
+---
+
+## PLAN-0013: v0.13 Provider Score Policy & Validation Report (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.12-final` (HEAD `38339db`, 2026-05-07)
+- 회귀 게이트: backend pytest **1194 passed (1 deselected)** / frontend vitest **165 passed** / Playwright e2e **21 passed** / build 그린
+- Alembic head: `0004_user_preferences` (v0.12 신규 revision 0건 승계)
+- v0.12 누적 기능: Provider Data Ingestion (default OFF) + WalkForwardBacktestEngine + MultiStrategyRunner + SectorBreakdownEntry + Backtest /folds /comparison API + data_source chip
+- `data_source` provenance (`PROVIDER`/`FAKE`/`CSV`/`MANUAL`) 는 v0.12 에서 DTO 단계까지 완성됨 — v0.13 에서 *점수에 대한 신뢰도 정책* 으로 발전시킨다
+
+### 목표
+
+v0.12 의 Provider Data Ingestion 인프라 위에 **Provider Score Policy Engine** 을 추가하여,
+`data_source` 별 신뢰도 계수를 producer 출력에 적용한다. ScoringEngine 본 weight 변경 없이
+score 변화량(`score_delta`) 을 evidence 에 기록하고, walk-forward 결과 기반 **Validation
+Report** read-only API 로 policy 효과를 객관적으로 측정한다. **Backtest Export CLI** 를
+추가해 결과를 로컬에서 CSV/JSON 으로 내보낼 수 있게 한다.
+자동매매 / 실주문 / Broker 코드 0건. Alembic revision 0건.
+
+### 라이선스 / 약관 메모
+
+v0.12 라이선스 검토 승계:
+- DART OpenAPI: 개인/연구/비상업적 — `DART_ENABLED=true` 명시 시만 실 호출
+- RSS/Atom feed: 운영자 검토 승인 URL 만 — 본문 저장 0건
+- 신규 외부 API 0건 (LLM / Grafana 등 v0.14+ 후보)
+
+### 후보 시나리오 비교 (v0.13 진입 시점)
+
+| # | 시나리오 | 가치 | 난이도 | 위험 | 외부 의존성 | 데이터 요구량 | v1.0 기여 | v0.13 채택 |
+|---|---|---|---|---|---|---|---|---|
+| **X** | **Provider Score Policy + Score Delta + Validation Report** (권장) | **매우 높음** — v0.12 ingestion 이 처음으로 점수 차이를 만들기 시작. policy engine 없이는 PROVIDER 데이터가 FAKE 와 동일하게 취급됨 | **중** — producer 통합 + delta 계산 + validation report API. 기존 ScoringEngine weight 변경 0건이므로 회귀 위험 낮음 | **낮음~중** — `PROVIDER_SCORE_POLICY_ENABLED=False` 기본 유지, A/B 비교 가능, fake provider fallback 유지 | 없음 (기존 respx 재사용) | 낮음 (policy 자체는 unit-testable, validation report 는 기존 backtest_runs 쿼리) | **매우 높음** — score 신뢰도 정책 + 검증 체계 = v1.0 핵심 | ✅ **채택** |
+| Y | Backtest Export + Validation Report 중심 | 중 — 편의성 향상. 그러나 policy 없으면 validation report 가 FAKE vs PROVIDER 차이를 보여주지 못함 | 중~낮음 | 낮음 | 없음 | 낮음 | 중 | ❌ 부분 채택 — Phase D 에 Backtest Export 포함 (Scenario X 하위) |
+| Z | Paper trading 준비 중심 | 중장기 | 높음 | **높음** — 실 KIS 주문 경계 모호해질 위험, 별도 보안·컴플라이언스 사이클 필수 | KIS 실주문 API | 낮음 | 높음 (장기) | ❌ v0.14+ 후보 — v0.13 에서 사전 설계도 제외 |
+| W | ScoringEngine 본 weight 변경 (공격적) | 높음 | 낮음 (산식 변경) | **매우 높음** — 운영 추천 결과 변동 = 운영 리스크. 누적 데이터 6개월+ 부족 | 없음 | **매우 높음** — walk-forward 검증 + 6개월+ 데이터 없이 weight 변경 = 무검증 | 높음 | ❌ v0.14+ — walk-forward + validation report 결과 축적 후 |
+
+**채택 근거 (Scenario X)**:
+- v0.12 의 data_source provenance 가 점수에 반영되어야 ingestion 이 진정한 가치를 가진다
+- `PROVIDER_SCORE_POLICY_ENABLED=False` 기본이므로 기존 운영에 영향 0건
+- Validation Report 가 있어야 추후 weight 변경(W)의 정당성을 데이터로 증명할 수 있다
+- Backtest Export 는 운영자 편의를 높이면서 read-only 원칙 유지 → Phase D 에 포함
+- Paper trading 은 별도 보안·컴플라이언스 사이클 선행 없이 착수 불가 → v0.14+
+
+### v0.13 할 것 / 하지 않을 것
+
+**할 것:**
+- `ProviderScorePolicy` 클래스 — data_source 별 신뢰도 계수 (`PROVIDER=1.0`, `CSV=0.9`, `MANUAL=0.8`, `FAKE=0.0`)
+- producer 출력에 policy factor 적용 (ScoringEngine weight 변경 없이 multiplicative)
+- `PROVIDER_SCORE_POLICY_ENABLED=False` 기본 (feature flag)
+- `score_delta` 계산 — policy OFF 점수 vs ON 점수 차이 → evidence_json 기록 (Alembic 0건)
+- `GET /api/validation/report` + by-strategy / by-regime / by-sector 엔드포인트 (read-only, POST 405)
+- Pydantic 스키마 + React 화면 (12번째 화면 `/validation` 후보)
+- `scripts/export_backtest.py` CLI — `--run-id`, `--format csv/json`, `--output PATH`
+- 테스트: pytest +~60 / vitest +~7
+- RELEASE_NOTES_v0.13.md + 4 게이트
+
+**하지 않을 것:**
+- 실거래 자동매매 / KIS 실주문 / BrokerInterface 구현 (v0.1~v0.12 일관)
+- ScoringEngine 본 weight 변경 (누적 데이터 6개월+ + validation report 결과 필요 → v0.14+)
+- Paper trading VirtualAccount / VirtualOrder / SimulationBroker (v0.14+ 후보)
+- DART/RSS/Prometheus/Provider Data Ingestion default ON (기본 OFF 유지)
+- 신규 Alembic revision (score_delta 는 evidence_json 재활용, validation report 는 기존 테이블 쿼리)
+- LLM / Grafana / ProviderHealthMonitor 영속화 (v0.14+)
+- 본문 / raw_text / 비밀값 / URL query secret 노출
+- 다중 사용자 SaaS / OAuth / RBAC
+
+### Provider Score Policy 범위
+
+```
+app/scoring/provider_policy.py
+  ProviderScorePolicy
+    DATA_SOURCE_RELIABILITY = {
+        "PROVIDER": Decimal("1.00"),   # 실 provider 데이터 — 전체 신뢰
+        "CSV":      Decimal("0.90"),   # 운영자 수동 입력 — 높은 신뢰
+        "MANUAL":   Decimal("0.80"),   # 직접 입력 — 중간 신뢰
+        "FAKE":     Decimal("0.00"),   # 테스트/기본 — policy 미적용 (0배 감쇠 아님!
+                                       #   FAKE일 때는 감쇠 없이 원래 점수 그대로
+                                       #   — 즉 FAKE = policy bypass)
+    }
+    PROVIDER_SCORE_POLICY_ENABLED=False  # 기본 OFF
+    apply_policy(raw_score, data_source) -> PolicyResult
+      PolicyResult: {score, factor_applied, data_source, policy_enabled}
+```
+
+**핵심 설계 결정:**
+- `FAKE` 데이터는 policy factor 를 적용하지 않는다 (bypass) — 기존 운영에 영향 0건
+- `PROVIDER` 데이터는 factor=1.00 (감쇠 없음) — 실 데이터는 그대로 반영
+- policy 가 OFF 이면 모든 data_source 에 대해 factor 무시 (현재 v0.12 동작 그대로)
+- policy 가 ON + PROVIDER 데이터 → 점수 변화 없음 (factor=1.00) — 첫 단계에서 안전
+- policy 가 ON + CSV 데이터 → score × 0.90 (첫 단계 minimal impact)
+- weight 자체(35%/25%/15%...) 는 변경 0건
+
+### Score Delta 정책
+
+score_delta 는 `evidence_json` 에 `score_delta` 키로 기록 (Alembic revision 0건):
+
+```json
+{
+  "score_delta": {
+    "policy_enabled": true,
+    "score_before": 72.5,
+    "score_after": 72.5,
+    "delta": 0.0,
+    "components": [
+      {"name": "news_score", "data_source": "PROVIDER", "factor": 1.0, "before": 68.0, "after": 68.0},
+      {"name": "fundamental_score", "data_source": "CSV", "factor": 0.9, "before": 75.0, "after": 67.5}
+    ]
+  }
+}
+```
+
+evidence whitelist 에 `score_delta` 추가 (안전 필드 — 점수/계수만, 비밀값 0건).
+
+### Validation Report 범위
+
+```
+GET /api/validation/report
+  → 전체 요약: {total_runs, runs_with_provider_data, policy_enabled_runs,
+               avg_score_delta, avg_oos_win_rate_policy_on, avg_oos_win_rate_policy_off}
+
+GET /api/validation/report/by-strategy
+  → 전략별: [{strategy_name, runs, win_rate_policy_off, win_rate_policy_on, delta}]
+
+GET /api/validation/report/by-regime
+  → 국면별: [{regime, buy_count, win_rate_policy_off, win_rate_policy_on}]
+
+GET /api/validation/report/by-sector
+  → 섹터별: [{sector, signal_count, win_rate_policy_off, win_rate_policy_on}]
+```
+
+- 모든 엔드포인트 GET only (POST/PUT/DELETE 405)
+- 기존 `backtest_runs` + `backtest_results` + `summary_json` 데이터 활용
+- 신규 DB 테이블 / Alembic revision 0건
+- 데이터가 없으면 200 + 빈 목록 (not 404)
+
+### Backtest Export CLI 범위
+
+```powershell
+# CSV 포맷 (기본)
+python scripts/export_backtest.py --run-id 1 --format csv --output ./export/
+
+# JSON 포맷 (fold + comparison + sector breakdown 포함)
+python scripts/export_backtest.py --run-id 1 --format json --output ./export/
+
+# dry-run (파일 미생성, 컬럼/데이터 검증만)
+python scripts/export_backtest.py --run-id 1 --dry-run
+```
+
+- read-only 원칙 (DB write 0건)
+- 출력 파일에 API key / secret / source_file_path 포함 0건
+- HTML export 는 v0.14+ 후보 (XSS 검토 필요)
+- API 다운로드 endpoint 는 이번 phase 에 미포함 (파일 경로 노출 위험)
+
+### Phase 구성
+
+| Phase | 내용 | 태그 | 예상 게이트 |
+|---|---|---|---|
+| A | Provider Score Policy Engine — `app/scoring/provider_policy.py` (`ProviderScorePolicy` + `PolicyResult`) + 4 producer 통합 (news/disclosure/fundamental/earnings) + `PROVIDER_SCORE_POLICY_ENABLED=False` 기본 + ScoringEngine weight 회귀 단언 + 단위 테스트 ~20건 | `v0.13-provider-policy` | pytest 1194→~1214 (+~20) |
+| B | Score Delta Recording — `app/scoring/score_delta.py` (`compute_score_delta()` + `ScoreDeltaResult`) + recommendation/holding_check 시 evidence_json 에 `score_delta` 기록 + evidence whitelist 업데이트 + 통합 테스트 ~15건 (Alembic 0건) | `v0.13-score-delta` | pytest ~1214→~1229 (+~15) |
+| C | Validation Report API + UI — `GET /api/validation/report` + `/by-strategy` + `/by-regime` + `/by-sector` + Pydantic 6종 + 프런트 12번째 화면 `/validation` (선택) + 통합 테스트 ~18건 + vitest ~7건 | `v0.13-validation-report` | pytest ~1229→~1247 (+~18) / vitest 165→~172 (+~7) |
+| D | Backtest Export CLI — `scripts/export_backtest.py` + CSV/JSON 포맷 + fold/comparison/sector breakdown + forbidden field guard + 통합 테스트 ~8건 | `v0.13-backtest-export` | pytest ~1247→~1255 (+~8) |
+| E | 마감 — `RELEASE_NOTES_v0.13.md` + 4 게이트 최종 확인 + `v0.13-final` 태그 | `v0.13-final` | 4 게이트 그린 |
+
+### 수정할 파일 (신규 / 변경 예상)
+
+**Phase A (Provider Policy)**
+- `app/scoring/provider_policy.py` — 신규
+- `app/config/settings.py` — `PROVIDER_SCORE_POLICY_ENABLED: bool = False` 추가
+- `app/analysis/score_producers.py` — `RealNewsScoreProducer` / `DisclosureRiskProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` policy 통합
+- `tests/unit/test_provider_policy.py` — 신규 (~20건)
+
+**Phase B (Score Delta)**
+- `app/scoring/score_delta.py` — 신규
+- `app/analysis/recommendation_engine.py` — score_delta evidence 기록
+- `app/analysis/holding_check_engine.py` — score_delta evidence 기록
+- `app/api/routes.py` — evidence whitelist 에 `score_delta` 추가
+- `tests/integration/test_score_delta.py` — 신규 (~15건)
+
+**Phase C (Validation Report)**
+- `app/api/validation_routes.py` — 신규 (GET only)
+- `app/api/schemas.py` — `ValidationReportSchema` 등 6종 추가
+- `app/main.py` — validation_routes 등록
+- `frontend/src/pages/Validation/index.tsx` — 신규 (선택)
+- `frontend/src/hooks/useValidationReport.ts` — 신규 (선택)
+- `frontend/src/api/types.ts` — 신규 타입 추가 (선택)
+- `tests/integration/test_validation_report.py` — 신규 (~18건)
+- `frontend/src/tests/Validation.test.tsx` — 신규 (~7건, 선택)
+- `frontend/src/tests/mswServer.ts` — 핸들러 추가
+
+**Phase D (Backtest Export)**
+- `scripts/export_backtest.py` — 신규
+- `tests/integration/test_backtest_export.py` — 신규 (~8건)
+
+**Phase E (마감)**
+- `RELEASE_NOTES_v0.13.md` — 신규
+- `README.md`, `PROJECT_STATUS.md`, `ROADMAP.md`, `TASKS.md`, `TESTING.md`, `API_SPEC.md`, `ARCHITECTURE.md`, `INTEGRATION_RUNBOOK.md` — 갱신
+
+### 핵심 정책 (cycle-wide)
+
+- **ScoringEngine / HoldingCheckEngine 본 weight 변경 0건** — policy factor 는 producer 출력에 곱해지는 별도 layer. `technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%` 추천 weight 변경 0건. weight 보강 = v0.14+ (validation report 결과 + 누적 데이터 6개월+ 후)
+- **PROVIDER_SCORE_POLICY_ENABLED=False 기본** — 기존 운영에 영향 0건. 명시 enable 시에만 policy factor 적용
+- **DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지** — CI 외부 호출 0건
+- **Alembic 신규 revision 0건** — score_delta 는 evidence_json (기존 JSON 컬럼) 재활용, validation report 는 기존 backtest_runs 쿼리
+- **신규 mutation 라우터 0건** — 모든 신규 엔드포인트 GET only (POST/PUT/DELETE 405)
+- **본문 / 비밀값 / URL query secret 노출 0건** — score_delta evidence 에 점수/계수만 (비밀값 0건), export CLI 출력에 API key 0건
+- **자동매매 / 실 KIS 주문 / BrokerInterface 구현 0건** (v0.1~v0.13 일관)
+- **신규 pip 의존성 0건** — 기존 의존성 내에서 구현 (CSV export 는 stdlib `csv` 모듈)
+
+### 완료 기준 (cycle-wide)
+
+- 4 게이트 그린: pytest ~1255 (1194 → +~61) / vitest ~172 (165 → +~7) / e2e 21 유지 / build
+- 5 태그 push: `v0.13-provider-policy` → `v0.13-score-delta` → `v0.13-validation-report` → `v0.13-backtest-export` → `v0.13-final`
+- DART/RSS/Prometheus/Provider Data Ingestion/Score Policy 모두 기본 OFF 유지 — CI 외부 호출 0건
+- Alembic `compare_metadata` diff 0건
+- 자동매매 / 실 KIS 주문 / Broker 코드 0건
+- 비밀값 / URL query secret / body text 평문 노출 0건
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 (회귀 단언)
