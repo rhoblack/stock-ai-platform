@@ -10,6 +10,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api import (
     auth_router,
     health_router,
+    metrics_router,
     preferences_router,
     router as api_router,
     watchlist_router,
@@ -162,7 +163,15 @@ def create_app() -> FastAPI:
     app.include_router(watchlist_router)
     app.include_router(preferences_router)
     app.include_router(health_router)
+    app.include_router(metrics_router)
     app.include_router(api_router)
+
+    # v0.11 Phase C -- initialise Prometheus metrics bundle when the
+    # operator opted in.  init_default_metrics is idempotent + a no-op
+    # when PROMETHEUS_ENABLED=false.
+    from app.monitoring.prometheus import init_default_metrics  # noqa: PLC0415
+
+    init_default_metrics(settings)
     return app
 
 

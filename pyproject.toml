@@ -17,6 +17,10 @@ dependencies = [
     "slowapi>=0.1.9,<1.0",
     "python-json-logger>=2.0,<3.0",
     "sentry-sdk>=2.0,<3.0",
+    # v0.11 Phase C -- Prometheus exporter for provider observability.
+    # Default-OFF: GET /metrics returns 404 unless PROMETHEUS_ENABLED=true.
+    # Apache 2.0 license; pure Python; no native build dependencies.
+    "prometheus-client>=0.19,<1.0",
     # Password hashing intentionally uses Python stdlib `hashlib.scrypt` rather
     # than bcrypt: scrypt is memory-hard, pure-Python (no C extension / wheel
     # constraints), and works on every supported Python version including MSYS2

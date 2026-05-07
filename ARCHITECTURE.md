@@ -395,6 +395,44 @@ _safe_url_for_log(url)    → query / fragment strip 후 host + path 만 로그
 - DB 스키마 변경 없음 (`news_items` 기존 테이블 재사용, Alembic head 그대로
   `0004_user_preferences`)
 
+### 3.14.1 Provider Observability Layer (v0.11 Phase C)
+
+v0.10 의 `ProviderHealthMonitor` 위에 bounded ring buffer + 24h summary +
+optional Prometheus exporter 를 추가한다. **Alembic revision 0건** —
+`ProviderHealthMonitor` 와 ring buffer 모두 in-memory only.
+
+**확장된 모니터 (`app/data/provider_health_monitor.py`):**
+```text
+ProviderStats
+  ├─ recent_calls: deque[CallRecord]   maxlen=200    (bounded)
+  ├─ recent_failures: deque[FailureRecord]  maxlen=50  (bounded)
+  └─ summary_24h(now=None) → Summary24h
+       (call_count_24h / success_count_24h / failure_count_24h /
+        success_rate_24h / avg_attempts)
+
+CallRecord/FailureRecord — frozen dataclass:
+  timestamp + success + error_kind + attempts (no error_message → no URL secret leak)
+```
+
+**Optional Prometheus exporter (`app/monitoring/prometheus.py` + `app/api/metrics_routes.py`):**
+- `PROMETHEUS_ENABLED=False` 기본 — `GET /metrics` → 404
+- `PROMETHEUS_ENABLED=True` → `GET /metrics` 200 + `text/plain` (Prometheus
+  text format)
+- POST/PUT/DELETE `/metrics` 모두 405 (read-only 정책)
+- Counter 4종: `provider_calls_total`, `provider_call_successes_total`,
+  `provider_call_failures_total`, `provider_call_failures_by_kind_total`
+- Gauge 1종: `provider_circuit_state` (CLOSED=0 / OPEN=1 / HALF_OPEN=2 /
+  UNREGISTERED=3)
+- Histogram 1종: `provider_call_attempts` (1/2/3/4/5/7/10 buckets)
+- 라벨: `provider`, `error_kind` 만 (URL / API key / message text 일체 노출 0건)
+- `monitor.record_result` → lazy `_emit_prometheus(name, stats, result, attempts)` →
+  `prometheus.record_call`. **try/except 로 감싸 observability 가 provider 호출
+  path 를 절대 break 하지 않음**
+- 테스트 격리: `set_metrics(PrometheusMetrics.build(CollectorRegistry()))` 로
+  per-test fresh registry 주입 → global `prometheus_client.REGISTRY` 오염 0건
+- `app.main.create_app` startup 시 `init_default_metrics(settings)` 호출
+  (idempotent + Prometheus disabled 시 no-op)
+
 ### 3.15 Provider Health read-only API (v0.10 Phase D)
 
 **Backend — `app/api/health_routes.py`:**

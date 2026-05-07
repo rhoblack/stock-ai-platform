@@ -1109,16 +1109,20 @@ DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에
 - [x] DART Phase A 49+27 케이스 회귀 0건 (filter 추출 후에도 동일 동작)
 - [ ] `tag v0.11-rss-transport + push`
 
-### Phase C: Provider Observability Layer
+### Phase C: Provider Observability Layer ✅ 인수
 
-- [ ] `prometheus-client>=0.19,<1.0` 의존성 추가
-- [ ] `ProviderStats` 에 `recent_failures: deque(maxlen=50)` + `recent_calls: deque(maxlen=200)` 추가
-- [ ] `ProviderHealthMonitor.summary_24h(now)` 구현 — `success_rate_24h` / `avg_attempts` 집계
-- [ ] `app/monitoring/prometheus.py` 신규 — Counter (call/success/failure/error_kind) + Gauge (circuit_state) + Histogram (attempts) optional
-- [ ] `app/api/metrics_routes.py` 신규 — `GET /metrics` (`PROMETHEUS_ENABLED=false` 시 404)
-- [ ] `app/config/settings.py` 에 `prometheus_enabled=False` 기본 + `prometheus_path` 추가
-- [ ] 단위 테스트 ~20건 (`tests/data/test_provider_observability.py`) — ring buffer maxlen / 24h window 경계 / Prometheus collector registry 격리 / `/metrics` 응답 schema / `PROMETHEUS_ENABLED=false` 시 404
-- [ ] v0.10 Phase A 31 케이스 회귀 0건
+- [x] `prometheus-client>=0.19,<1.0` 의존성 추가 (Apache 2.0)
+- [x] `ProviderStats` 에 `recent_calls: deque(maxlen=200)` + `recent_failures: deque(maxlen=50)` 추가 — `CallRecord` / `FailureRecord` frozen dataclass (timestamp + enum + ints만, message 필드 부재로 secret 누출 차단)
+- [x] `ProviderHealthMonitor.summary_24h(now=None)` 구현 — `Summary24h` dataclass 반환 (`call_count_24h` / `success_count_24h` / `failure_count_24h` / `success_rate_24h` / `avg_attempts`, 0 호출 시 None)
+- [x] `reset()` 가 ring buffer 도 clear
+- [x] `record_result` 가 lazy `_emit_prometheus` hook 호출 — try/except 로 observability 가 provider 호출 path 를 절대 break 하지 않음
+- [x] `app/monitoring/prometheus.py` 신규 — `PrometheusMetrics` bundle (Counter 4종 + Gauge 1종 + Histogram 1종) + `set_metrics` / `get_metrics` / `init_default_metrics` / `record_call` / `mark_unregistered` / `render_metrics` API
+- [x] Circuit state 정수 인코딩: CLOSED=0 / OPEN=1 / HALF_OPEN=2 / UNREGISTERED=3
+- [x] `app/api/metrics_routes.py` 신규 — `GET /metrics` (`PROMETHEUS_ENABLED=false` → 404, true → 200 + `text/plain`); POST/PUT/DELETE 모두 405
+- [x] `app/main.py` 가 startup 시 `init_default_metrics(settings)` 호출 (idempotent + Prometheus disabled 시 no-op)
+- [x] `app/config/settings.py` — `prometheus_enabled=False` / `prometheus_path="/metrics"` 추가
+- [x] 단위 테스트 21건 (`tests/data/test_provider_observability.py`) — ring buffer maxlen / 24h window 경계 + 외부 `now` injection / Prometheus counter+gauge+histogram 라인 / collector registry 격리 (fresh `CollectorRegistry` per test) / `/metrics` 404·200·405 / DART/RSS secret 미포함 / Prometheus 예외 swallow / httpx.Client 미생성 단언
+- [x] v0.10 monitor 31 + DART skeleton 49 + DART http 27 + RSS skeleton 33 + RSS http 19 = 159 케이스 회귀 0건
 - [ ] `tag v0.11-observability + push`
 
 ### Phase D: `/api/health/providers` 확장 + Settings 패널 보강

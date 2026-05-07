@@ -279,6 +279,19 @@ class Settings:
         default_factory=lambda: os.getenv("RSS_PROVIDER_NAME", "rss"),
     )
 
+    # v0.11 Phase C -- Prometheus exporter for provider observability.
+    # Default-OFF: GET /metrics returns 404 unless PROMETHEUS_ENABLED=true.
+    # The endpoint exposes only in-memory ProviderHealthMonitor counters --
+    # no provider call is made, no DART/RSS API key appears in any label.
+    # ``prometheus_path`` is exposed so operators can mount /metrics behind
+    # a reverse-proxy auth layer at a non-default path if needed.
+    prometheus_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("PROMETHEUS_ENABLED"), False),
+    )
+    prometheus_path: str = field(
+        default_factory=lambda: os.getenv("PROMETHEUS_PATH", "/metrics"),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

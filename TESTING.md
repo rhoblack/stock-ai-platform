@@ -1,10 +1,10 @@
 # TESTING.md
 
-> 본 문서는 **v0.11 Phase B 시점** 기준으로 갱신된다 (`v0.11-rss-transport`
+> 본 문서는 **v0.11 Phase C 시점** 기준으로 갱신된다 (`v0.11-observability`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.11 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.11 Phase B 시점)
+## 1. 현재 회귀 게이트 (v0.11 Phase C 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` 가 httpx 요청을 transport
@@ -12,7 +12,7 @@ layer 에서 인터셉트, monkeypatch `httpx.Client` 가드 병행).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1091 passed, 1 deselected** (v0.11 Phase B: 1072 → 1091, +19 신규 — HttpxRssTransport + respx mock + URL query secret 마스킹 + factory 자동 주입) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1112 passed, 1 deselected** (v0.11 Phase C: 1091 → 1112, +21 신규 — Provider observability ring buffer + Summary24h + Prometheus exporter optional + /metrics route) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **153 passed** (Phase D: 146 → 153, +7 신규 — ProviderHealthPanel) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.41s) |
 | Playwright e2e | `cd frontend && npm run e2e` | **20 passed** (Phase D: 19 → 20, +1 신규 — Settings Provider Health 패널) |
@@ -1369,6 +1369,65 @@ factory 자동 주입 + secret 마스킹 (Phase A 의 `SensitiveQueryStringFilte
 - RSS provider default OFF 유지 — `RSS_NEWS_ENABLED=false` 기본
 - ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
 - Alembic 새 revision 0건
+
+## 6.29 v0.11 Phase C — Provider Observability + Prometheus 테스트
+
+`tests/data/test_provider_observability.py` 신규 **21 케이스**. v0.10 Phase A 의
+`ProviderHealthMonitor` 를 bounded ring buffer + 24h summary 로 확장 +
+`prometheus-client>=0.19,<1.0` 옵션 도입 + `GET /metrics` 라우트 (default 404).
+**외부 네트워크 호출 0건** — Prometheus 는 in-memory only.
+
+### 6.29.1 Ring buffer + Summary24h (7 케이스)
+
+- `recent_calls` maxlen=200 cap (250 record append → 정확히 200 유지)
+- `recent_failures` maxlen=50 cap (75 record append → 정확히 50 유지)
+- `record_result` 가 `(timestamp, success, error_kind, attempts)` 만 기록
+  (`error_message` 절대 미기록 → URL secret 누출 차단)
+- `summary_24h` 빈 모니터 → call_count=0 / success_rate=None / avg_attempts=None
+- 24h 윈도우 내 3 record 집계 → success_rate / avg_attempts 정확
+- 24h 외 record 직접 inject + `now` injection → 윈도우 외 자동 제외 단언
+- `reset()` 가 ring buffer + 카운터 모두 clear
+
+### 6.29.2 Prometheus metrics bundle (7 케이스)
+
+- `record_call` → `provider_calls_total{provider="dart"}` /
+  `provider_call_successes_total` / `provider_call_failures_total` 카운터 증가
+- `provider_call_failures_by_kind_total{error_kind="TIMEOUT",provider="dart"}`
+  레이블별 분리
+- circuit_state Gauge encoding: CLOSED=0 / OPEN=1 (state 전이 후 단언)
+- `provider_call_attempts` Histogram count + sum 라인 생성
+- 다중 provider (`dart` / `rss`) 레이블 분리
+- `set_metrics(None)` 시 record_call 무동작 + render_metrics → 빈 bytes
+- isolated `CollectorRegistry` 격리 — 같은 process 에서 두 번째 bundle 빌드해도
+  "collector already registered" 충돌 0건
+- Prometheus hook 가 raise 해도 `monitor.record_result` 절대 break 안 함
+  (try/except 격리 + monkeypatch 단언)
+
+### 6.29.3 GET /metrics route (5 케이스)
+
+- `PROMETHEUS_ENABLED=false` (기본) → 404
+- `PROMETHEUS_ENABLED=true` → 200 + `Content-Type: text/plain` + provider counter 라인 노출
+- POST/PUT/DELETE `/metrics` 모두 405 (parametrize 3건)
+- DART/RSS credential + monitor.last_error_message 에 fake secret 주입
+  + GET /metrics → forbidden substring 10종 (`DART-CRTFC-SUPERSECRET /
+  URLSECRETXYZ / LEAKMEXYZ / crtfc_key / dart_api_key / rss_feed_urls /
+  kis_app_key / ?api_key= / access_token / password`) 0건 단언
+- `httpx.Client` monkeypatch AssertionError 가드 — `/metrics` 응답이 외부 HTTP
+  호출 없이 in-memory 만 read
+
+### 6.29.4 회귀 기준
+
+- backend pytest **1091 → 1112 passed (+21)** — 회귀 0건, 1 deselected 유지
+- v0.10 monitor 31 + DART skeleton 49 + DART http 27 + RSS skeleton 33 +
+  RSS http 19 = 159 케이스 회귀 0건
+- 외부 네트워크 호출 0건 (`/metrics` 도 in-memory 만 read)
+- API key / token / URL query secret / `last_error_message` 응답 노출 0건
+- 신규 pip 의존성 1종 (`prometheus-client>=0.19,<1.0`, Apache 2.0)
+- DART/RSS provider default OFF 유지
+- Prometheus exporter default OFF 유지 (`PROMETHEUS_ENABLED=false`)
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
+- Alembic 새 revision 0건 (ring buffer 도 in-memory bounded)
+- 신규 mutation 라우터 0건 (`/metrics` GET only, POST/PUT/DELETE 405)
 
 ## 7. 금지 사항
 

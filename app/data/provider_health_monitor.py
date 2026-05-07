@@ -32,9 +32,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Deque
 
 from app.data.provider_resilience import (
     CircuitBreaker,
@@ -52,6 +53,69 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# v0.11 Phase C -- bounded ring buffers + 24h summary
+# ---------------------------------------------------------------------------
+
+# Per-provider ring buffer caps.  Both bounded so memory per provider is
+# strictly ``CALL_HISTORY_MAXLEN * sizeof(CallRecord)`` ≈ a few KB.
+CALL_HISTORY_MAXLEN = 200
+FAILURE_HISTORY_MAXLEN = 50
+
+
+@dataclass(frozen=True)
+class CallRecord:
+    """One entry in the per-provider call history ring buffer.
+
+    Memory-conscious by design: only enum + ints + a single timestamp.
+    Never carries ``error_message`` -- that field can hold transport
+    detail (URL with query secret) and we never want it propagated
+    through observability.
+    """
+
+    timestamp: datetime
+    success: bool
+    error_kind: ProviderErrorKind | None
+    attempts: int
+
+
+@dataclass(frozen=True)
+class FailureRecord:
+    """One entry in the per-provider failure-only ring buffer.
+
+    Mirrors :class:`CallRecord` minus ``success`` (always False).  Same
+    secret-discipline guarantee: no message text.
+    """
+
+    timestamp: datetime
+    error_kind: ProviderErrorKind
+    attempts: int
+
+
+@dataclass
+class Summary24h:
+    """Snapshot of last-24-hours aggregates for a provider.
+
+    All fields are nullable when ``call_count_24h == 0`` so the
+    presentation layer can show "—" instead of dividing by zero.
+    """
+
+    call_count_24h: int
+    success_count_24h: int
+    failure_count_24h: int
+    success_rate_24h: float | None
+    avg_attempts: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "call_count_24h": self.call_count_24h,
+            "success_count_24h": self.success_count_24h,
+            "failure_count_24h": self.failure_count_24h,
+            "success_rate_24h": self.success_rate_24h,
+            "avg_attempts": self.avg_attempts,
+        }
+
+
 @dataclass
 class ProviderStats:
     """Mutable per-provider statistics and circuit-breaker state."""
@@ -64,6 +128,14 @@ class ProviderStats:
     last_error_kind: ProviderErrorKind | None = None
     last_error_message: str | None = None
     last_called_at: datetime | None = None
+    # v0.11 Phase C bounded ring buffers.  ``maxlen`` ensures memory is
+    # capped regardless of how long the process runs.
+    recent_calls: Deque[CallRecord] = field(
+        default_factory=lambda: deque(maxlen=CALL_HISTORY_MAXLEN)
+    )
+    recent_failures: Deque[FailureRecord] = field(
+        default_factory=lambda: deque(maxlen=FAILURE_HISTORY_MAXLEN)
+    )
 
     @property
     def status(self) -> CircuitBreakerState:
@@ -84,6 +156,49 @@ class ProviderStats:
                 self.last_called_at.isoformat() if self.last_called_at else None
             ),
         }
+
+    # -- summary helpers ----------------------------------------------------
+
+    def summary_24h(self, *, now: datetime | None = None) -> Summary24h:
+        """Compute the rolling 24-hour aggregate from ``recent_calls``.
+
+        Records older than 24 hours are skipped.  ``now`` is injectable
+        so tests can pin the wall clock without monkeypatching.
+
+        ``success_rate_24h`` and ``avg_attempts`` are ``None`` when the
+        window contains zero calls (no UI division-by-zero).
+        """
+        if now is None:
+            now = datetime.now(tz=timezone.utc)
+        cutoff = now - timedelta(hours=24)
+
+        call_count = 0
+        success_count = 0
+        failure_count = 0
+        attempts_sum = 0
+        for rec in self.recent_calls:
+            if rec.timestamp < cutoff:
+                continue
+            call_count += 1
+            attempts_sum += rec.attempts
+            if rec.success:
+                success_count += 1
+            else:
+                failure_count += 1
+
+        success_rate = (
+            success_count / call_count if call_count > 0 else None
+        )
+        avg_attempts = (
+            attempts_sum / call_count if call_count > 0 else None
+        )
+        return Summary24h(
+            call_count_24h=call_count,
+            success_count_24h=success_count,
+            failure_count_24h=failure_count,
+            success_rate_24h=success_rate,
+            avg_attempts=avg_attempts,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -131,12 +246,20 @@ class ProviderHealthMonitor:
 
         Silently ignores unregistered names so that callers do not need to
         guard against missing registrations.
+
+        v0.11 Phase C: also appends to the bounded ``recent_calls`` /
+        ``recent_failures`` ring buffers.  The records carry only enums
+        + ints + a UTC timestamp -- no error_message text -- so the
+        observability layer cannot leak transport detail (URL secrets,
+        partial response bodies).
         """
         stats = self._providers.get(name)
         if stats is None:
             return
+        now = datetime.now(tz=timezone.utc)
         stats.call_count += 1
-        stats.last_called_at = datetime.now(tz=timezone.utc)
+        stats.last_called_at = now
+        attempts = max(int(getattr(result, "attempts", 1) or 1), 1)
         if result.success:
             stats.success_count += 1
             stats.last_error_kind = None
@@ -145,6 +268,27 @@ class ProviderHealthMonitor:
             stats.failure_count += 1
             stats.last_error_kind = result.error_kind
             stats.last_error_message = result.error_message
+            stats.recent_failures.append(
+                FailureRecord(
+                    timestamp=now,
+                    error_kind=result.error_kind or ProviderErrorKind.UNKNOWN,
+                    attempts=attempts,
+                )
+            )
+        stats.recent_calls.append(
+            CallRecord(
+                timestamp=now,
+                success=bool(result.success),
+                error_kind=result.error_kind if not result.success else None,
+                attempts=attempts,
+            )
+        )
+        # v0.11 Phase C optional Prometheus hook.  Lazy import so the
+        # monitor module never imports prometheus_client unless the
+        # operator opted in (PROMETHEUS_ENABLED=true).  Failures inside
+        # the hook are swallowed -- observability must never break a
+        # provider call path.
+        _emit_prometheus(name, stats, result, attempts)
 
     def get_status(self, name: str) -> dict[str, Any] | None:
         """Return serialised status dict for ``name``, or ``None`` if not registered."""
@@ -156,7 +300,7 @@ class ProviderHealthMonitor:
         return [s.to_dict() for s in self._providers.values()]
 
     def reset(self, name: str) -> None:
-        """Reset circuit breaker and all counters for a single provider."""
+        """Reset circuit breaker, counters, and ring buffers for one provider."""
         stats = self._providers.get(name)
         if stats is not None:
             stats.circuit_breaker.reset()
@@ -166,11 +310,47 @@ class ProviderHealthMonitor:
             stats.last_error_kind = None
             stats.last_error_message = None
             stats.last_called_at = None
+            stats.recent_calls.clear()
+            stats.recent_failures.clear()
 
     def reset_all(self) -> None:
         """Reset all registered providers."""
         for name in list(self._providers):
             self.reset(name)
+
+
+# ---------------------------------------------------------------------------
+# v0.11 Phase C -- Prometheus side-channel (lazy, optional)
+# ---------------------------------------------------------------------------
+#
+# ``record_result`` calls ``_emit_prometheus`` for every provider call.
+# The hook is a no-op unless ``app.monitoring.prometheus`` has been
+# imported AND the operator has set PROMETHEUS_ENABLED=true (the
+# helper module checks Settings on first use and silently skips
+# otherwise).  Any exception inside the hook is swallowed so
+# observability cannot break the provider call path.
+
+
+def _emit_prometheus(
+    name: str,
+    stats: "ProviderStats",
+    result: ProviderCallResult,
+    attempts: int,
+) -> None:
+    """Forward a recorded call to the optional Prometheus collectors."""
+    try:
+        # Lazy import: keeps this module free of prometheus_client side
+        # effects until the operator opts in.  The helper module is
+        # responsible for the PROMETHEUS_ENABLED short-circuit.
+        from app.monitoring.prometheus import record_call  # noqa: PLC0415
+
+        record_call(name, stats.status, result, attempts)
+    except Exception:  # noqa: BLE001 -- never break the provider path
+        logger.debug(
+            "prometheus emission failed provider=%s",
+            name,
+            exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------------------
