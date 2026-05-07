@@ -207,15 +207,26 @@ def _safe_news_evidence(news: NewsItem) -> dict[str, Any]:
 
     Per v0.5 정책: source_file_path 등 운영자 로컬 경로 / 본문 paragraph 는
     응답·로그에 절대 노출하지 않는다. NewsItem 자체에 그런 필드는 없지만,
-    evidence 빌더에서도 명시적으로 안전한 4 필드만 화이트리스트로 노출한다.
+    evidence 빌더에서도 명시적으로 안전한 필드만 화이트리스트로 노출한다.
+
+    v0.12 Phase A: ``data_source`` is an allowed provenance field
+    (PROVIDER / FAKE / CSV / MANUAL).  It lives on the DTO only in Phase A
+    (no DB column yet); the key is omitted when the attribute is absent or
+    None so that existing evidence-key assertions continue to pass until
+    Phase D adds the DB column.  body / content / full_text / paragraph /
+    raw_text / 본문 / 원문 / 전문 remain forbidden.
     """
-    return {
+    out: dict[str, Any] = {
         "title": news.title,
         "url": news.url,
         "provider": news.source,
         "published_at": news.published_at.isoformat(),
         "sentiment": news.sentiment,
     }
+    data_source = getattr(news, "data_source", None)
+    if data_source is not None:
+        out["data_source"] = data_source
+    return out
 
 
 @dataclass(frozen=True)
@@ -378,12 +389,16 @@ class DisclosureRiskResult:
 
 
 def _safe_disclosure_evidence(news: NewsItem) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "title": news.title,
         "url": news.url,
         "provider": news.source,
         "published_at": news.published_at.isoformat(),
     }
+    data_source = getattr(news, "data_source", None)
+    if data_source is not None:
+        out["data_source"] = data_source
+    return out
 
 
 def _clip_score(value: Decimal) -> Decimal:
@@ -397,7 +412,7 @@ def _decimal_evidence(value: Decimal | None) -> str | None:
 def _safe_fundamental_evidence(snapshot: FundamentalSnapshot | None) -> dict[str, Any]:
     if snapshot is None:
         return {"reason": "no_fundamental_snapshot"}
-    return {
+    out: dict[str, Any] = {
         "snapshot_date": snapshot.snapshot_date.isoformat(),
         "fiscal_year": snapshot.fiscal_year,
         "fiscal_quarter": snapshot.fiscal_quarter,
@@ -409,6 +424,10 @@ def _safe_fundamental_evidence(snapshot: FundamentalSnapshot | None) -> dict[str
         "operating_income_growth_yoy": _decimal_evidence(snapshot.operating_income_growth_yoy),
         "dividend_yield": _decimal_evidence(snapshot.dividend_yield),
     }
+    data_source = getattr(snapshot, "data_source", None)
+    if data_source is not None:
+        out["data_source"] = data_source
+    return out
 
 
 def _score_fundamental_snapshot(snapshot: FundamentalSnapshot | None) -> tuple[Decimal, dict[str, Any]]:
@@ -497,7 +516,7 @@ class RealFundamentalScoreProducer(ScoreProducerInterface):
 def _safe_earnings_evidence(event: EarningsEvent | None) -> dict[str, Any]:
     if event is None:
         return {"reason": "no_earnings_event"}
-    return {
+    out: dict[str, Any] = {
         "latest_event_date": event.event_date.isoformat(),
         "fiscal_year": event.fiscal_year,
         "fiscal_quarter": event.fiscal_quarter,
@@ -507,6 +526,10 @@ def _safe_earnings_evidence(event: EarningsEvent | None) -> dict[str, Any]:
         "operating_income_actual": _decimal_evidence(event.operating_income_actual),
         "operating_income_consensus": _decimal_evidence(event.operating_income_consensus),
     }
+    data_source = getattr(event, "data_source", None)
+    if data_source is not None:
+        out["data_source"] = data_source
+    return out
 
 
 def _recency_multiplier(event_date: date, as_of: date) -> Decimal:

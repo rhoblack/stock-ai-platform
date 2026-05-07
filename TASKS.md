@@ -1171,7 +1171,7 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - [x] RSS parser (`_parse_rss_item` / `_parse_atom_entry`) 가 `data_source=DATA_SOURCE_PROVIDER` 설정
 - [x] CSV importer (`FundamentalCsvImporter._parse_row` / `EarningsCsvImporter._parse_row`) 가 `data_source=DATA_SOURCE_CSV` 설정
 - [x] Importer `_dto_fields` 가 `data_source` 를 repository upsert 인자에서 제거 (DB 컬럼 부재 — runtime-only)
-- [x] `app/data/ingestion/` 신규 패키지 + 4 어댑터: `ingest_dart_disclosures` / `ingest_rss_news` / `ingest_dart_fundamentals` / `ingest_dart_earnings`
+- [x] `app/data/ingestion.py` 신규 모듈 + 4 어댑터: `ingest_dart_disclosures` / `ingest_rss_news` / `ingest_dart_fundamentals` / `ingest_dart_earnings`
 - [x] 모든 어댑터 entry 첫 줄에서 `Settings.provider_data_ingestion_enabled` 검사 → `False` 시 즉시 `skipped_disabled=True` 반환 (provider 미생성, httpx.Client 미생성, DB write 0건)
 - [x] DART/RSS 자체 default OFF 도 soft-skip (raise 안 함, `skipped_disabled=True` 반환) — operator 가 master flag 만 켜고 DART 키 늦게 설정해도 안전
 - [x] v0.5/v0.6 producer (`RealNewsScoreProducer` / `DisclosureRiskProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer`) 변경 0건 — DTO `data_source` 는 runtime-only, producer 는 기존 DB 컬럼만 read
