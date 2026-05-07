@@ -4,28 +4,31 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.10 Real Provider Readiness & Resilience — 마감 완료.**
-> 최종 마감 태그 `v0.10-final`. v0.10 은 v0.9 에서 도입한 provider resilience
-> skeleton 위에 **운영 가능한 외부 데이터 인프라의 첫 단계** 를 쌓은 사이클이다.
-> **Provider Resilience Runtime** (`ProviderHealthMonitor` + `call_with_resilience()`
-> + 6 settings + 31 tests) → **DART Provider Skeleton** (`DartFundamental/Earnings/
-> Disclosure` + parser/mapper + body-strip + crtfc_key 마스킹 + 49 tests, transport
-> 주입형) → **RSS/News Provider Skeleton** (`RssNewsProvider` RSS 2.0 + Atom +
-> dedup + URL query secret 마스킹 + 33 tests, stdlib xml.etree only) → **Provider
-> Health API + UI** (`GET /api/health/providers` + `ProviderHealthPanel` Settings
-> 패널 + 17 backend / 7 vitest / 1 e2e tests).
-> 자동매매 / 실주문 / Broker 구현 / LLM / 실 DART·RSS 자동 호출 은 여전히 **0건**.
-> 모든 provider 는 transport 주입형 skeleton 이며 — 실 httpx 전송 도입은 v0.11+
-> 라이선스 검토 후 별도 cycle.
+> **v0.11 Real Provider Transport & Observability — 마감 완료.**
+> 최종 마감 태그 `v0.11-final`. v0.11 은 v0.10 의 transport 주입형 DART/RSS
+> skeleton 위에 **실 httpx 전송 + provider observability 인프라** 를 쌓은
+> 사이클이다.
+> **DART HTTP Transport** (`HttpxDartTransport` lazy httpx import + factory 자동
+> 주입 + 27 respx 테스트) → **RSS HTTP Transport** (`HttpxRssTransport`
+> follow_redirects=True + 19 respx 테스트, `SensitiveQueryStringFilter` 를
+> `app/config/logging.py` 로 추출하여 DART/RSS 공유) → **Provider Observability +
+> Prometheus** (bounded ring buffer 200 calls / 50 failures + `Summary24h` +
+> optional `prometheus-client` `/metrics` default OFF + 21 테스트) → **Provider
+> Health API/UI 확장** (`/api/health/providers` 6 신규 필드 + Settings
+> `SuccessRateBar` / `RecentFailuresList` + 13 테스트).
+> 자동매매 / 실주문 / Broker 구현 / LLM / Telegram 자동 발송 은 여전히 **0건**.
+> 모든 provider 는 default OFF 유지 — `DART_ENABLED=false` /
+> `RSS_NEWS_ENABLED=false` / `PROMETHEUS_ENABLED=false` 기본. 운영자가 명시 enable
+> 했을 때만 실 HTTP / Prometheus exposure 가 발생한다.
 >
-> 최신 통과 회귀 게이트 — **백엔드 pytest 1045 (1 deselected) / frontend vitest 153 /
-> Playwright e2e 20 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
+> 최신 통과 회귀 게이트 — **백엔드 pytest 1119 (1 deselected) / frontend vitest 158 /
+> Playwright e2e 21 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
 > SMALL_AUTO 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface` 는
 > ABC placeholder 만 유지). 인증 (`AUTH_ENABLED=false` 기본) 이므로 기존
 > read-only GET API 는 그대로 OPEN. 자세한 정책은 [`AGENTS.md`](./AGENTS.md) /
 > [`ROADMAP.md`](./ROADMAP.md) 참조.
 >
-> **저작권 / 데이터 정책 (v0.4 ~ v0.10 누적)**: 리포트·뉴스·공시·재무·실적 원문 본문
+> **저작권 / 데이터 정책 (v0.4 ~ v0.11 누적)**: 리포트·뉴스·공시·재무·실적 원문 본문
 > (paragraph) 저장 0건, PDF / Excel BLOB 저장 0건, 자동 크롤링 0건,
 > `source_file_path` 외부 노출 0건. `WatchlistItem` / `UserPreference` ORM 에
 > broker / account / quantity / order_* 컬럼 0건.
@@ -33,9 +36,11 @@
 > SHA256 만, password 는 scrypt hash 만. 알림 설정 UI 는 저장 전용 — 실 Telegram
 > 발송 0건. **DART_API_KEY / crtfc_key / RSS feed URL 의 query string secret 은
 > 응답 / 로그 / UI 어디에도 평문 노출 0건** — `SensitiveFilter` (6 변형 마스킹) +
-> `_safe_url_for_log` (query / fragment strip) + Provider Health 응답에서
-> `last_error_message` 의도적 미포함. 외부 API 자동 호출 0건 (`DART_ENABLED=false`
-> / `RSS_NEWS_ENABLED=false` 기본 + 모든 테스트에서 `httpx.Client` 미생성 단언).
+> 공유 `SensitiveQueryStringFilter` (httpx INFO 로그의 `?crtfc_key=...` /
+> `?api_key=...` 자동 마스킹) + transport `error_message` 가 예외 클래스명만
+> carry + Provider Health 응답에서 `last_error_message` 의도적 미포함 + 16
+> forbidden substring paranoid scan. **외부 API 자동 호출 0건** — 모든 테스트에서
+> `respx` transport-layer mock + `httpx.Client` 미생성 단언 병행.
 >
 > **누적 인수 태그**: `v0.1-backend-final` → `v0.1-backend-kis-paper-verified`
 > → `v0.2-frontend-final` → `v0.3-phase-a-ci` → `v0.3-backend-analysis` →
@@ -53,7 +58,9 @@
 > `v0.9-security-hardening` → `v0.9-monitoring` → `v0.9-watchlist-api`
 > → `v0.9-frontend` → `v0.9-final` →
 > `v0.10-provider-runtime` → `v0.10-provider-resilience` → `v0.10-dart-provider`
-> → `v0.10-rss-provider` → `v0.10-health-api` → **`v0.10-final`**.
+> → `v0.10-rss-provider` → `v0.10-health-api` → `v0.10-final` →
+> `v0.11-dart-transport` → `v0.11-rss-transport` → `v0.11-observability` →
+> `v0.11-health-extended` → **`v0.11-final`**.
 >
 > 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
@@ -70,7 +77,9 @@
 > [`RELEASE_NOTES_v0.9.md`](./RELEASE_NOTES_v0.9.md) (v0.9 Operational Security &
 > Watchlist Polish, 916 / 146 / 19) /
 > [`RELEASE_NOTES_v0.10.md`](./RELEASE_NOTES_v0.10.md) (v0.10 Real Provider Readiness
-> & Resilience, **1045 / 153 / 20**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.11 참조.
+> & Resilience, 1045 / 153 / 20) /
+> [`RELEASE_NOTES_v0.11.md`](./RELEASE_NOTES_v0.11.md) (v0.11 Real Provider Transport
+> & Observability, **1119 / 158 / 21**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.12 참조.
 
 ## 1. 프로젝트 목표
 
@@ -78,7 +87,7 @@
 증권사 리포트·테마 인텔리전스 + News·공시 데이터 라인 + 재무·실적 인텔리전스 +
 Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 
-현재까지 마감된 사이클 (v0.1 ~ v0.10) 의 누적 기능:
+현재까지 마감된 사이클 (v0.1 ~ v0.11) 의 누적 기능:
 
 - 한국투자증권 API 기반 read-only 데이터 수집
 - 시가총액 TOP 500 종목 유니버스 관리
@@ -124,10 +133,15 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **DART Provider Skeleton (v0.10)** — `DartFundamentalProvider` / `DartEarningsProvider` / `DartDisclosureProvider` (모두 `_DartProviderBase` 상속, transport 주입형). `parse_fundamentals` (whitelist account 6종) + `parse_earnings` (actual 만, consensus None) + `parse_disclosures` (rcept_no/rcept_dt 누락 row 개별 skip). Forbidden body field (`body / content / full_text / paragraph / raw_text / html_body / 본문 / 원문 / 전문`) 사전 strip + DTO 자체에 부재. `crtfc_key` 는 `_call` 내부에서만 params 에 주입; `SensitiveFilter` 가 6 변형 (`dart_api_key / DART_API_KEY / crtfc_key / CRTFC_KEY / crtfckey / dart_key`) 마스킹. `DART_ENABLED=False` 기본
 - **RSS/News Provider Skeleton (v0.10)** — `RssNewsProvider` (RSS 2.0 + Atom 동시 지원, root tag 자동 분기). `_parse_rss_item` / `_parse_atom_entry` 모두 metadata 만 추출 (`<content>` 미참조). `<description>` HTML 태그 정규식 strip + summary 500자 truncate + URL dedup first-wins (`news_items.url` UNIQUE 정합). `_safe_url_for_log` 가 query string + fragment strip 후 host + path 만 로그 → feed URL 의 `?api_key=...` 평문 노출 0건. `RSS_NEWS_ENABLED=False` / `RSS_FEED_URLS=""` 기본. **신규 pip 의존성 0건** (stdlib `xml.etree.ElementTree` only)
 - **Provider Health API + UI (v0.10)** — `GET /api/health/providers` (read-only, POST/PUT/DELETE 모두 405). canonical 3 provider (`kis` / `dart` / `rss`) 항상 노출 + experimental provider monitor iteration 순서 append. `last_error_message` 응답 미포함 (URL query secret 누출 차단) — `last_error_kind` enum 만 노출. Settings 화면에 `ProviderHealthPanel` (read-only table, 9열, badge 색상별 circuit_state, 패널 내 button / form 0건)
+- **DART HTTP Transport (v0.11)** — `HttpxDartTransport` (lazy httpx import + `httpx.Client(base_url=settings.dart_base_url, timeout=settings.dart_timeout_s)`). `create_dart_providers(transport=None)` + `DART_ENABLED=true` + `DART_API_KEY` 시 자동 주입. HTTP/DART status (`000`/`010..101`/`800/900`) → `ProviderCallResult` 매핑, `httpx.HTTPError.__str__` 미포함 (URL secret 누출 차단). `respx` mock 27 케이스
+- **RSS HTTP Transport (v0.11)** — `HttpxRssTransport` (`follow_redirects=True`). `create_rss_provider(transport=None)` + `RSS_NEWS_ENABLED=true` + `RSS_FEED_URLS` 시 자동 주입. HTTP 200 → `ok(response.content)` (parser 가 인코딩 처리). `respx` mock 19 케이스
+- **공유 SensitiveQueryStringFilter (v0.11)** — Phase A 의 dart_provider 내부 헬퍼를 `app/config/logging.py` 로 추출 → DART/RSS 양쪽 transport 가 idempotent 설치. httpx INFO 로그의 `?crtfc_key=ABC&...` / `?api_key=XYZ&...` / `?token=...` 등을 `=***` 로 자동 마스킹
+- **Provider Observability + Prometheus exporter (v0.11)** — `ProviderHealthMonitor` 에 bounded ring buffer (`recent_calls` deque maxlen=200 + `recent_failures` deque maxlen=50) + `Summary24h(call_count_24h / success_count_24h / failure_count_24h / success_rate_24h / avg_attempts)`. optional `prometheus-client` (Apache 2.0): 4 Counter + 1 Gauge (circuit_state CLOSED=0/OPEN=1/HALF_OPEN=2/UNREGISTERED=3) + 1 Histogram (attempts). `GET /metrics` → `PROMETHEUS_ENABLED=false` 기본 시 404, true 시 200+text/plain. POST/PUT/DELETE 405. lazy `_emit_prometheus` hook (try/except 격리)
+- **Provider Health API/UI 24h aggregates (v0.11)** — `/api/health/providers` 6 신규 필드 (`call_count_24h` / `success_count_24h` / `failure_count_24h` / `success_rate_24h: float?` / `avg_attempts_24h: float?` / `recent_failures: list[5]`). `RecentFailureSummary` 는 `{timestamp, error_kind}` 만 (message 필드 부재). Settings 패널에 `SuccessRateBar` (≥99% emerald / ≥95% amber / <95% red / null slate) + `avg_attempts` 셀 + `RecentFailuresList` 카드 (실패 1건+ provider 만 노출). 패널 내 button / form / switch 0건 유지
 - data_snapshots / decision_logs / job_runs / notification_logs persistence
-- 테스트 가능한 구조 (backend pytest **1045**, vitest **153**, e2e **20**, build)
+- 테스트 가능한 구조 (backend pytest **1119**, vitest **158**, e2e **21**, build)
 
-## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.10 일관 정책)
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.11 일관 정책)
 
 다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
 별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.
@@ -165,11 +179,17 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **(v0.9)** CSP (Content-Security-Policy) 헤더 — Vite devserver / nginx 충돌 우려, v0.10 후보
 - **(v0.9)** notification_preferences_json 실 발송 연결 — UI 저장만, Telegram / 푸시 연결 0건
 - **(v0.9)** Prometheus exporter / Grafana 대시보드 — 외부 노출 규모 확인 후 v0.10 후보
-- **(v0.10)** DART / RSS 실 httpx transport 도입 — provider skeleton + parser 만, 실 HTTP 전송은 v0.11+ 라이선스 검토(사람) 선행 후
+- **(v0.10)** DART / RSS 실 httpx transport 도입 — provider skeleton + parser 만, 실 HTTP 전송은 v0.11+ 라이선스 검토(사람) 선행 후 → **v0.11 Phase A/B 에서 도입 완료** (default OFF 유지)
 - **(v0.10)** DART / RSS 데이터의 ScoringEngine weight 반영 — provider skeleton 만, 추천·보유 산식 본 weight 변경 0건 (v0.11+ 후보)
 - **(v0.10)** Provider enable/disable toggle UI / mutation API — `.env` + 백엔드 재시작만, GUI toggle 0건 (v0.11+ 인증·보안 검토 후)
-- **(v0.10)** Prometheus exporter / Grafana / 외부 시계열 DB — `ProviderHealthMonitor` 는 in-memory only (서버 재시작 시 초기화), 외부 노출은 v0.11+
+- **(v0.10)** Prometheus exporter / Grafana / 외부 시계열 DB — `ProviderHealthMonitor` 는 in-memory only (서버 재시작 시 초기화), 외부 노출은 v0.11+ → **v0.11 Phase C 에서 Prometheus exporter 도입** (default OFF, Grafana dashboard 동봉은 v0.12+)
 - **(v0.10)** `GET /api/health/jobs` 별도 엔드포인트 — 기존 `/api/jobs` 동일 정보 제공으로 보류 (v0.11+ 분리 검토)
+- **(v0.11)** DART / RSS 실 transport 가 도입됐지만 ScoringEngine weight 반영은 여전히 0건 — v0.12+ (누적 데이터 검증 후)
+- **(v0.11)** Grafana dashboard JSON 동봉 — Prometheus exporter 까지만, 시각화 layer 는 외부 인프라 (v0.12+)
+- **(v0.11)** ProviderHealthMonitor 영속화 — bounded ring buffer (200 calls / 50 failures) only, 서버 재시작 시 초기화. DB / Redis 백업은 v0.12+
+- **(v0.11)** Provider toggle GUI / mutation API — `.env` + 재시작만 그대로, GUI 토글 0건 (v0.12+ 인증·보안 검토 후)
+- **(v0.11)** WebSocket / SSE 실시간 갱신 — Provider Health 패널은 30s staleTime + 60s refetchInterval polling, 실시간 push 는 v0.12+
+- **(v0.11)** `GET /api/health/jobs` 분리 — 여전히 보류, 기존 `/api/jobs` 가 동일 정보 제공 (v0.12+)
 
 위 항목은 모두 [`ROADMAP.md`](./ROADMAP.md) 의 Future Backlog 로 분류되어 있고,
 각 항목은 진입 전제 조건 (예: 인증 / 컴플라이언스 / 자본 한도) 이 명시되어
@@ -215,6 +235,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 | [`RELEASE_NOTES_v0.8.md`](./RELEASE_NOTES_v0.8.md) | v0.8 User & Migration Foundation 마감 선언 |
 | [`RELEASE_NOTES_v0.9.md`](./RELEASE_NOTES_v0.9.md) | v0.9 Operational Security & Watchlist Polish 마감 선언 |
 | [`RELEASE_NOTES_v0.10.md`](./RELEASE_NOTES_v0.10.md) | v0.10 Real Provider Readiness & Resilience 마감 선언 |
+| [`RELEASE_NOTES_v0.11.md`](./RELEASE_NOTES_v0.11.md) | v0.11 Real Provider Transport & Observability 마감 선언 |
 | `stock_ai_project_codex_brief.md` | 초기 프로젝트 브리프 (역사적 — 실제 진행은 ROADMAP 참조) |
 | `stock_ai_detailed_spec.md` | 초기 상세 기능 명세 (역사적) |
 | `codex_agent_creation_spec.md` | 초기 코딩 에이전트 생성 명세 (역사적) |
@@ -233,7 +254,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 9. FastAPI 대시보드 API
 10. 테스트와 문서화
 
-## 6. 누적 사이클 상태 (v0.1 ~ v0.10)
+## 6. 누적 사이클 상태 (v0.1 ~ v0.11)
 
 | 사이클 | 상태 | 회귀 게이트 | 최종 태그 |
 |---|---|---|---|
@@ -263,6 +284,11 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 | v0.10 Phase C — RSS/News Provider Skeleton (RSS 2.0 + Atom, dedup + URL secret 마스킹, stdlib only) | ✅ 인수 | pytest 1028 (+33) | `v0.10-rss-provider` |
 | v0.10 Phase D — Provider Health API + UI (`GET /api/health/providers` + Settings 패널, POST/PUT/DELETE 405) | ✅ 인수 | pytest 1045 (+17) / vitest 153 (+7) / e2e 20 (+1) | `v0.10-health-api` |
 | v0.10 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 1045 / vitest 153 / e2e 20 / build | `v0.10-final` |
+| v0.11 Phase A — DART HTTP Transport (`HttpxDartTransport` + factory 자동 주입 + `_SensitiveQueryStringFilter`) | ✅ 인수 | pytest 1072 (+27) | `v0.11-dart-transport` |
+| v0.11 Phase B — RSS HTTP Transport (`HttpxRssTransport` + 공유 `SensitiveQueryStringFilter` 추출) | ✅ 인수 | pytest 1091 (+19) | `v0.11-rss-transport` |
+| v0.11 Phase C — Provider Observability + Prometheus exporter (`ProviderHealthMonitor` ring buffer + `Summary24h` + `prometheus-client` `/metrics` default 404) | ✅ 인수 | pytest 1112 (+21) | `v0.11-observability` |
+| v0.11 Phase D — Provider Health API/UI 24h aggregates (`success_rate_24h` / `recent_failures[5]` + `SuccessRateBar` + `RecentFailuresList`) | ✅ 인수 | pytest 1119 (+7) / vitest 158 (+5) / e2e 21 (+1) | `v0.11-health-extended` |
+| v0.11 Phase E — 마감 선언 | ✅ 문서 마감 | pytest 1119 / vitest 158 / e2e 21 / build | `v0.11-final` |
 
 ### 영역별 상태
 
@@ -303,7 +329,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 | 7.2 Docker (권장) 또는 로컬 uvicorn | §8 또는 §9 | `/health` 200 |
 | 7.3 Mock seed | `.\.venv\bin\python.exe -m scripts.seed_mock_data --reset` | stocks 5 / daily_prices 150 등 (§10) |
 | 7.4 통합 시나리오 (9잡 + 23+ API) | [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md) §3 ~ §5 / §10 ~ §16 따라감 | 모든 잡 SUCCESS (collect_news / collect_disclosures 는 default SKIPPED), API 200, notification_logs DRY_RUN |
-| 7.5 회귀 게이트 | `.\.venv\bin\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | 1045 passed, 1 deselected (v0.10 마감 시점) — 로컬 `.env` dev override 가 있으면 `test_settings_defaults` 1건은 deselect, CI clean env 에서는 자동 통과 |
+| 7.5 회귀 게이트 | `.\.venv\bin\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | 1119 passed, 1 deselected (v0.11 마감 시점) — 로컬 `.env` dev override 가 있으면 `test_settings_defaults` 1건은 deselect, CI clean env 에서는 자동 통과 |
 | 7.6 (운영 전) 실 KIS 키 사전 검증 | [`KIS_OPS_CHECKLIST.md`](./KIS_OPS_CHECKLIST.md) | 체크리스트 항목별 통과 — 코드 변경 없음 |
 
 ## 8. Docker 로컬 실행

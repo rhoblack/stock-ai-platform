@@ -1,19 +1,23 @@
 # Architecture
 
-> 본 문서는 **v0.10 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.10-final`).
+> 본 문서는 **v0.11 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.11-final`).
 > v0.1 Backend → v0.2 Frontend → v0.3 Analysis/Ops → v0.4 Analyst & Theme Intelligence →
 > v0.5 News·공시·테마 랭킹 → v0.6 Fundamental & Earnings Intelligence →
 > v0.7 Strategy & Backtest Foundation → v0.8 User & Migration Foundation →
 > v0.9 Operational Security & Watchlist Polish →
-> **v0.10 Real Provider Readiness & Resilience** (Phase A~D) 이 모두 누적된 상태의
-> 시스템 구조를 반영한다.
-> v0.10 은 `app/data/provider_health_monitor.py` (`ProviderHealthMonitor` +
-> `call_with_resilience()`) + `app/data/dart_provider.py` (DART OpenAPI provider
-> skeleton, transport 주입형) + `app/data/rss_provider.py` (RSS 2.0 + Atom
-> provider skeleton, stdlib `xml.etree.ElementTree` only) + `app/api/health_routes.py`
-> (`GET /api/health/providers` read-only) + Frontend `ProviderHealthPanel` Settings 패널을
-> 추가했다. **신규 Alembic revision 0건** — head 그대로 `0004_user_preferences`,
-> `ProviderHealthMonitor` in-memory only.
+> v0.10 Real Provider Readiness & Resilience →
+> **v0.11 Real Provider Transport & Observability** (Phase A~D) 이 모두 누적된
+> 상태의 시스템 구조를 반영한다.
+> v0.10 의 `app/data/provider_health_monitor.py` + `dart_provider.py` (skeleton)
+> + `rss_provider.py` (skeleton) + `app/api/health_routes.py` 위에, v0.11 은
+> 다음을 추가했다 — `HttpxDartTransport` / `HttpxRssTransport` (lazy httpx
+> import + factory 자동 주입, default OFF) + `app/config/logging.py` 의 공유
+> `SensitiveQueryStringFilter` (DART/RSS 양쪽 transport 마스킹) + `ProviderStats`
+> bounded ring buffer + `Summary24h` + `app/monitoring/prometheus.py`
+> (`prometheus-client` based exporter, default OFF) + `app/api/metrics_routes.py`
+> (`GET /metrics` 404 default) + `/api/health/providers` 6 신규 필드 + Settings
+> `SuccessRateBar` / `RecentFailuresList`. **신규 Alembic revision 0건** —
+> head 그대로 `0004_user_preferences`, observability 모두 in-memory bounded.
 
 ## 1. 핵심 흐름
 

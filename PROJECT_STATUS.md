@@ -7,7 +7,122 @@
 
 ---
 
-## 0. v0.11 시작 선언 — Real Provider Transport & Observability
+## 0. v0.11 마감 선언 — Real Provider Transport & Observability
+
+**v0.11 cycle 마감.** `v0.10-final` 위에 **Real Provider Transport &
+Observability** 5 phase 완료. 최종 마감 태그 `v0.11-final`.
+
+- 시작 일자: **2026-05-07 (Asia/Seoul)**
+- 마감 일자: **2026-05-07 (Asia/Seoul)**
+- 최종 게이트:
+  - backend pytest **1119 passed** (1 deselected — test_settings_defaults
+    로컬 .env 충돌, Phase A 부터 baseline 인계)
+  - frontend vitest **158 passed** (20 파일)
+  - frontend build **그린** (`tsc --noEmit && vite build`, 3.40s)
+  - Playwright e2e **21 passed** (chromium)
+- 기준 태그: `v0.10-final` → 마감 태그: `v0.11-final`
+- Alembic head: `0004_user_preferences` (v0.11 신규 revision **0건** —
+  ProviderHealthMonitor / Prometheus 모두 in-memory bounded ring buffer)
+- 세부 결과: [`RELEASE_NOTES_v0.11.md`](./RELEASE_NOTES_v0.11.md)
+
+### v0.11 Phase 결과 요약
+
+| Phase | 내용 | 태그 | 게이트 |
+|---|---|---|---|
+| A | DART HTTP Transport — `HttpxDartTransport` (lazy httpx import) + factory 자동 주입 + `_SensitiveQueryStringFilter` (httpx URL secret 마스킹) + respx mock 테스트 27건 | `v0.11-dart-transport` | pytest 1045→1072 (+27) |
+| B | RSS HTTP Transport — `HttpxRssTransport` (lazy httpx import, follow_redirects=True) + factory 자동 주입 + 공유 `SensitiveQueryStringFilter` (Phase A 에서 `app/config/logging.py` 로 추출) + respx mock 테스트 19건 | `v0.11-rss-transport` | pytest 1072→1091 (+19) |
+| C | Provider Observability Layer — bounded ring buffer (CallRecord/FailureRecord) + Summary24h + optional Prometheus exporter (`/metrics` 404 default, Counter+Gauge+Histogram, isolated CollectorRegistry per test) + `_emit_prometheus` lazy hook | `v0.11-observability` | pytest 1091→1112 (+21) |
+| D | `/api/health/providers` 확장 (6 신규 필드 + `RecentFailureSummary` schema) + monitor 공개 accessor + Settings 패널 보강 (`SuccessRateBar` / `RecentFailuresList`) | `v0.11-health-extended` | pytest 1112→1119 (+7) / vitest 153→158 (+5) / e2e 20→21 (+1) |
+| E | 마감 — `RELEASE_NOTES_v0.11.md` + 4 게이트 최종 재확인 | `v0.11-final` | 4 게이트 모두 그린 |
+
+### v0.11 핵심 정책 (마감 시점 재확인)
+
+- DART/RSS provider **default OFF 유지** — `DART_ENABLED=true` /
+  `RSS_NEWS_ENABLED=true` 명시 enable + 운영자 라이선스 검토(사람) 선행 필수
+- Prometheus exporter **default OFF 유지** — `PROMETHEUS_ENABLED=true` 명시
+  시에만 `/metrics` 노출 (false 시 404)
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 — DART/RSS score 반영은
+  v0.12+ 후보
+- Alembic 새 revision 0건 — provider observability 도 in-memory bounded ring
+  buffer (200/50 entries cap)
+- 신규 mutation 라우터 0건 — `/metrics` 도 `/api/health/providers` 도 GET only
+  (POST/PUT/DELETE 모두 405)
+- 본문 / 비밀값 / URL query secret / `last_error_message` / 메시지 텍스트
+  응답·로그·UI 평문 노출 0건 (5 layer 단언: parser strip + transport message
+  exception-class-only + `SensitiveQueryStringFilter` httpx 로그 마스킹 +
+  observability schema 의 message 필드 부재 + `/api/health/providers` paranoid
+  16종 substring scan)
+- 자동매매 / 실 KIS 주문 / `BrokerInterface` 구현 0건 (v0.1~v0.11 일관)
+- 모든 테스트 외부 네트워크 호출 0건 (`respx` transport-layer mock +
+  `httpx.Client` monkeypatch 가드 병행)
+- 신규 pip 의존성 2종 — `respx>=0.21,<0.22` (테스트 only, BSD-3) +
+  `prometheus-client>=0.19,<1.0` (Apache 2.0)
+
+### v0.12 후보 (우선순위 순)
+
+1. **DART/RSS score 반영** — `RealNewsScoreProducer` (v0.5) /
+   `RealFundamentalScoreProducer` (v0.6) 위에 v0.11 의 실 transport 결과 연결.
+   ScoringEngine weight 보강은 누적 데이터 검증 후
+2. **백테스트 고도화** — walk-forward 검증 / 다중 전략 포트폴리오 / 실 broker
+   fee schedule. recommendation_results 3~6개월 누적 후
+3. **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위에 시각화
+   layer
+4. **인증 고도화** — refresh token / 다중 사용자 / OAuth / SSO / RBAC
+5. **CSP / rate limit 고도화** — 실 트래픽 수집 후 정책 수립
+6. **LLM 보강** — News sentiment / 재무 분석 / 자동 전략 (룰 기반 검증 후)
+7. **WebSocket / SSE 실시간 잡 / 백테스트 진행 / Provider Health** — 현재 polling 만
+8. **`GET /api/health/jobs` 분리 + Provider toggle GUI / mutation API** — 인증 + 보안 검토 동반
+9. **ProviderHealthMonitor 영속화** — DB / Redis 백업으로 재시작 후 history 유지
+10. **자동매매** (Future Backlog — 별도 보안·컴플라이언스·자본 한도 사이클 선행 필수)
+
+---
+
+## 0-1. v0.11 시작 선언 → 마감으로 갱신 (기록 보존)
+
+### v0.11 채택 결론 (시나리오 비교 요약 — 진입 시점 기록)
+
+`PLANS.md` `PLAN-0011` 4 시나리오 비교 후 채택: **Scenario X — Real Provider
+Transport + Observability**. 진입 시점 기준 게이트: `v0.10-final` (HEAD
+`c56faf9`), pytest 1045 (1 deselected) / vitest 153 / e2e 20 / build 그린.
+Alembic head `0004_user_preferences`.
+
+| 시나리오 | 내용 | 결정 |
+|---|---|---|
+| **X** | DART/RSS 실 httpx transport + provider observability 고도화 (failure history + Prometheus optional) + `/api/health/providers` 확장 | ✅ **핵심 채택** |
+| Y | DART/RSS score 반영 (ScoringEngine weight 보강) | ❌ v0.12 연기 — 실 transport 안정화 + 누적 데이터 부족 |
+| Z | 백테스트 고도화 (walk-forward / 다중 전략 / 실 cost model) | ❌ v0.12+ 연기 — recommendation_results 3~6개월 누적 필요 |
+| W | 보안/인증 고도화 (rate limit 튜닝 / CSP / refresh token / RBAC) | ❌ v0.12+ 연기 — 실 트래픽 / 단일 사용자 운영 검증 후 |
+
+### v0.11 진입 시 정의된 phase 목표 (최종 결과는 §0 참조)
+
+| Phase | 시점 목표 | 결과 |
+|---|---|---|
+| A | DART HTTP Transport 도입 (default OFF 유지) | ✅ pytest +27 |
+| B | RSS HTTP Transport 도입 (default OFF 유지) + 공유 secret filter 추출 | ✅ pytest +19 |
+| C | Provider Observability + optional Prometheus | ✅ pytest +21 |
+| D | `/api/health/providers` 확장 + Settings 패널 보강 | ✅ pytest +7 / vitest +5 / e2e +1 |
+| E | 마감 문서 + 4 게이트 최종 확인 | ✅ 본 문서 |
+
+### v0.11 에서 절대 하지 않을 것 (정책 — 마감 시점 재확인)
+
+- ❌ 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ `BrokerInterface` 구현 (placeholder 유지)
+- ❌ DART/RSS provider default ON
+- ❌ Prometheus exporter default ON
+- ❌ Provider toggle / breaker reset / failure clear mutation API — `.env` +
+  백엔드 재시작만
+- ❌ ScoringEngine / HoldingCheckEngine 본 weight 변경 (DART/RSS score 반영은
+  v0.12+)
+- ❌ 본문 저장 (body / paragraph / full_text / 본문 / 원문 / 전문)
+- ❌ `DART_API_KEY` / `crtfc_key` / URL query secret / `last_error_message` /
+  메시지 텍스트 응답·로그·UI 평문 노출
+- ❌ 다중 사용자 / RBAC / OAuth / SSO / refresh token (단일 사용자 운영 유지)
+- ❌ Grafana dashboard JSON 동봉 (Prometheus exporter 까지만)
+- ❌ ProviderHealthMonitor 영속화 (in-memory bounded ring buffer 만)
+- ❌ Alembic 새 revision
+
+---
+
 
 **v0.11 cycle 시작.** `v0.10-final` 위에 **Real Provider Transport &
 Observability** 5 phase 진입.
@@ -76,7 +191,7 @@ Transport + Observability**.
 
 ---
 
-## 0-1. v0.10 마감 선언 — Real Provider Readiness & Resilience
+## 0-2. v0.10 마감 선언 — Real Provider Readiness & Resilience
 
 **v0.10 cycle 마감.** `v0.9-final` 위에 **Real Provider Readiness & Resilience**
 5 phase 완료. 최종 마감 태그 `v0.10-final`.
@@ -143,7 +258,7 @@ Transport + Observability**.
 
 ---
 
-## 0-2. v0.10 시작 선언 → 마감으로 갱신 (기록 보존)
+## 0-3. v0.10 시작 선언 → 마감으로 갱신 (강등됨)
 
 ### v0.10 채택 결론 (시나리오 비교 요약)
 
@@ -187,7 +302,7 @@ e2e 19 / build 그린. Alembic head: `0004_user_preferences`.
 
 ---
 
-## 0-3. v0.9 마감 선언 — Operational Security & Watchlist Polish (강등됨)
+## 0-4. v0.9 마감 선언 — Operational Security & Watchlist Polish (강등됨)
 
 **v0.9 cycle 마감.** 기준선 `v0.8-final` 위에 **Operational Security &
 Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
@@ -225,7 +340,7 @@ Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
 
 ---
 
-## 0-4. v0.9 시작 선언 → 마감으로 갱신 (강등됨)
+## 0-5. v0.9 시작 선언 → 마감으로 갱신 (강등됨)
 
 ### v0.9 채택 결론 (후보 비교 요약)
 

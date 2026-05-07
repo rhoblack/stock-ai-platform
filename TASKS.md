@@ -1074,13 +1074,13 @@ e2e 20 / build 그린**. 마감 태그 `v0.10-final`. Alembic head `0004_user_pr
 
 ---
 
-## v0.11 — Real Provider Transport & Observability (시작 선언)
+## v0.11 — Real Provider Transport & Observability ✅ 마감
 
-기준선: `v0.10-final`. 회귀 게이트: pytest 1045 / vitest 153 / e2e 20 / build 그린.
-세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0011`. 채택 시나리오: **Scenario X — Real
-Provider Transport + Observability** (DART/RSS 실 httpx transport + observability
-ring buffer + Prometheus exporter optional + `/api/health/providers` 확장).
-DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에만 동작.
+기준선: `v0.10-final`. 최종 게이트: **pytest 1119 (1 deselected) / vitest 158 /
+e2e 21 / build 그린**. 마감 태그 `v0.11-final`. Alembic head `0004_user_preferences`
+그대로 (v0.11 신규 revision 0건).
+
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0011` / 마감 사유: [`RELEASE_NOTES_v0.11.md`](./RELEASE_NOTES_v0.11.md)
 
 ### Phase A: DART HTTP Transport ✅ 인수
 
@@ -1093,7 +1093,7 @@ DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에
 - [x] `DART_ENABLED=false` 시 `httpx.Client` 미생성 단언 유지 (v0.10 49 케이스 회귀 0건)
 - [x] `DART_API_KEY` / `crtfc_key` 평문 로그 0건 — `_SensitiveQueryStringFilter` 가 httpx INFO 로그의 query string secret 마스킹 (`crtfc_key=***`)
 - [x] httpx exception `__str__` → `result.error_message` 미반영 (예외 클래스명만 노출, URL secret 누출 차단)
-- [ ] `tag v0.11-dart-transport + push`
+- [x] `tag v0.11-dart-transport + push`
 
 ### Phase B: RSS HTTP Transport ✅ 인수
 
@@ -1107,7 +1107,7 @@ DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에
 - [x] `RSS_NEWS_ENABLED=false` / 빈 `RSS_FEED_URLS` 시 `httpx.Client` 미생성 (AssertionError 가드)
 - [x] v0.10 Phase C 33 케이스 회귀 0건 (호출자 transport 주입 path 가드 유효)
 - [x] DART Phase A 49+27 케이스 회귀 0건 (filter 추출 후에도 동일 동작)
-- [ ] `tag v0.11-rss-transport + push`
+- [x] `tag v0.11-rss-transport + push`
 
 ### Phase C: Provider Observability Layer ✅ 인수
 
@@ -1123,7 +1123,7 @@ DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에
 - [x] `app/config/settings.py` — `prometheus_enabled=False` / `prometheus_path="/metrics"` 추가
 - [x] 단위 테스트 21건 (`tests/data/test_provider_observability.py`) — ring buffer maxlen / 24h window 경계 + 외부 `now` injection / Prometheus counter+gauge+histogram 라인 / collector registry 격리 (fresh `CollectorRegistry` per test) / `/metrics` 404·200·405 / DART/RSS secret 미포함 / Prometheus 예외 swallow / httpx.Client 미생성 단언
 - [x] v0.10 monitor 31 + DART skeleton 49 + DART http 27 + RSS skeleton 33 + RSS http 19 = 159 케이스 회귀 0건
-- [ ] `tag v0.11-observability + push`
+- [x] `tag v0.11-observability + push`
 
 ### Phase D: `/api/health/providers` 확장 + Settings 패널 보강 ✅ 인수
 
@@ -1138,17 +1138,18 @@ DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에
 - [x] vitest +5 (`frontend/src/tests/ProviderHealthPanel.test.tsx`) — success_rate / avg_attempts cell / recent_failures newest-first / empty placeholder / secret 미렌더링 / read-only
 - [x] e2e +1 (`Settings Provider Health panel surfaces v0.11 Phase D 24h aggregates and recent failures`) — KIS fixture progress bar + DART/RSS 빈 placeholder + 패널 내 button 0건 + 16 forbidden secret 0건
 - [x] MSW + e2e fixtures 신규 필드 sync (KIS 50 calls / 1 TIMEOUT failure 시연용)
-- [ ] `tag v0.11-health-extended + push`
+- [x] `tag v0.11-health-extended + push`
 
-### Phase E: 마감 (문서)
+### Phase E: 마감 (문서) ✅ 인수
 
-- [ ] `RELEASE_NOTES_v0.11.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.12 후보)
-- [ ] `README.md` v0.11 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
-- [ ] `PROJECT_STATUS.md` §0 v0.11 마감 선언으로 교체
-- [ ] `ROADMAP.md` v0.11 행 ✅ 마감
-- [ ] `TESTING.md` 기준선 갱신 (~1103 pytest / ~159 vitest / 21 e2e)
-- [ ] `ARCHITECTURE.md` v0.11 마감 시점 반영
-- [ ] `API_SPEC.md` `/metrics` (default 404) + `/api/health/providers` 확장 안내
+- [x] `RELEASE_NOTES_v0.11.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.12 후보)
+- [x] `README.md` v0.11 갱신 (마감 배너 + 누적 기능 + 제외 범위 + 누적 사이클 표 + 회귀 기준선 1119/158/21)
+- [x] `PROJECT_STATUS.md` §0 v0.11 마감 선언으로 교체 (이전 §0 v0.11 시작 → §0-1 강등, §0-1 v0.10 마감 → §0-2, §0-2 v0.10 시작 → §0-3, §0-3 v0.9 마감 → §0-4, §0-4 v0.9 시작 → §0-5)
+- [x] `ROADMAP.md` v0.11 행 ✅ 마감 + v0.12+ 후보 정리 + 장기 비전 갱신 + Future Backlog v0.11 GET /metrics 안내
+- [x] `TESTING.md` 기준선 갱신 (1119 pytest / 158 vitest / 21 e2e — Phase D 시점에 이미 갱신 완료)
+- [x] `ARCHITECTURE.md` v0.11 마감 시점 반영
+- [x] `API_SPEC.md` `/metrics` (default 404) + `/api/health/providers` 6 신규 필드 안내 (Phase C/D 시점에 이미 갱신 완료)
+- [x] `INTEGRATION_RUNBOOK.md` v0.11 마감 시점 반영
 - [ ] `tag v0.11-final + push`
 
 ---
