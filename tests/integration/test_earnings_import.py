@@ -62,7 +62,8 @@ def test_earnings_event_dto_has_no_forbidden_body_fields():
         "전문",
     }
     assert names.isdisjoint(forbidden)
-    assert len(names) == 18
+    # v0.12 Phase A: 18 base + data_source = 19
+    assert len(names) == 19
 
 
 def test_fake_earnings_provider_is_deterministic_and_filters():

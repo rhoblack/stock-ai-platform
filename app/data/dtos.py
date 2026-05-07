@@ -3,6 +3,40 @@ from datetime import date, datetime
 from decimal import Decimal
 
 
+# ---------------------------------------------------------------------------
+# v0.12 Phase A -- DTO data_source provenance tag.
+#
+# Categorical metadata-only field added to every provider-shaped DTO so
+# downstream code (Phase D evidence chip / observability) can distinguish
+# whether a record arrived via:
+#
+#   "PROVIDER" -- ingested through a v0.11 HTTP transport (DART/RSS)
+#   "FAKE"     -- emitted by a deterministic Fake* provider (tests)
+#   "CSV"      -- imported from operator-supplied CSV (v0.4 / v0.6)
+#   "MANUAL"   -- direct DB seed / scripts/seed_mock_data.py
+#
+# Default value across all DTOs is ``"FAKE"`` so existing tests / fixtures
+# remain backward-compatible without a touch.  The field is **runtime-only**
+# (DTO metadata) -- no DB column is added.  When Phase D needs to surface
+# the provenance through the API, it derives it at projection time from
+# the existing ``source`` column or via a runtime registry.
+# ---------------------------------------------------------------------------
+
+DATA_SOURCE_PROVIDER = "PROVIDER"
+DATA_SOURCE_FAKE = "FAKE"
+DATA_SOURCE_CSV = "CSV"
+DATA_SOURCE_MANUAL = "MANUAL"
+
+ALLOWED_DATA_SOURCES: frozenset[str] = frozenset(
+    {
+        DATA_SOURCE_PROVIDER,
+        DATA_SOURCE_FAKE,
+        DATA_SOURCE_CSV,
+        DATA_SOURCE_MANUAL,
+    }
+)
+
+
 @dataclass(frozen=True)
 class KisCurrentPrice:
     symbol: str
@@ -63,6 +97,8 @@ class NewsItemDTO:
     category: str | None = None
     sentiment_label: str | None = None
     summary: str | None = None
+    # v0.12 Phase A -- runtime-only provenance tag.  See DATA_SOURCE_* above.
+    data_source: str = DATA_SOURCE_FAKE
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +121,8 @@ class DisclosureItemDTO:
     disclosure_type: str | None = None
     category: str | None = None
     summary: str | None = None
+    # v0.12 Phase A -- runtime-only provenance tag.  See DATA_SOURCE_* above.
+    data_source: str = DATA_SOURCE_FAKE
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +155,8 @@ class FundamentalSnapshotDTO:
     revenue_growth_yoy: Decimal | None = None
     operating_income_growth_yoy: Decimal | None = None
     source: str | None = None
+    # v0.12 Phase A -- runtime-only provenance tag.  See DATA_SOURCE_* above.
+    data_source: str = DATA_SOURCE_FAKE
 
 
 @dataclass(frozen=True)
@@ -139,3 +179,5 @@ class EarningsEventDTO:
     surprise_pct: Decimal | None = None
     source: str | None = None
     memo: str | None = None
+    # v0.12 Phase A -- runtime-only provenance tag.  See DATA_SOURCE_* above.
+    data_source: str = DATA_SOURCE_FAKE

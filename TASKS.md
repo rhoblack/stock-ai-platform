@@ -1163,18 +1163,25 @@ Data Scoring + Backtest Validation** (Provider 데이터 → DB → existing pro
 ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. DART/RSS/Prometheus
 /Provider Data Ingestion 모두 default OFF 유지.
 
-### Phase A: Provider Data Ingestion (default OFF)
+### Phase A: Provider Data Ingestion (default OFF) ✅ 인수
 
-- [ ] `app/config/settings.py` 에 `PROVIDER_DATA_INGESTION_ENABLED: bool = False` 추가
-- [ ] `NewsItemDTO` / `DisclosureItemDTO` / `FundamentalSnapshotDTO` 에 `data_source: str` 필드 추가 (`"PROVIDER"` / `"FAKE"` / `"CSV"` / `"MANUAL"`) — evidence whitelist 에 명시 추가
-- [ ] `NewsCollector.from_rss_provider(...)` / `DisclosureCollector.from_dart_provider(...)` 어댑터 추가 — RSS/DART transport 결과 → `news_items` (메타데이터 only, body 0건)
-- [ ] `FundamentalImporter.from_dart_provider(...)` / `EarningsImporter.from_dart_provider(...)` 어댑터 추가 — DART → `financial_statements` / `earnings_events`
-- [ ] Feature flag 가드 — `PROVIDER_DATA_INGESTION_ENABLED=false` 시 어댑터 진입 즉시 skip
-- [ ] v0.5/v0.6 producer (`RealNewsScoreProducer` / `DisclosureRiskProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer`) 변경 0건 — 자동으로 real 데이터 흡수
-- [ ] ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 (회귀 단언)
-- [ ] 본문 / `last_error_message` / API key / URL query secret 응답·로그·DB 노출 0건
-- [ ] respx mock 통합 테스트 ~25건 (`tests/integration/test_provider_data_ingestion.py`)
-- [ ] v0.10/v0.11 누적 회귀 0건 (DART skeleton 49 + DART http 27 + RSS skeleton 33 + RSS http 19 + monitor 31 + observability 21 + Phase D health 24 = 204건)
+- [x] `app/config/settings.py` 에 `PROVIDER_DATA_INGESTION_ENABLED: bool = False` 추가
+- [x] `NewsItemDTO` / `DisclosureItemDTO` / `FundamentalSnapshotDTO` / `EarningsEventDTO` 모두에 `data_source: str = "FAKE"` 필드 + `DATA_SOURCE_PROVIDER`/`FAKE`/`CSV`/`MANUAL` 상수 + `ALLOWED_DATA_SOURCES` frozenset
+- [x] DART parser (`parse_fundamentals` / `parse_earnings` / `parse_disclosure_item`) 가 `data_source=DATA_SOURCE_PROVIDER` 설정
+- [x] RSS parser (`_parse_rss_item` / `_parse_atom_entry`) 가 `data_source=DATA_SOURCE_PROVIDER` 설정
+- [x] CSV importer (`FundamentalCsvImporter._parse_row` / `EarningsCsvImporter._parse_row`) 가 `data_source=DATA_SOURCE_CSV` 설정
+- [x] Importer `_dto_fields` 가 `data_source` 를 repository upsert 인자에서 제거 (DB 컬럼 부재 — runtime-only)
+- [x] `app/data/ingestion/` 신규 패키지 + 4 어댑터: `ingest_dart_disclosures` / `ingest_rss_news` / `ingest_dart_fundamentals` / `ingest_dart_earnings`
+- [x] 모든 어댑터 entry 첫 줄에서 `Settings.provider_data_ingestion_enabled` 검사 → `False` 시 즉시 `skipped_disabled=True` 반환 (provider 미생성, httpx.Client 미생성, DB write 0건)
+- [x] DART/RSS 자체 default OFF 도 soft-skip (raise 안 함, `skipped_disabled=True` 반환) — operator 가 master flag 만 켜고 DART 키 늦게 설정해도 안전
+- [x] v0.5/v0.6 producer (`RealNewsScoreProducer` / `DisclosureRiskProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer`) 변경 0건 — DTO `data_source` 는 runtime-only, producer 는 기존 DB 컬럼만 read
+- [x] ScoringEngine.NEW_RECOMMENDATION_WEIGHTS / HOLDING_WEIGHTS 회귀 단언 (Decimal 정확도 포함)
+- [x] DTO body field 부재 단언 4 케이스 (parametrize) + DB 모델 body 컬럼 부재 단언 3 케이스 (NewsItem / FundamentalSnapshot / EarningsEvent)
+- [x] DART_API_KEY (`SUPER-SECRET-KEY-DO-NOT-LOG-XYZ`) caplog 평문 0건
+- [x] RSS feed URL query secret (`?api_key=PRIVATE-FEED-SECRET-XYZ`) caplog 평문 0건
+- [x] 호출자가 직접 transport 주입 시 `httpx.Client` 미생성 단언 (4 어댑터 동시 검증)
+- [x] 통합 테스트 30건 (`tests/integration/test_provider_data_ingestion.py`)
+- [x] v0.10/v0.11 누적 회귀 0건 — backend pytest 1119 → 1149 (+30)
 - [ ] `tag v0.12-provider-ingestion + push`
 
 ### Phase B: Walk-forward Backtest Engine

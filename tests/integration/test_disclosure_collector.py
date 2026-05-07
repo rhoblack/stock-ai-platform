@@ -76,7 +76,7 @@ def test_disclosure_dto_has_no_body_fields():
 
 
 def test_disclosure_dto_has_expected_fields():
-    """Spec 의 9 필드가 모두 존재 + 추가 필드 없음."""
+    """Spec 의 9 + v0.12 Phase A 의 data_source 필드가 모두 존재 + 추가 필드 없음."""
     dto_field_names = {f.name for f in dataclass_fields(DisclosureItemDTO)}
     expected = {
         "title",
@@ -88,6 +88,8 @@ def test_disclosure_dto_has_expected_fields():
         "disclosure_type",
         "category",
         "summary",
+        # v0.12 Phase A — runtime-only provenance tag.
+        "data_source",
     }
     assert dto_field_names == expected
 

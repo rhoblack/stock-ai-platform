@@ -60,7 +60,8 @@ def test_fundamental_snapshot_dto_has_no_forbidden_body_fields():
         "전문",
     }
     assert names.isdisjoint(forbidden)
-    assert len(names) == 20
+    # v0.12 Phase A: 20 base + data_source = 21
+    assert len(names) == 21
 
 
 def test_fake_fundamental_provider_is_deterministic_and_filters():

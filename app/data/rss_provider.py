@@ -57,7 +57,7 @@ from xml.etree import ElementTree as ET
 
 from app.config.logging import install_sensitive_qs_filter
 from app.config.settings import Settings, get_settings
-from app.data.dtos import NewsItemDTO
+from app.data.dtos import DATA_SOURCE_PROVIDER, NewsItemDTO
 from app.data.interfaces import NewsProviderInterface
 from app.data.provider_health_monitor import (
     ProviderHealthMonitor,
@@ -266,6 +266,7 @@ def _parse_rss_item(
         category=category,
         sentiment_label=None,
         summary=summary,
+        data_source=DATA_SOURCE_PROVIDER,
     )
 
 
@@ -320,6 +321,7 @@ def _parse_atom_entry(
         category=category,
         sentiment_label=None,
         summary=summary,
+        data_source=DATA_SOURCE_PROVIDER,
     )
 
 

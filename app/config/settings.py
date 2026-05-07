@@ -279,6 +279,17 @@ class Settings:
         default_factory=lambda: os.getenv("RSS_PROVIDER_NAME", "rss"),
     )
 
+    # v0.12 Phase A -- Provider data ingestion master switch.
+    # When false (default) the new provider→DB adapters short-circuit before
+    # touching any provider, repository, or HTTP client.  Existing fake
+    # provider code paths (FakeNewsProvider / FakeDisclosureProvider /
+    # FakeFundamentalProvider / FakeEarningsProvider) continue to work
+    # unchanged.  Operators must explicitly opt in via .env after the v0.11
+    # license / DART OpenAPI / RSS feed review has been completed.
+    provider_data_ingestion_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("PROVIDER_DATA_INGESTION_ENABLED"), False),
+    )
+
     # v0.11 Phase C -- Prometheus exporter for provider observability.
     # Default-OFF: GET /metrics returns 404 unless PROMETHEUS_ENABLED=true.
     # The endpoint exposes only in-memory ProviderHealthMonitor counters --

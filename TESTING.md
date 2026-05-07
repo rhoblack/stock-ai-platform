@@ -1,21 +1,21 @@
 # TESTING.md
 
-> 본 문서는 **v0.11 Phase D 시점** 기준으로 갱신된다 (`v0.11-health-extended`
-> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.11 신규 테스트 카테고리를
+> 본 문서는 **v0.12 Phase A 시점** 기준으로 갱신된다 (`v0.12-provider-ingestion`
+> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.12 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.11 Phase D 시점)
+## 1. 현재 회귀 게이트 (v0.12 Phase A 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
-어떤 테스트에서도 실제로 호출되지 않는다 (`respx` 가 httpx 요청을 transport
-layer 에서 인터셉트, monkeypatch `httpx.Client` 가드 병행).
+어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
+provider transport injection 3중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1119 passed, 1 deselected** (v0.11 Phase D: 1112 → 1119, +7 신규 — `/api/health/providers` 확장 + recent_failures cap + paranoid secret) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **158 passed** (v0.11 Phase D: 153 → 158, +5 신규 — `SuccessRateBar` / `avg_attempts` cell / `RecentFailuresList` 카드 + secret 미렌더링) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1149 passed, 1 deselected** (v0.12 Phase A: 1119 → 1149, +30 신규 — provider data ingestion 4 어댑터 + DTO data_source 필드 + ScoringEngine weight 회귀 단언) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **158 passed** (변경 없음 — Phase A 는 백엔드 전용) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.40s) |
-| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (v0.11 Phase D: 20 → 21, +1 — Settings Provider Health 패널의 Phase D cell + 16 forbidden secret 단언) |
+| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (변경 없음 — Phase A 는 백엔드 전용) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **153 passed** (Phase D: 146 → 153, +7 신규 — ProviderHealthPanel) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.41s) |
 | Playwright e2e | `cd frontend && npm run e2e` | **20 passed** (Phase D: 19 → 20, +1 신규 — Settings Provider Health 패널) |
@@ -1491,6 +1491,85 @@ read-only 노출. provider toggle / mutation 0건 정책 그대로.
 - Alembic 새 revision 0건
 - 신규 mutation 라우터 0건 (`/api/health/providers` GET only)
 - 신규 pip 의존성 0건 (Phase C 의 prometheus-client 그대로)
+
+## 6.31 v0.12 Phase A — Provider Data Ingestion 테스트
+
+`tests/integration/test_provider_data_ingestion.py` 신규 **30 케이스**.
+`PROVIDER_DATA_INGESTION_ENABLED` master flag + 4 ingestion 어댑터 (DART
+disclosure / RSS news / DART fundamental / DART earnings) + DTO `data_source`
+provenance 태그 + DB body 컬럼 부재 + ScoringEngine weight 회귀 + secret 가드.
+**외부 네트워크 호출 0건** — 모든 테스트가 caller-supplied transport (mock
+`ProviderCallResult`) 만 사용.
+
+### 6.31.1 Default-OFF 가드 (6 케이스)
+
+- `Settings.provider_data_ingestion_enabled` 기본 `False`
+- master flag OFF 시 4 어댑터 모두 `skipped_disabled=True` 반환 + transport
+  미호출 + DB write 0건 (DART disclosure / RSS news / DART fundamental / DART
+  earnings 각각 검증)
+- master flag ON 이지만 DART/RSS 자체 default OFF 시 `DartNotConfiguredError` /
+  `RssNotConfiguredError` 를 어댑터가 catch → `skipped_disabled=True` (raise 안 함)
+
+### 6.31.2 Happy path: 어댑터 → DB (4 케이스)
+
+- DART disclosure: `ProviderCallResult.ok({status:"000", list:[...]})` mock
+  → `news_items` 1 row inserted + `source="dart"` + 한국어 제목 보존 +
+  `related_symbols=["005930"]`
+- RSS news: RSS 2.0 fixture bytes mock → `news_items` 1 row + `source="Sample
+  Wire"` (channel title fallback)
+- DART fundamental: `fnlttSinglAcnt` mock → `fundamental_snapshots` 1 row +
+  `source="DART"` + `revenue=258_935_500`
+- DART earnings: 동일 endpoint subset → `earnings_events` 1 row +
+  `operating_income_actual=32_726_000`
+
+### 6.31.3 DTO data_source provenance (4 케이스)
+
+- `DATA_SOURCE_PROVIDER` / `DATA_SOURCE_FAKE` / `DATA_SOURCE_CSV` /
+  `DATA_SOURCE_MANUAL` 상수 + `ALLOWED_DATA_SOURCES` frozenset
+- 4 DTO (NewsItemDTO / DisclosureItemDTO / FundamentalSnapshotDTO /
+  EarningsEventDTO) 모두 `data_source` 필드 default = `"FAKE"` (parametrize)
+- DART parser (parse_fundamentals / parse_earnings / parse_disclosure_item)
+  가 `data_source="PROVIDER"` 자동 부착
+- RSS parser (parse_feed) 가 `data_source="PROVIDER"` 자동 부착
+- CSV importer (`FundamentalCsvImporter._parse_row`) 가 `data_source="CSV"`
+  자동 부착
+
+### 6.31.4 Body / DB 컬럼 부재 (7 단언)
+
+- 4 DTO parametrize body field 부재 (`body / content / full_text / fulltext /
+  paragraph / raw_text / html_body / 본문 / 원문 / 전문` 10종 frozenset)
+- 3 DB 모델 (NewsItem / FundamentalSnapshot / EarningsEvent) parametrize
+  body 컬럼 부재
+
+### 6.31.5 Zero-network + Secret discipline (3 케이스)
+
+- 4 어댑터 모두 caller-supplied transport 시 `httpx.Client` 미생성 단언 (4
+  어댑터 동시 검증, AssertionError monkeypatch)
+- DART_API_KEY (`SUPER-SECRET-KEY-DO-NOT-LOG-XYZ`) caplog 평문 0건
+- RSS feed URL query secret (`?api_key=PRIVATE-FEED-SECRET-XYZ`) caplog 평문 0건
+
+### 6.31.6 ScoringEngine weight 회귀 (1 단언)
+
+- `ScoringEngine.NEW_RECOMMENDATION_WEIGHTS` = `{technical: 0.35, news: 0.25,
+  supply: 0.15, fundamental: 0.15, ai: 0.10}` (Decimal 정확도)
+- `ScoringEngine.HOLDING_WEIGHTS` = `{technical: 0.35, news: 0.20,
+  earnings: 0.20, ai: 0.15, profit_management: 0.10}`
+- v0.12 Phase A 의 데이터 입력 변경이 본 weight 산식에 절대 영향 미침
+
+### 6.31.7 회귀 기준
+
+- backend pytest **1119 → 1149 passed (+30)** — 회귀 0건
+- v0.5 collectors (news/disclosure) + v0.6 importers (fundamental/earnings) +
+  v0.10/v0.11 (DART skeleton 49 + DART http 27 + RSS skeleton 33 + RSS http 19 +
+  monitor 31 + observability 21 + Phase D health 24) 누적 235+ 케이스 회귀 0건
+- 외부 네트워크 호출 0건 (`httpx.Client` 미생성 단언 4 어댑터 동시)
+- API key / URL query secret 응답·로그·DB 노출 0건
+- DART/RSS provider default OFF 유지 + Provider Data Ingestion default OFF
+  유지 (`PROVIDER_DATA_INGESTION_ENABLED=false`)
+- ScoringEngine 본 weight 변경 0건 (회귀 단언으로 pin)
+- Alembic 새 revision 0건 — `data_source` 는 runtime-only (DB 컬럼 미생성)
+- 신규 mutation 라우터 0건
+- 신규 pip 의존성 0건
 
 ## 7. 금지 사항
 

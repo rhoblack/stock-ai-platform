@@ -36,7 +36,7 @@ Scoring + Backtest Validation**.
 
 | Phase | 내용 | 태그 | 예상 게이트 |
 |---|---|---|---|
-| A | Provider Data Ingestion — `PROVIDER_DATA_INGESTION_ENABLED=False` 기본 + DTO 에 `data_source` 필드 추가 + collector / importer 어댑터 (RSS/DART transport → DB 메타데이터, 본문 0건) + 기존 producer 자동 흡수 + 회귀 단언 25건 | `v0.12-provider-ingestion` ⏳ | pytest +25 |
+| A | Provider Data Ingestion — `PROVIDER_DATA_INGESTION_ENABLED=False` 기본 + 4 DTO `data_source` 필드 (`PROVIDER`/`FAKE`/`CSV`/`MANUAL`) + 4 ingestion 어댑터 (`ingest_dart_disclosures`/`ingest_rss_news`/`ingest_dart_fundamentals`/`ingest_dart_earnings`) + DART/RSS parser provenance 자동 태깅 + ScoringEngine weight 회귀 단언 + body 부재 7 단언 + secret caplog 단언 | `v0.12-provider-ingestion` ✅ | pytest 1119→1149 (+30) |
 | B | Walk-forward Backtest Engine — `WalkForwardBacktestEngine` + train/validate window sliding + IS/OOS gap 측정 + fold metadata `backtest_runs.notes` JSON (Alembic 0건) + CLI `--walk-forward` 15건 | `v0.12-walk-forward` ⏳ | pytest +15 |
 | C | Multi-strategy Comparison + Regime/Sector Breakdown — `MultiStrategyRunner` + 같은 기간/유니버스 + JSON breakdown + CLI `--multi --strategies` 12건 | `v0.12-multi-strategy` ⏳ | pytest +12 |
 | D | Backtest Read-only API/UI 확장 + Provider Score Evidence — `GET /api/backtest/runs/{id}/folds` + `/comparison` + `evidence.data_source` chip (PROVIDER vs FAKE) + 백테스트 화면 fold/비교 표 +5/+5/+1 | `v0.12-scoring-readonly` ⏳ | pytest +5 / vitest +5 / e2e +1 |

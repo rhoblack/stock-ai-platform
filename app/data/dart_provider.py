@@ -67,6 +67,7 @@ from typing import Any, Callable, Mapping
 from app.config.logging import install_sensitive_qs_filter
 from app.config.settings import Settings, get_settings
 from app.data.dtos import (
+    DATA_SOURCE_PROVIDER,
     DisclosureItemDTO,
     EarningsEventDTO,
     FundamentalSnapshotDTO,
@@ -331,6 +332,7 @@ def parse_fundamentals(
         total_liabilities=fields.get("total_liabilities"),
         total_equity=fields.get("total_equity"),
         source="DART",
+        data_source=DATA_SOURCE_PROVIDER,
     )
 
 
@@ -384,6 +386,7 @@ def parse_earnings(
         operating_income_actual=actual.get("operating_income_actual"),
         net_income_actual=actual.get("net_income_actual"),
         source="DART",
+        data_source=DATA_SOURCE_PROVIDER,
     )
 
 
@@ -447,6 +450,7 @@ def parse_disclosure_item(
         company_name=company,
         disclosure_type=disclosure_type,
         summary=summary,
+        data_source=DATA_SOURCE_PROVIDER,
     )
 
 

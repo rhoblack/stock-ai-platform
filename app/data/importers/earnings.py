@@ -17,7 +17,7 @@ from typing import Any, Iterable, Mapping
 
 from sqlalchemy.orm import Session
 
-from app.data.dtos import EarningsEventDTO
+from app.data.dtos import DATA_SOURCE_CSV, EarningsEventDTO
 from app.data.repositories.earnings_events import EarningsEventRepository
 from app.db.models import EarningsEvent
 
@@ -189,7 +189,14 @@ def calculate_surprise(
 
 
 def _dto_fields(dto: EarningsEventDTO) -> dict[str, Any]:
-    return asdict(dto)
+    """DTO → repository kwargs.
+
+    ``data_source`` is a v0.12 Phase A *runtime-only* provenance tag and
+    has no DB column, so it is filtered out before reaching the repo.
+    """
+    payload = asdict(dto)
+    payload.pop("data_source", None)
+    return payload
 
 
 def _event_equal(existing: EarningsEvent, dto: EarningsEventDTO) -> bool:
@@ -278,7 +285,7 @@ class EarningsCsvImporter:
             summary.truncated_notes += 1
         else:
             values["memo"] = memo
-        return EarningsEventDTO(**values)
+        return EarningsEventDTO(**values, data_source=DATA_SOURCE_CSV)
 
     def _persist_dto(self, dto: EarningsEventDTO, summary: ImportSummary) -> None:
         existing = self._repo.get_by_symbol_event(

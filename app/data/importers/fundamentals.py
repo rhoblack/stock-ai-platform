@@ -18,7 +18,7 @@ from typing import Any, Iterable, Mapping
 
 from sqlalchemy.orm import Session
 
-from app.data.dtos import FundamentalSnapshotDTO
+from app.data.dtos import DATA_SOURCE_CSV, FundamentalSnapshotDTO
 from app.data.repositories.fundamental_snapshots import FundamentalSnapshotRepository
 from app.db.models import FundamentalSnapshot
 
@@ -170,7 +170,14 @@ def _optional_decimal(name: str, value: str) -> Decimal | None:
 
 
 def _dto_fields(dto: FundamentalSnapshotDTO) -> dict[str, Any]:
-    return asdict(dto)
+    """DTO → repository kwargs.
+
+    ``data_source`` is a v0.12 Phase A *runtime-only* provenance tag and
+    has no DB column, so it is filtered out before reaching the repo.
+    """
+    payload = asdict(dto)
+    payload.pop("data_source", None)
+    return payload
 
 
 def _metrics_equal(existing: FundamentalSnapshot, dto: FundamentalSnapshotDTO) -> bool:
@@ -242,7 +249,7 @@ class FundamentalCsvImporter:
         }
         for name in NUMERIC_FIELDS:
             values[name] = _optional_decimal(name, row.get(name, ""))
-        return FundamentalSnapshotDTO(**values)
+        return FundamentalSnapshotDTO(**values, data_source=DATA_SOURCE_CSV)
 
     def _persist_dto(self, dto: FundamentalSnapshotDTO, summary: ImportSummary) -> None:
         existing = self._repo.get_by_symbol_period(

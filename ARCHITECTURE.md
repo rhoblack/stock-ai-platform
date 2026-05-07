@@ -1,5 +1,16 @@
 # Architecture
 
+> 본 문서는 **v0.12 Phase A 시점** 기준으로 갱신된다 (`v0.12-provider-ingestion`
+> 태그 포함). v0.11 마감 위에 **Provider Data Ingestion** 어댑터 layer
+> (`app/data/ingestion/`) 가 추가되었다. v0.11 의 `HttpxDartTransport` /
+> `HttpxRssTransport` 를 v0.5/v0.6 의 collector / importer 로 연결하는
+> 4 어댑터 (`ingest_dart_disclosures` / `ingest_rss_news` /
+> `ingest_dart_fundamentals` / `ingest_dart_earnings`) 가 default OFF
+> (`PROVIDER_DATA_INGESTION_ENABLED=false` 기본) 로 도입되었고, 모든 DTO 에
+> `data_source` provenance 태그 (`PROVIDER`/`FAKE`/`CSV`/`MANUAL`) 가 추가되었다.
+> ScoringEngine 본 weight 변경 0건. Alembic 새 revision 0건 (`data_source` 는
+> runtime-only DTO 필드).
+>
 > 본 문서는 **v0.11 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.11-final`).
 > v0.1 Backend → v0.2 Frontend → v0.3 Analysis/Ops → v0.4 Analyst & Theme Intelligence →
 > v0.5 News·공시·테마 랭킹 → v0.6 Fundamental & Earnings Intelligence →
