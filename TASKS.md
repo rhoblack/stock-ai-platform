@@ -1154,16 +1154,93 @@ e2e 21 / build 그린**. 마감 태그 `v0.11-final`. Alembic head `0004_user_pr
 
 ---
 
-## v0.12+ — Backlog
+## v0.12 — Provider Data Scoring & Backtest Validation (시작 선언)
 
-자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) §0 v0.12 후보 참조. 한 줄 요약:
+기준선: `v0.11-final`. 회귀 게이트: pytest 1119 / vitest 158 / e2e 21 / build 그린.
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0012`. 채택 시나리오: **Scenario X — Provider
+Data Scoring + Backtest Validation** (Provider 데이터 → DB → existing producer 자동
+흡수 + walk-forward backtest 검증 + 다중 전략 비교 + read-only API/UI 확장).
+ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. DART/RSS/Prometheus
+/Provider Data Ingestion 모두 default OFF 유지.
 
-- **DART/RSS score 반영** — `RealNewsScoreProducer` / `RealFundamentalScoreProducer` 위에 DART/RSS 데이터 연결 (실 transport 안정화 + 데이터 누적 후)
-- **백테스트 고도화** — walk-forward / 다중 전략 / 실 cost model (recommendation_results 3~6개월 누적 후)
-- **Grafana dashboard JSON** — Prometheus exporter 위에 시각화 (외부 인프라)
+### Phase A: Provider Data Ingestion (default OFF)
+
+- [ ] `app/config/settings.py` 에 `PROVIDER_DATA_INGESTION_ENABLED: bool = False` 추가
+- [ ] `NewsItemDTO` / `DisclosureItemDTO` / `FundamentalSnapshotDTO` 에 `data_source: str` 필드 추가 (`"PROVIDER"` / `"FAKE"` / `"CSV"` / `"MANUAL"`) — evidence whitelist 에 명시 추가
+- [ ] `NewsCollector.from_rss_provider(...)` / `DisclosureCollector.from_dart_provider(...)` 어댑터 추가 — RSS/DART transport 결과 → `news_items` (메타데이터 only, body 0건)
+- [ ] `FundamentalImporter.from_dart_provider(...)` / `EarningsImporter.from_dart_provider(...)` 어댑터 추가 — DART → `financial_statements` / `earnings_events`
+- [ ] Feature flag 가드 — `PROVIDER_DATA_INGESTION_ENABLED=false` 시 어댑터 진입 즉시 skip
+- [ ] v0.5/v0.6 producer (`RealNewsScoreProducer` / `DisclosureRiskProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer`) 변경 0건 — 자동으로 real 데이터 흡수
+- [ ] ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 (회귀 단언)
+- [ ] 본문 / `last_error_message` / API key / URL query secret 응답·로그·DB 노출 0건
+- [ ] respx mock 통합 테스트 ~25건 (`tests/integration/test_provider_data_ingestion.py`)
+- [ ] v0.10/v0.11 누적 회귀 0건 (DART skeleton 49 + DART http 27 + RSS skeleton 33 + RSS http 19 + monitor 31 + observability 21 + Phase D health 24 = 204건)
+- [ ] `tag v0.12-provider-ingestion + push`
+
+### Phase B: Walk-forward Backtest Engine
+
+- [ ] `app/backtest/walk_forward_engine.py` 신규 — `WalkForwardBacktestEngine` 클래스
+- [ ] train / validate window sliding (예: 60/20일, CLI 옵션)
+- [ ] per-fold metric (win_rate / avg_return / max_drawdown / IS-OOS gap) 계산
+- [ ] fold 결과를 `backtest_runs.notes` JSON 에 versioned schema 로 저장 (`{"walk_forward": {"version": 1, "folds": [...], "is_oos_gap": ...}}`) — **Alembic revision 0건**
+- [ ] `scripts/run_backtest.py` 보강 — `--walk-forward --train-window-days 60 --validate-window-days 20` CLI 옵션
+- [ ] 단위 테스트 ~15건 (`tests/integration/test_walk_forward_engine.py`)
+- [ ] v0.7 BacktestEngine 회귀 0건
+- [ ] `tag v0.12-walk-forward + push`
+
+### Phase C: Multi-strategy Comparison + Regime/Sector Breakdown
+
+- [ ] `app/backtest/multi_strategy_runner.py` 신규 — `MultiStrategyRunner.run(strategies, period, ...)`
+- [ ] `app/backtest/regime_breakdown.py` 신규 — regime / sector 별 성과 집계 helper
+- [ ] 비교 결과 + breakdown 도 `backtest_runs.notes` JSON 으로 직렬화 (`{"comparison": {...}, "regime_breakdown": {...}, "sector_breakdown": {...}}`)
+- [ ] `scripts/run_backtest.py` 보강 — `--multi --strategies TopGrade,HighScore,MultiSignal` CLI 옵션
+- [ ] 같은 기간/유니버스 보장 + sector 누락 종목 `null` group 안전 처리
+- [ ] 단위 테스트 ~12건 (`tests/integration/test_multi_strategy_comparison.py`)
+- [ ] v0.7 + Phase B 회귀 0건
+- [ ] `tag v0.12-multi-strategy + push`
+
+### Phase D: Backtest Read-only API/UI 확장 + Provider Score Evidence
+
+- [ ] `GET /api/backtest/runs/{id}/folds` 신규 read-only — walk-forward fold 목록 노출
+- [ ] `GET /api/backtest/runs/{id}/comparison` 신규 read-only — 다중 전략 비교 결과 노출
+- [ ] `BacktestFoldSchema` / `BacktestComparisonSchema` 신규 (모두 read-only)
+- [ ] POST/PUT/DELETE 신규 0건 — 모든 신규 라우터 GET only (mutation 405)
+- [ ] `RecommendationItemSchema.evidence` 에 `data_source: str?` 필드 추가 (`"PROVIDER"` / `"FAKE"`) — 기존 evidence whitelist 와 호환
+- [ ] `frontend/src/api/types.ts` schema 동기화
+- [ ] `frontend/src/pages/Backtest/index.tsx` 보강 — walk-forward fold 표 + 비교 표
+- [ ] `frontend/src/components/common/RecommendationsTable.tsx` 보강 — `data_source` chip (PROVIDER vs FAKE 시각 구분)
+- [ ] backend pytest +5 (`tests/integration/test_api_routes.py` 보강)
+- [ ] vitest +5 (`frontend/src/tests/Backtest.test.tsx` 보강)
+- [ ] e2e +1 (`dashboard.spec.ts` 백테스트 화면 신규 cell + secret 단언)
+- [ ] secret / token / api_key / URL query secret / `last_error_message` 응답 0건 paranoid scan
+- [ ] `tag v0.12-scoring-readonly + push`
+
+### Phase E: 마감 (문서)
+
+- [ ] `RELEASE_NOTES_v0.12.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.13 후보)
+- [ ] `README.md` v0.12 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
+- [ ] `PROJECT_STATUS.md` §0 v0.12 마감 선언으로 교체
+- [ ] `ROADMAP.md` v0.12 행 ✅ 마감
+- [ ] `TESTING.md` 기준선 갱신 (~1176 pytest / ~163 vitest / 22 e2e)
+- [ ] `ARCHITECTURE.md` v0.12 마감 시점 반영
+- [ ] `API_SPEC.md` `/folds` + `/comparison` + `evidence.data_source` 안내
+- [ ] `INTEGRATION_RUNBOOK.md` Provider Data Ingestion enable 절차 + walk-forward CLI 안내
+- [ ] `tag v0.12-final + push`
+
+---
+
+## v0.13+ — Backlog
+
+자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) §0 v0.13 후보 참조. 한 줄 요약:
+
+- **ScoringEngine 본 weight 보강** — v0.12 walk-forward 결과 기반으로 정당성 확보 후 (DART/RSS 비중 증가, 누적 데이터 6개월+)
+- **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위 시각화 layer (외부 인프라)
+- **ProviderHealthMonitor 영속화** — DB / Redis 백업으로 재시작 후 history 유지
 - **인증 고도화** — refresh token / 다중 사용자 / OAuth / RBAC (단일 사용자 운영 검증 후)
-- **CSP / rate limit 고도화** — 실 트래픽 수집 후 정책 수립
-- **LLM 보강** — News sentiment / 자동 전략 생성 (룰 기반 검증 후)
+- **CSP / rate limit 튜닝** — 실 트래픽 수집 후 정책 수립
+- **LLM sentiment / 자동 요약** — 룰 기반 검증 후 (외부 LLM API 비용 / 보안 / 라이선스)
+- **WebSocket / SSE 실시간 갱신** — Provider Health / 백테스트 진행 (현재 polling)
+- **`/api/health/jobs` 분리 + Provider toggle GUI** — 인증 + 보안 검토 동반
 - **인증 고도화** — 다중 사용자 / OAuth / SSO / refresh token (단일 사용자 운영 검증 후)
 - **LLM 보강** — News sentiment / 재무 분석 / 자동 전략 생성 (룰 기반 검증 후)
 - **WebSocket / SSE** — 실시간 잡 / 백테스트 진행 (인증 + 모니터링 후)

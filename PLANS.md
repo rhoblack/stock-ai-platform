@@ -2844,3 +2844,363 @@ v0.10 의 skeleton 이 모두 transport 주입형으로 설계됐기 때문에, 
 - Alembic `compare_metadata` diff 0건
 - 자동매매 / 실 KIS 주문 / Broker 코드 0건
 - DART_API_KEY / crtfc_key / RSS feed URL query secret 평문 노출 0건 (caplog + e2e 단언)
+
+---
+
+## PLAN-0012: v0.12 Provider Data Scoring & Backtest Validation (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.11-final` (HEAD `09eadfa` 시점, origin/main 동기화 완료, 5 누적 v0.11 태그 모두 push 완료)
+- v0.1 ~ v0.11 모두 인수 완료. 회귀 게이트: backend pytest **1119 passed (1 deselected)**, frontend vitest **158 passed**, Playwright e2e **21 passed**, build 그린
+- Alembic head: `0004_user_preferences` (v0.11 신규 revision 0건 — provider observability + Prometheus 모두 in-memory bounded)
+- v0.5 `RealNewsScoreProducer` / `DisclosureRiskProducer` (news 25% / RISK +cap10 penalty) + v0.6 `RealFundamentalScoreProducer` (fundamental 15%) / `RealEarningsScoreProducer` (holding earnings 20%) production-ready 상태
+- v0.7 `BacktestEngine` (recommendation_results replay → win_rate / avg_return / max_drawdown) + `CostModel` (constant-v1, 0.33% 차감) + `assign_regime` 모두 production-ready
+- v0.11 `HttpxDartTransport` / `HttpxRssTransport` (default OFF 유지) + Provider observability + Prometheus 모두 production-ready
+
+### 목표
+
+v0.11 의 실 transport 위에 **Provider 데이터 → DB → 기존 producer → score** 파이프라인을 연결하고, **walk-forward backtest** 로 변경 전후 객관적 비교를 가능하게 한다. **ScoringEngine 본 weight 변경 0건** — producer 의 *입력 데이터* 만 fake → real 로 교체하며, weight 산식 (`technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%` 추천 + `technical 35% / news 20% / earnings 20% / ai 15% / profit_management 10%` 보유) 은 그대로 유지. 자동매매 / 실주문 / Broker 코드 0건. Alembic revision 0건 (walk-forward 결과는 기존 `backtest_runs.notes` JSON 재활용).
+
+### 라이선스 / 약관 메모 (전제 조건)
+
+v0.11 에서 정리된 라이선스 검토를 그대로 승계:
+
+- **DART OpenAPI** (https://opendart.fss.or.kr) — 개인/연구/비상업적. `DART_ENABLED=true` + `DART_API_KEY` 운영자가 명시 enable 했을 때만 실 호출. 본 cycle 도 default OFF 유지
+- **RSS / Atom feed** — 운영자가 검토·승인한 `RSS_FEED_URLS` 만. 자동 discovery / follow-up crawling 0건. 본문 저장 0건 (parser 가 strip)
+- **신규 외부 API 0건** — LLM / 추가 news API / Grafana 등 모두 v0.13+ 후보
+
+### 후보 비교 (v0.12 진입 시점 기준)
+
+| # | 후보 | 가치 | 난이도 | 위험 | 외부 의존성 | 라이선스 위험 | v1.0 기여 | v0.12 채택 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | DART/RSS provider 데이터 → DB ingestion (existing producers 흡수) | 매우 높음 — v0.11 transport 가 처음으로 실제 가치 창출. ScoringEngine weight 변경 없이 데이터 품질만 개선 | 중 — collector / importer 어댑터 추가, 기존 producer 재사용 | 낮음~중 — feature flag (`PROVIDER_DATA_INGESTION_ENABLED=false`) 기본, A/B 비교 가능. fake provider 경로 fallback 유지 | respx (테스트 only, 이미 v0.11 도입) | 없음 (v0.11 라이선스 승계) | 매우 높음 | ✅ 채택 (Phase A) |
+| 2 | Walk-forward backtest engine | 높음 (v1.0) — score 변경의 객관적 검증 도구. recommendation_results 누적 후 의미 있음 | 중~높음 — train/validate window sliding + fold 일관성 + IS/OOS 차이 측정 | 낮음 — 기존 BacktestEngine 위에 `WalkForwardBacktestEngine` 추가, 기존 backtest_runs/results 회귀 0건 | 없음 | 없음 | 매우 높음 | ✅ 채택 (Phase B) |
+| 3 | 다중 전략 비교 + regime/sector breakdown | 중~높음 — Provider Score 효과를 다중 전략에 걸쳐 검증 | 중 — 같은 기간/유니버스에서 다중 전략 동시 실행 + JSON breakdown | 낮음 | 없음 | 없음 | 높음 | ✅ 채택 (Phase C) |
+| 4 | Backtest read-only API/UI 확장 + Provider Score evidence 노출 | 중~높음 — 운영자 / 분석가가 walk-forward 결과 + provider 출처 (PROVIDER vs FAKE) 시각 확인 | 중 — schema 확장 + React 컴포넌트 + vitest/e2e | 낮음 | 없음 | 없음 | 중~높음 | ✅ 채택 (Phase D) |
+| 5 | ScoringEngine 본 weight 변경 (DART/RSS 비중 보강) | 중 — 데이터 품질 개선 후 자연스러운 다음 단계 | 낮음 (산식 변경) — 그러나 회귀 검증 필요 | **매우 높음** — 추천 결과 변동 = 운영 리스크. walk-forward 검증 결과 + 누적 데이터 (3~6개월) 부족 | 없음 | 없음 | 높음 | ❌ v0.13+ 연기 — Phase B walk-forward 결과로 정당성 입증 후 |
+| 6 | Grafana dashboard JSON 동봉 | 중 (운영자 가시성) | 낮음~중 (JSON 작성) | 낮음 | Grafana 외부 인프라 | 없음 | 중 | ❌ v0.13+ 연기 (외부 인프라 검증 후) |
+| 7 | ProviderHealthMonitor 영속화 | 중 — 재시작 후 history 보존 | 중 — DB schema 추가 또는 Redis | 중 — Alembic revision 추가 | Redis (선택) | 없음 | 중 | ❌ v0.13+ 연기 |
+| 8 | `GET /api/health/jobs` 분리 + Provider toggle GUI | 낮음~중 | 중 — 인증 + 보안 검토 동반 | 중 — mutation API = 인증 / 보안 이슈 | 없음 | 없음 | 낮음 | ❌ v0.13+ 후보 |
+| 9 | 인증 고도화 (refresh token / 다중 사용자 / OAuth / RBAC) | 중 | 높음 | 중 | 없음 | 없음 | 높음 | ❌ v0.13+ 후보 — 단일 사용자 운영 검증 후 |
+| 10 | CSP / rate limit 튜닝 | 중 | 낮음~중 | 낮음 | 없음 | 없음 | 중 | ❌ v0.13+ 후보 — 실 트래픽 수집 후 |
+| 11 | LLM sentiment / 자동 요약 | 낮음~중 — 룰 기반 score 검증 후 의미 | 매우 높음 | 높음 — 외부 LLM API 비용 / 보안 / 라이선스 | LLM API | 약관 검토 필요 | 중 | ❌ v0.13+ 후보 |
+| 12 | 자동매매 / 실주문 | (위험) | 매우 높음 | 매우 높음 | KIS 실 주문 API | 라이선스 + 컴플라이언스 | — | ❌ Future Backlog |
+
+### 시나리오 옵션
+
+**Scenario X — Provider Data Scoring + Backtest Validation (권장 ✅)**
+
+- Phase A: Provider 데이터 → DB ingestion. v0.5/v0.6 producer 를 변경 없이 재사용 — *데이터 품질만* fake → real 로 변경. ScoringEngine weight 변경 0건
+- Phase B: Walk-forward backtest engine. train/validate window sliding 으로 IS/OOS 차이 측정
+- Phase C: 다중 전략 동시 비교 + regime / sector breakdown JSON
+- Phase D: Backtest read-only API/UI 확장 + recommendation/holding evidence 에 provider data 출처 (PROVIDER vs FAKE) 표기
+- Phase E: 마감 — `RELEASE_NOTES_v0.12.md` + 5 태그 push + `v0.12-final`
+
+**채택 근거:** v0.11 의 실 transport 가 처음으로 실 가치를 창출하려면 데이터가 producer 까지 흘러야 한다. 동시에 walk-forward 가 변경 효과를 객관적으로 검증해야 향후 weight 보강 (v0.13+) 의 정당성을 확보할 수 있다. 두 항목은 **함께** 진행해야 의미가 있다.
+
+**Scenario Y — Backtest walk-forward only (기각)**
+
+- Phase A~D: walk-forward + 다중 전략 + 비용 모델 고도화
+- **단점**: provider score 반영 없이는 walk-forward 가 검증할 *변경* 자체가 없음. 기존 추천 결과를 다른 방식으로 평가할 뿐 — 가치 제한적. **Scenario X 가 우월**
+
+**Scenario Z — Observability 운영화 (기각)**
+
+- Phase A~D: Prometheus 운영 가이드 + Grafana dashboard JSON + ProviderHealthMonitor 영속화 + `/api/health/jobs` 분리
+- **단점**: v0.11 의 in-memory observability 로 단일 사용자 운영 충분. Grafana 는 외부 인프라 — 사이클 외 진행 가능. ProviderHealthMonitor 영속화는 Alembic revision 동반 = 위험. **v0.13+ 후보**
+
+**Scenario W — 인증/보안 고도화 (기각)**
+
+- Phase A~D: refresh token + RBAC + CSP / rate limit 튜닝
+- **단점**: 단일 사용자 운영 검증이 아직 충분하지 않음. CSP 는 실 트래픽 수집 후 정책 수립 권장. **v0.13+ 연기**
+
+**채택 결론: Scenario X — Provider Data Scoring & Backtest Validation ✅**
+
+v0.11 의 transport 와 v0.5/v0.6 의 producer 를 처음으로 연결한다. ScoringEngine 본 weight 변경 0건 유지 — 변경은 *입력 데이터* 만. walk-forward 가 변경 효과를 객관 검증. weight 보강은 v0.13+ 로 연기.
+
+### 범위 (5 Phase)
+
+- Phase A — Provider 데이터 → DB ingestion (`PROVIDER_DATA_INGESTION_ENABLED=false` 기본, feature flag, fake provider fallback 유지)
+- Phase B — Walk-forward backtest engine (`WalkForwardBacktestEngine`, train/validate sliding, fold metadata in `backtest_runs.notes` JSON)
+- Phase C — 다중 전략 비교 + regime / sector breakdown (JSON, 같은 기간/유니버스)
+- Phase D — Backtest read-only API/UI 확장 (`/api/backtest/runs/{id}/folds`, `/comparison`) + Provider Score evidence 출처 표기
+- Phase E — 마감 (`RELEASE_NOTES_v0.12.md` + 5 태그 push + `v0.12-final`)
+
+### 제외 범위 (v0.12 에서 절대 하지 않을 것)
+
+- ❌ **자동매매 / 실 KIS 주문 / `BrokerInterface` 구현** — v0.1~v0.11 일관 정책
+- ❌ **ScoringEngine / HoldingCheckEngine 본 weight 변경** — 데이터 품질만 fake → real, 산식 자체는 그대로. Weight 보강은 v0.13+ (walk-forward 결과 기반)
+- ❌ **Provider data ingestion default ON** — `PROVIDER_DATA_INGESTION_ENABLED=False` 기본 + DART/RSS provider 자체도 default OFF (v0.11 정책 그대로)
+- ❌ **Alembic 새 revision** — walk-forward fold / 다중 전략 비교 결과는 기존 `backtest_runs.notes` JSON 재활용. 신규 컬럼 / 테이블 0건
+- ❌ **본문 저장** (body / paragraph / full_text / 본문 / 원문 / 전문) — v0.5/v0.10 정책 그대로 유지 (parser strip)
+- ❌ **자동 discovery / 외부 LLM 호출 / 추가 외부 API** — DART/RSS/KIS 외 신규 외부 의존성 0건
+- ❌ **Grafana dashboard JSON 동봉** — Prometheus exporter (v0.11) 까지만, 시각화 layer 는 v0.13+
+- ❌ **ProviderHealthMonitor 영속화** — in-memory bounded ring buffer 만 (Alembic revision 회피)
+- ❌ **`GET /api/health/jobs` 분리** — 기존 `/api/jobs` 가 동일 정보 제공
+- ❌ **Provider toggle / breaker reset / failure clear mutation API** — `.env` + 백엔드 재시작만
+- ❌ **다중 사용자 / OAuth / SSO / RBAC / refresh token** — 단일 사용자 운영 유지
+- ❌ **CSP / rate limit 고도화** — 실 트래픽 수집 후 v0.13+
+- ❌ **LLM 보강** (sentiment / 자동 요약 / 자동 전략) — 룰 기반 walk-forward 검증 후 v0.13+
+- ❌ **WebSocket / SSE 실시간 갱신** — polling 만 유지
+
+### 예상 테스트 증가
+
+| Phase | pytest 증가 | vitest 증가 | e2e 증가 |
+|---|---|---|---|
+| A (Provider data ingestion) | +25 | 0 | 0 |
+| B (Walk-forward engine) | +15 | 0 | 0 |
+| C (Multi-strategy comparison) | +12 | 0 | 0 |
+| D (Backtest API/UI 확장) | +5 | +5 | +1 |
+| E (마감) | 0 | 0 | 0 |
+| **합계** | **+57 (→ ~1176)** | **+5 (→ ~163)** | **+1 (→ 22)** |
+
+---
+
+### Phase A — Provider Data Ingestion (default OFF)
+
+**목표:** v0.11 의 `HttpxDartTransport` / `HttpxRssTransport` 결과를 v0.5/v0.6 의 collector / importer 가 흡수해서 기존 DB 테이블 (`news_items` / `financial_statements` / `earnings_events`) 에 metadata 만 적재. v0.5/v0.6 producer 는 변경 0건 — 자동으로 real 데이터를 흡수.
+
+**`PROVIDER_DATA_INGESTION_ENABLED=False` 기본** + DART/RSS provider 자체도 default OFF. 모든 테스트는 `respx` mock 기반.
+
+**수정할 파일:**
+
+- `app/data/collectors/news_collector.py` 보강 — RSS provider 결과 흡수 어댑터 추가 (`from_rss_provider(provider, ...)`)
+- `app/data/collectors/disclosure_collector.py` 보강 — DART disclosure provider 결과 흡수
+- `app/data/importers/fundamentals.py` / `earnings.py` 보강 — DART fundamental/earnings provider 결과 흡수 (CSV import 경로는 그대로 유지, provider 결과는 별도 어댑터)
+- `app/config/settings.py` — `provider_data_ingestion_enabled: bool = False` 추가
+- `app/data/dtos.py` 보강 — `NewsItemDTO` / `DisclosureItemDTO` / `FundamentalSnapshotDTO` 에 `data_source: str = "FAKE"` 필드 추가 (`"PROVIDER"` 가 흡수했음을 표기, evidence 화이트리스트에 포함)
+- `tests/integration/test_provider_data_ingestion.py` (신규) — respx mock + DART/RSS provider → collector → DB → producer score 변화 단언 (~25 케이스)
+
+**수정하지 않을 파일:**
+
+- `app/analysis/score_producers.py` — 본 weight / 산식 변경 0건
+- `app/decision/recommendation_engine.py` / `holding_check_engine.py` — 변경 0건
+- DB 모델 / Alembic — 0건
+- 라우터 / 프런트 — 0건
+
+**단계:**
+
+1. `Settings.provider_data_ingestion_enabled` flag 추가 + `PROVIDER_DATA_INGESTION_ENABLED=false` 기본
+2. `DTOs` 에 `data_source` 필드 추가 — collector / importer 가 채움 (`"PROVIDER"` / `"FAKE"` / `"CSV"` / `"MANUAL"`)
+3. `NewsCollector.from_rss_provider(provider, since, limit)` 어댑터 — RSS 결과 → `news_items` 테이블 (메타데이터만, body 0건). v0.5 의 forbidden body field strip 정책 그대로 유지
+4. `DisclosureCollector.from_dart_provider(provider, since, limit)` 어댑터 — DART disclosure 결과 → `news_items` (category=`EARNINGS_REPORT` / `OWNERSHIP_CHANGE` / `RISK_DISCLOSURE` 등)
+5. `FundamentalImporter.from_dart_provider(...)` / `EarningsImporter.from_dart_provider(...)` — DART fundamental/earnings → 기존 테이블
+6. Feature flag 가드 — `provider_data_ingestion_enabled=false` 시 어댑터 진입 즉시 skip
+7. respx mock 테스트: enable / disable A/B + DB 적재 정확도 + producer score 변화 + secret 미노출 + 본문 미저장 + DTO data_source 표기
+
+**테스트:**
+
+- `pytest tests/integration/test_provider_data_ingestion.py` (신규 ~25 케이스)
+- `pytest tests/data/test_dart_http_transport.py` / `test_rss_http_transport.py` / `test_dart_provider.py` / `test_rss_provider.py` 회귀 0건 (v0.10 + v0.11 누적 128 케이스)
+- `pytest tests/unit/test_score_producers.py` 회귀 0건 (producer 본 산식 변경 없음)
+
+**완료 기준:**
+
+- `PROVIDER_DATA_INGESTION_ENABLED=true` + DART/RSS enable + respx mock 환경에서 전체 파이프라인 동작 (provider → collector → DB → producer)
+- `PROVIDER_DATA_INGESTION_ENABLED=false` (기본) 시 ingestion 0건, 기존 fake provider 경로 그대로
+- ScoringEngine 본 weight 변경 0건 (회귀 테스트 단언)
+- 본문 저장 필드 0건 (parser strip 정책 + DTO 필드 부재 단언)
+- pytest +25, 회귀 0건
+
+**위험 요소:**
+
+- DTO 에 `data_source` 필드 추가가 v0.5 의 evidence whitelist 와 충돌 가능 — whitelist 에 명시 추가 + 비밀값 noisy 분석 후 안전 확인
+- collector 가 provider 결과를 부분 흡수했을 때 (transport 중간 실패) — `call_with_resilience` 의 failure isolation 그대로 활용
+- Phase A enable 시 DART/RSS 이전 데이터가 fake 인 경우 producer 가 일관성 없는 score 생산 — Phase B walk-forward 로 검증
+
+**태그:** `v0.12-provider-ingestion`
+
+---
+
+### Phase B — Walk-forward Backtest Engine
+
+**목표:** v0.7 `BacktestEngine` 위에 `WalkForwardBacktestEngine` 추가. train/validate window 을 sliding 시키며 IS (in-sample) vs OOS (out-of-sample) 성과 차이를 측정. **Alembic revision 0건** — fold metadata 는 기존 `backtest_runs.notes` JSON 재활용.
+
+**수정할 파일:**
+
+- `app/backtest/walk_forward_engine.py` (신규) — `WalkForwardBacktestEngine` 클래스
+- `app/backtest/strategies/` — 기존 전략 그대로 사용 (변경 0건)
+- `scripts/run_backtest.py` 보강 — `--walk-forward --train-window-days 60 --validate-window-days 20` CLI 옵션
+- `tests/integration/test_walk_forward_engine.py` (신규) — fold 일관성 + IS/OOS 차이 + JSON 직렬화 (~15 케이스)
+
+**수정하지 않을 파일:**
+
+- `app/backtest/engine.py` — 기존 `BacktestEngine` 변경 0건 (회귀 보호)
+- `app/db/models.py` — `backtest_runs` / `backtest_results` 테이블 변경 0건
+- 라우터 / 프런트 — Phase D 에서 확장
+
+**단계:**
+
+1. `WalkForwardBacktestEngine.run(strategy, period, fold_window, validate_window)` — period 를 train+validate fold 로 분할 후 각 fold 마다 BacktestEngine 호출
+2. fold 결과 (per-fold win_rate / avg_return / max_drawdown / IS-OOS gap) 를 `backtest_runs.notes` JSON 에 저장: `{"walk_forward": {"folds": [...], "is_oos_gap": ...}}`
+3. CLI 옵션 추가
+4. 단위 테스트: 60/20 fold sliding + 5 fold 생성 정확도 + IS/OOS gap 계산 + 빈 fold 안전 처리
+
+**테스트:**
+
+- `pytest tests/integration/test_walk_forward_engine.py` (신규 ~15 케이스)
+- `pytest tests/integration/test_backtest_engine.py` 회귀 0건 (기존 v0.7 engine 변경 0건)
+
+**완료 기준:**
+
+- 60일 train + 20일 validate fold sliding 정확도
+- IS/OOS gap 계산 정확도
+- `backtest_runs.notes` JSON 에 fold metadata 직렬화 + 역직렬화 일관성
+- pytest +15, 회귀 0건
+
+**위험 요소:**
+
+- recommendation_results 누적 부족 (v0.7 마감 후 ~3개월) — fold 수 / window 사이즈 운영자가 조정 가능하게 CLI 옵션화
+- JSON 직렬화 schema 가 v0.13+ 에서 schema 진화 시 backward compat 필요 — 처음부터 versioned schema (`{"walk_forward": {"version": 1, ...}}`) 도입
+
+**태그:** `v0.12-walk-forward`
+
+---
+
+### Phase C — Multi-strategy Comparison + Regime/Sector Breakdown
+
+**목표:** 다중 전략을 같은 기간/유니버스에서 동시 실행 후 비교. regime 별 / sector 별 breakdown 도 JSON 으로 노출. **Alembic revision 0건** — 비교 결과 도 `backtest_runs.notes` JSON 에 fold + comparison + breakdown 함께.
+
+**수정할 파일:**
+
+- `app/backtest/multi_strategy_runner.py` (신규) — `MultiStrategyRunner.run(strategies, period, ...)` 클래스
+- `app/backtest/regime_breakdown.py` (신규) — regime / sector 별 성과 집계 helper
+- `scripts/run_backtest.py` 보강 — `--multi --strategies TopGrade,HighScore,MultiSignal` CLI 옵션
+- `tests/integration/test_multi_strategy_comparison.py` (신규 ~12 케이스)
+
+**수정하지 않을 파일:**
+
+- 기존 `BacktestEngine` / `WalkForwardBacktestEngine` (Phase B) — 변경 0건
+- 기존 전략 3종 (`TopGradeStrategy` / `HighScoreStrategy` / `MultiSignalStrategy`) — 변경 0건
+
+**단계:**
+
+1. `MultiStrategyRunner` — 같은 period/universe 에 여러 전략 순차 실행
+2. 결과를 `{"comparison": {"strategies": [...], "winner": ..., "metrics": {...}}}` JSON 으로 직렬화
+3. `regime_breakdown.py` — `MarketRegime.regime` 기준 / `Stock.sector` 기준 group-by 성과
+4. 비교 표 (전략 × metrics) 출력
+5. 테스트: 3 strategy 동시 실행 + breakdown 정확도 + JSON 직렬화 일관성
+
+**테스트:**
+
+- `pytest tests/integration/test_multi_strategy_comparison.py` (신규 ~12 케이스)
+
+**완료 기준:**
+
+- 3 strategy 동시 실행 + 결과 JSON 직렬화 정확도
+- regime / sector breakdown 정확도
+- pytest +12, 회귀 0건
+
+**위험 요소:**
+
+- 전략 간 동일 시기 / 동일 유니버스 보장 — runner 가 명시적으로 강제
+- sector 정보 누락 종목 — `null` group 으로 안전 처리
+
+**태그:** `v0.12-multi-strategy`
+
+---
+
+### Phase D — Backtest Read-only API/UI 확장 + Provider Score Evidence 노출
+
+**목표:** Phase B/C 의 walk-forward + 다중 전략 비교 결과를 read-only API + 프런트 백테스트 화면에 노출. recommendation/holding evidence 에 provider data 출처 (PROVIDER vs FAKE) 표기.
+
+**수정할 파일:**
+
+- `app/api/routes.py` (또는 `backtest_routes.py`) 보강 — `GET /api/backtest/runs/{id}/folds` (walk-forward fold 목록) + `GET /api/backtest/runs/{id}/comparison` (다중 전략 비교 결과)
+- `app/api/schemas.py` — `BacktestFoldSchema` / `BacktestComparisonSchema` 신규 (모두 read-only, mutation 0건)
+- `app/api/schemas.py` — `RecommendationItemSchema.evidence` 에 `data_source` 필드 추가 (`"PROVIDER"` / `"FAKE"` / `null`)
+- `frontend/src/api/types.ts` — schema 동기화
+- `frontend/src/pages/Backtest/index.tsx` 보강 — walk-forward fold 표 + 비교 표
+- `frontend/src/components/common/RecommendationsTable.tsx` 보강 — `data_source` chip
+- `tests/integration/test_api_routes.py` 보강 (~+5 케이스)
+- `frontend/src/tests/Backtest.test.tsx` 보강 (~+5 vitest)
+- `frontend/e2e/dashboard.spec.ts` 보강 (~+1 e2e)
+
+**수정하지 않을 파일:**
+
+- `app/backtest/engine.py` / `walk_forward_engine.py` / `multi_strategy_runner.py` (Phase B/C) — 변경 0건
+- DB / Alembic — 0건
+- 인증 정책 — read-only 그대로
+
+**단계:**
+
+1. 신규 schema 정의 (FoldSchema / ComparisonSchema, secret 화이트리스트)
+2. 신규 API 라우터 (read-only)
+3. 프런트 백테스트 화면에 fold 표 + 비교 표 추가
+4. RecommendationsTable evidence 에 `data_source` chip 추가 (PROVIDER vs FAKE 시각 구분)
+5. e2e: 백테스트 화면의 새 cell visible + secret 단언 강화
+
+**테스트:**
+
+- `pytest tests/integration/test_api_routes.py` (신규 ~5 케이스)
+- `npx vitest run Backtest` (신규 ~5 케이스)
+- `npx playwright test` (신규 1 케이스)
+
+**완료 기준:**
+
+- `GET /api/backtest/runs/{id}/folds` 응답에 fold metadata
+- `GET /api/backtest/runs/{id}/comparison` 응답에 비교 metrics
+- 프런트 백테스트 화면에 walk-forward / 비교 표 노출
+- recommendation evidence 에 `data_source` chip 시각 구분
+- POST/PUT/DELETE 신규 0건 (모든 신규 라우터 GET only)
+- secret / token / api_key / URL query secret 응답 0건 (paranoid 단언 그대로)
+- pytest +5 / vitest +5 / e2e +1, 회귀 0건
+
+**위험 요소:**
+
+- `RecommendationItemSchema.evidence` 에 신규 필드 추가가 v0.5/v0.6 evidence whitelist 와 충돌 — `data_source` 만 추가하고 기존 필드 그대로 유지
+- e2e fixture 의 backtest 응답 schema 갱신 필요 — Phase D 시점에 fixture 함께 수정
+
+**태그:** `v0.12-scoring-readonly`
+
+---
+
+### Phase E — 마감
+
+**목표:** v0.12 사이클 문서 마감 + 4 게이트 최종 확인 + 5 태그 push.
+
+**수정할 파일:**
+
+- `RELEASE_NOTES_v0.12.md` (신규)
+- `README.md` — v0.12 마감 배너 + 누적 기능 + 회귀 기준선 갱신
+- `PROJECT_STATUS.md` — §0 v0.12 마감 선언으로 교체 (이전 §0/§0-1 시간순 강등)
+- `ROADMAP.md` — v0.12 행 ✅ 마감
+- `TASKS.md` — Phase E 체크박스 완료
+- `ARCHITECTURE.md` — v0.12 마감 시점 반영 + Provider Data Ingestion + walk-forward layer 추가
+- `TESTING.md` — 4 게이트 baseline 갱신 (~1176 / ~163 / 22 / build)
+- `API_SPEC.md` — `/api/backtest/runs/{id}/folds` + `/comparison` 추가 + `evidence.data_source` 안내
+- `INTEGRATION_RUNBOOK.md` — Provider Data Ingestion enable 절차 + walk-forward CLI 안내
+
+**완료 기준 (cycle-wide):**
+
+- 4 게이트 그린: pytest ~1176 / vitest ~163 / e2e 22 / build
+- 5 태그 push: `v0.12-provider-ingestion` → `v0.12-walk-forward` → `v0.12-multi-strategy` → `v0.12-scoring-readonly` → `v0.12-final`
+- `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` / `PROMETHEUS_ENABLED=false` / `PROVIDER_DATA_INGESTION_ENABLED=false` 기본값 유지 — CI 외부 호출 0건
+- Alembic `compare_metadata` diff 0건 (새 revision 없음)
+- 자동매매 / 실 KIS 주문 0건 유지
+- ScoringEngine 본 weight 변경 0건
+
+**태그:** `v0.12-final`
+
+---
+
+### v0.12 핵심 정책 (cycle-wide)
+
+- 자동매매 / 실 KIS 주문 / `BrokerInterface` 구현 0건 — v0.1~v0.11 와 동일
+- DART/RSS provider **default OFF 유지** + Prometheus exporter **default OFF 유지** (v0.11 정책 그대로)
+- **Provider data ingestion default OFF 유지** — `PROVIDER_DATA_INGESTION_ENABLED=False` 기본
+- **ScoringEngine / HoldingCheckEngine 본 weight 변경 0건** — producer *데이터 입력* 만 fake → real, weight 산식 자체는 v0.5/v0.6 그대로 유지. Weight 보강은 walk-forward 검증 결과 기반 v0.13+ 후보
+- Walk-forward fold / 다중 전략 비교 결과 = `backtest_runs.notes` JSON 재활용 — Alembic 새 revision 0건
+- 본문 / 비밀값 / URL query secret / `last_error_message` / 메시지 텍스트 응답·로그·UI 평문 노출 0건 (v0.11 5 layer 단언 그대로 + Phase A `data_source` chip secret 단언 추가)
+- 신규 mutation 라우터 0건 — Phase D 의 `/folds` / `/comparison` 모두 GET only
+- 신규 pip 의존성 0건 — v0.11 의 `respx` + `prometheus-client` 그대로 사용
+
+### 완료 기준 (cycle-wide)
+
+- 4 게이트 그린: pytest ~1176 (1119 → +57) / vitest ~163 (158 → +5) / e2e 22 (21 → +1) / build
+- 5 태그 push: `v0.12-provider-ingestion` → `v0.12-walk-forward` → `v0.12-multi-strategy` → `v0.12-scoring-readonly` → `v0.12-final`
+- DART/RSS/Prometheus/Provider Data Ingestion 모두 기본 OFF 유지 — CI 외부 호출 0건
+- Alembic `compare_metadata` diff 0건
+- 자동매매 / 실 KIS 주문 / Broker 코드 0건
+- DART_API_KEY / crtfc_key / RSS feed URL query secret 평문 노출 0건
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 (회귀 단언)

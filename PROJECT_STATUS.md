@@ -7,7 +7,79 @@
 
 ---
 
-## 0. v0.11 마감 선언 — Real Provider Transport & Observability
+## 0. v0.12 시작 선언 — Provider Data Scoring & Backtest Validation
+
+**v0.12 cycle 시작.** `v0.11-final` 위에 **Provider Data Scoring & Backtest
+Validation** 5 phase 진입.
+
+- 시작 일자: **2026-05-07 (Asia/Seoul)**
+- 기준 태그: `v0.11-final` (HEAD `09eadfa`)
+- 기준 게이트: backend pytest **1119 passed (1 deselected)** / frontend vitest
+  **158 passed** / Playwright e2e **21 passed** / build 그린
+- Alembic head: `0004_user_preferences` (**v0.12 신규 revision 없음 예상** —
+  walk-forward fold 결과는 기존 `backtest_runs.notes` JSON 재활용)
+- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0012`
+
+### v0.12 채택 결론 (시나리오 비교 요약)
+
+`PLANS.md` `PLAN-0012` 4 시나리오 비교 후 채택: **Scenario X — Provider Data
+Scoring + Backtest Validation**.
+
+| 시나리오 | 내용 | 결정 |
+|---|---|---|
+| **X** | Provider 데이터 → DB ingestion (existing producer 자동 흡수, ScoringEngine weight 변경 0건) + walk-forward backtest 검증 + 다중 전략 비교 + read-only API/UI 확장 | ✅ **핵심 채택** |
+| Y | 백테스트 walk-forward 단독 | ❌ 기각 — provider score 반영 없으면 검증할 *변경* 자체가 없어 가치 제한적 |
+| Z | Observability 운영화 (Grafana / 영속화) | ❌ v0.13+ 연기 — v0.11 의 in-memory observability 로 단일 사용자 충분 |
+| W | 인증/보안 고도화 | ❌ v0.13+ 연기 — 단일 사용자 운영 검증 부족, CSP 는 실 트래픽 수집 후 |
+
+### v0.12 Phase 목표
+
+| Phase | 내용 | 태그 | 예상 게이트 |
+|---|---|---|---|
+| A | Provider Data Ingestion — `PROVIDER_DATA_INGESTION_ENABLED=False` 기본 + DTO 에 `data_source` 필드 추가 + collector / importer 어댑터 (RSS/DART transport → DB 메타데이터, 본문 0건) + 기존 producer 자동 흡수 + 회귀 단언 25건 | `v0.12-provider-ingestion` ⏳ | pytest +25 |
+| B | Walk-forward Backtest Engine — `WalkForwardBacktestEngine` + train/validate window sliding + IS/OOS gap 측정 + fold metadata `backtest_runs.notes` JSON (Alembic 0건) + CLI `--walk-forward` 15건 | `v0.12-walk-forward` ⏳ | pytest +15 |
+| C | Multi-strategy Comparison + Regime/Sector Breakdown — `MultiStrategyRunner` + 같은 기간/유니버스 + JSON breakdown + CLI `--multi --strategies` 12건 | `v0.12-multi-strategy` ⏳ | pytest +12 |
+| D | Backtest Read-only API/UI 확장 + Provider Score Evidence — `GET /api/backtest/runs/{id}/folds` + `/comparison` + `evidence.data_source` chip (PROVIDER vs FAKE) + 백테스트 화면 fold/비교 표 +5/+5/+1 | `v0.12-scoring-readonly` ⏳ | pytest +5 / vitest +5 / e2e +1 |
+| E | 마감 — `RELEASE_NOTES_v0.12.md` + 4 게이트 최종 확인 | `v0.12-final` ⏳ | 4 게이트 그린 |
+
+### v0.12 핵심 정책
+
+- **ScoringEngine / HoldingCheckEngine 본 weight 변경 0건** — 데이터 입력만
+  fake → real, 산식 자체는 v0.5/v0.6 그대로 (`technical 35% / news 25% /
+  supply 15% / fundamental 15% / ai 10%` 추천 + 보유 동일). Weight 보강은
+  walk-forward 검증 결과 기반 v0.13+ 후보
+- **DART/RSS provider default OFF 유지** + **Prometheus default OFF 유지**
+  (v0.11 정책 그대로) + **Provider Data Ingestion default OFF**
+  (`PROVIDER_DATA_INGESTION_ENABLED=False` 기본)
+- Walk-forward fold / 다중 전략 비교 결과는 기존 `backtest_runs.notes` JSON
+  재활용 — **Alembic 새 revision 0건** 예상
+- 신규 mutation 라우터 0건 — Phase D 의 `/folds` / `/comparison` 모두 GET only
+  (POST/PUT/DELETE 405)
+- 본문 / 비밀값 / URL query secret / `last_error_message` / 메시지 텍스트
+  응답·로그·UI 평문 노출 0건 (v0.11 5 layer 단언 그대로 + Phase A `data_source`
+  chip secret 단언 추가)
+- 자동매매 / 실 KIS 주문 / `BrokerInterface` 구현 0건 (v0.1~v0.12 일관)
+- 신규 pip 의존성 0건 — v0.11 의 `respx` + `prometheus-client` 그대로 사용
+
+### v0.13 후보 (우선순위 순)
+
+1. **ScoringEngine 본 weight 보강** — v0.12 walk-forward 결과 기반으로 DART/RSS
+   비중 증가 (누적 데이터 6개월+ 검증 필요)
+2. **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위 시각화 layer
+   (외부 인프라)
+3. **ProviderHealthMonitor 영속화** — DB / Redis 백업으로 재시작 후 history 유지
+4. **인증 고도화** — refresh token / 다중 사용자 / OAuth / SSO / RBAC
+5. **CSP / rate limit 튜닝** — 실 트래픽 수집 후 정책 수립
+6. **LLM sentiment / 자동 요약** — 룰 기반 검증 후 (외부 LLM API 비용 / 보안 /
+   라이선스)
+7. **WebSocket / SSE 실시간 갱신** — Provider Health / 백테스트 진행 / 잡 (현재 polling)
+8. **`/api/health/jobs` 분리 + Provider toggle GUI / mutation API** — 인증 + 보안
+   검토 동반
+9. **자동매매** (Future Backlog — 별도 보안·컴플라이언스·자본 한도 사이클 선행 필수)
+
+---
+
+## 0-1. v0.11 마감 선언 — Real Provider Transport & Observability
 
 **v0.11 cycle 마감.** `v0.10-final` 위에 **Real Provider Transport &
 Observability** 5 phase 완료. 최종 마감 태그 `v0.11-final`.
@@ -77,7 +149,7 @@ Observability** 5 phase 완료. 최종 마감 태그 `v0.11-final`.
 
 ---
 
-## 0-1. v0.11 시작 선언 → 마감으로 갱신 (기록 보존)
+## 0-2. v0.11 시작 선언 → 마감으로 갱신 (강등됨)
 
 ### v0.11 채택 결론 (시나리오 비교 요약 — 진입 시점 기록)
 
@@ -191,7 +263,7 @@ Transport + Observability**.
 
 ---
 
-## 0-2. v0.10 마감 선언 — Real Provider Readiness & Resilience
+## 0-3. v0.10 마감 선언 — Real Provider Readiness & Resilience (강등됨)
 
 **v0.10 cycle 마감.** `v0.9-final` 위에 **Real Provider Readiness & Resilience**
 5 phase 완료. 최종 마감 태그 `v0.10-final`.
@@ -258,7 +330,7 @@ Transport + Observability**.
 
 ---
 
-## 0-3. v0.10 시작 선언 → 마감으로 갱신 (강등됨)
+## 0-4. v0.10 시작 선언 → 마감으로 갱신 (강등됨)
 
 ### v0.10 채택 결론 (시나리오 비교 요약)
 
@@ -302,7 +374,7 @@ e2e 19 / build 그린. Alembic head: `0004_user_preferences`.
 
 ---
 
-## 0-4. v0.9 마감 선언 — Operational Security & Watchlist Polish (강등됨)
+## 0-5. v0.9 마감 선언 — Operational Security & Watchlist Polish (강등됨)
 
 **v0.9 cycle 마감.** 기준선 `v0.8-final` 위에 **Operational Security &
 Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
@@ -340,7 +412,7 @@ Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
 
 ---
 
-## 0-5. v0.9 시작 선언 → 마감으로 갱신 (강등됨)
+## 0-6. v0.9 시작 선언 → 마감으로 갱신 (강등됨)
 
 ### v0.9 채택 결론 (후보 비교 요약)
 
