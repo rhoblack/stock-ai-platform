@@ -1,17 +1,18 @@
 # TESTING.md
 
-> 본 문서는 **v0.10 Phase D 시점** 기준으로 갱신된다 (`v0.10-health-api`
-> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.10 신규 테스트 카테고리를
+> 본 문서는 **v0.11 Phase A 시점** 기준으로 갱신된다 (`v0.11-dart-transport`
+> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.11 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.10 Phase D 시점)
+## 1. 현재 회귀 게이트 (v0.11 Phase A 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
-어떤 테스트에서도 실제로 호출되지 않는다.
+어떤 테스트에서도 실제로 호출되지 않는다 (`respx` 가 httpx 요청을 transport
+layer 에서 인터셉트, monkeypatch `httpx.Client` 가드 병행).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1045 passed, 1 deselected** (v0.10 Phase D: 1028 → 1045, +17 신규 — GET /api/health/providers + secret discipline + 405 가드) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1072 passed, 1 deselected** (v0.11 Phase A: 1045 → 1072, +27 신규 — HttpxDartTransport + respx mock + 비밀값 마스킹 + factory 자동 주입) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **153 passed** (Phase D: 146 → 153, +7 신규 — ProviderHealthPanel) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.41s) |
 | Playwright e2e | `cd frontend && npm run e2e` | **20 passed** (Phase D: 19 → 20, +1 신규 — Settings Provider Health 패널) |
@@ -1226,6 +1227,74 @@ query secret 마스킹 가드. **외부 네트워크 호출 0건** — feedparse
 - 외부 네트워크 호출 0건 (`httpx.Client` 미생성 단언)
 - secret / token / api_key / URL query secret 응답·UI·로그 노출 0건
 - mutation API 0건 (POST/PUT/DELETE `/api/health/providers` 모두 405)
+
+## 6.27 v0.11 Phase A — DART HTTP Transport 테스트
+
+`tests/data/test_dart_http_transport.py` 신규 **27 케이스**. v0.10 Phase B 의
+transport 주입형 skeleton 위에 실 httpx 전송 구현 (`HttpxDartTransport`) +
+factory 자동 주입 + secret 마스킹 + 자원 정리. **외부 네트워크 호출 0건** —
+`respx` 가 httpx 요청을 transport layer 에서 인터셉트.
+
+### 6.27.1 HTTP / DART status → ProviderCallResult 매핑 (10 케이스)
+
+- HTTP 200 + DART status `"000"` → `ok(payload)` (정상)
+- HTTP 200 + DART status `"010" / "011" / "012" / "013" / "020" / "100" / "101"`
+  (parametrize 7건) → `CLIENT_ERROR` (재시도 안 함)
+- HTTP 200 + DART status `"800" / "900"` (parametrize 2건) → `SERVER_ERROR`
+- HTTP 4xx → `CLIENT_ERROR` (status code 메시지에 포함, secret 0건)
+- HTTP 5xx → `SERVER_ERROR`
+- HTTP 200 + 비-JSON body → `UNKNOWN`
+- HTTP 200 + JSON array → `UNKNOWN` (DART 는 항상 object)
+- HTTP 304 등 예상 외 status → `UNKNOWN`
+- `httpx.ReadTimeout` → `TIMEOUT`
+- `httpx.ConnectError` → `UNKNOWN` (예외 클래스명만 message 에 포함)
+
+### 6.27.2 Factory 자동 주입 (3 케이스)
+
+- `create_dart_providers(transport=None)` + `DART_ENABLED=true` →
+  `HttpxDartTransport` 자동 주입, fundamental DTO 정상 생성, monitor success_count 1
+- `DART_ENABLED=false` 시 `_check_enabled` 가 먼저 raise — `httpx.Client` 인스턴스화
+  AssertionError 가드 (v0.10 zero-network guard 보존)
+- 호출자가 직접 transport 주입 시 factory 가 `httpx.Client` 미생성 (v0.10
+  `test_no_httpx_client_constructed` 가드 그대로 유효)
+
+### 6.27.3 Resilience 통합 (3 케이스)
+
+- TIMEOUT 응답 → `call_with_resilience` 통과 후 monitor `last_error_kind="TIMEOUT"`
+  + `failure_count=1`, fetch loop 빈 list 반환 (예외 미전파)
+- 5xx 반복 → circuit breaker (failure_threshold=2) 가 2회 후 OPEN; 나머지 symbol 은
+  transport 호출 0건 (respx call_count 단언)
+- 1 symbol 실패 + 1 symbol 성공 → 격리, 두 번째 DTO 만 결과에 포함
+
+### 6.27.4 비밀값 마스킹 (3 케이스)
+
+- 200 응답 (성공 path) caplog → `DART_API_KEY` 평문 0건; httpx INFO 로그의
+  `crtfc_key=...` 가 `_SensitiveQueryStringFilter` 에 의해 `crtfc_key=***` 로 마스킹
+- 500 응답 (실패 path) caplog → `DART_API_KEY` 평문 0건 + `monitor.last_error_message`
+  에도 평문 0건 (transport 가 status code + DART 메시지만 노출)
+- `httpx.ConnectError` 의 `__str__` 가 URL 전체 (key 포함) 를 carry 해도
+  `result.error_message` 는 예외 클래스명만 포함 (`type(exc).__name__`) →
+  caplog 평문 0건
+
+### 6.27.5 Zero-network 가드 (1 케이스 + v0.10 가드 보존)
+
+- `respx.mock(assert_all_called=False)` → `HttpxDartTransport` 인스턴스화만으로
+  outbound HTTP 0건 단언
+- v0.10 `test_no_httpx_client_constructed` (49 케이스 회귀) — 호출자 transport
+  주입 path 에서는 `httpx.Client` 인스턴스화 0건 유지
+
+### 6.27.6 회귀 기준
+
+- backend pytest **1045 → 1072 passed (+27)** — 회귀 0건, 1 deselected 유지
+- v0.10 DART skeleton 49 케이스 회귀 0건
+- 외부 네트워크 호출 0건 (`respx` transport-layer mock + `httpx.Client`
+  monkeypatch 가드 병행)
+- DART_API_KEY / crtfc_key 평문 응답·로그·예외 메시지 노출 0건 (caplog +
+  `result.error_message` 단언)
+- 신규 의존성 1종: `respx>=0.21,<0.22` (테스트 only, BSD-3 license)
+- DART provider default OFF 정책 유지 — `DART_ENABLED=false` 기본
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
+- Alembic 새 revision 0건
 
 ## 7. 금지 사항
 

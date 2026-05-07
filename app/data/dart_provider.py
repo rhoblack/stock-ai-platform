@@ -59,6 +59,7 @@ All exceptions raised by the transport callable are caught by
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -758,8 +759,236 @@ class DartDisclosureProvider(_DartProviderBase, DisclosureProviderInterface):
 
 
 # ---------------------------------------------------------------------------
+# v0.11 Phase A -- real httpx-backed transport implementation.
+#
+# The skeleton (v0.10 Phase B) accepted any callable conforming to the
+# ``DartTransport`` Protocol so tests could inject closures over fixture
+# JSON.  Phase A wires a production transport that issues real HTTPS
+# requests to opendart.fss.or.kr -- but ONLY when the operator has set
+# both ``DART_ENABLED=true`` and ``DART_API_KEY``.  When DART is disabled
+# the factory keeps raising :class:`DartNotConfiguredError`, the
+# httpx.Client is never instantiated, and the v0.10 zero-network guard
+# (``test_no_httpx_client_constructed``) continues to hold.
+#
+# RESPONSE → ProviderCallResult MAPPING
+# -------------------------------------
+# * HTTP 200 + valid JSON + ``status == "000"`` → ``ok(parsed_json)``.
+# * HTTP 200 + valid JSON + DART status code in CLIENT/SERVER table →
+#   :func:`classify_dart_status` (ProviderErrorKind).
+# * HTTP 200 + non-JSON / unparseable body → UNKNOWN.
+# * HTTP 4xx → CLIENT_ERROR (not retried by call_with_resilience).
+# * HTTP 5xx → SERVER_ERROR (retried).
+# * httpx.TimeoutException → TIMEOUT.
+# * any other exception → propagated, will be caught + converted by
+#   ``call_with_resilience`` to ``fail(UNKNOWN)``.
+#
+# SECRET DISCIPLINE
+# -----------------
+# The DART API key is appended to query params as ``crtfc_key`` by
+# ``_DartProviderBase._call`` BEFORE the transport sees it.  This module
+# never logs the resolved URL or params -- only path + status.  The
+# httpx ``Request`` object is kept inside the ``with`` block and never
+# re-exposed.  Callers must never embed the key in log messages.
+# ---------------------------------------------------------------------------
+
+
+# httpx's own logger emits an INFO line per request that includes the full
+# URL: ``HTTP Request: GET https://opendart.../api/...?crtfc_key=ABC...``.
+# That URL carries the API key as a query parameter, so we install a small
+# filter on the httpx logger that masks any sensitive query value before
+# the message is emitted.  Idempotent: re-installing on the same logger
+# detects the existing filter via the marker attribute.
+_SENSITIVE_QS_RE = re.compile(
+    r"(?P<key>crtfc_key|api_key|apikey|access_token|token|secret|password)"
+    r"=(?P<val>[^&\s\"']+)",
+    re.IGNORECASE,
+)
+_QS_MASK = "***"
+
+
+class _SensitiveQueryStringFilter(logging.Filter):
+    """Mask sensitive query-string values in any log message.
+
+    We rewrite the formatted message so that ``?crtfc_key=ABC&foo=1``
+    becomes ``?crtfc_key=***&foo=1`` -- the rest of the URL (host, path,
+    non-secret query params) is preserved so operators can still see
+    which endpoint failed.
+    """
+
+    _MARKER = "_dart_sensitive_qs_filter_installed"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:  # noqa: BLE001 -- defensive; never block log
+            return True
+        if "=" not in msg:
+            return True
+        masked = _SENSITIVE_QS_RE.sub(rf"\g<key>={_QS_MASK}", msg)
+        if masked != msg:
+            record.msg = masked
+            record.args = None
+        return True
+
+
+def _install_sensitive_qs_filter(logger_name: str) -> None:
+    """Idempotently attach the sensitive-query-string filter to a logger."""
+    target = logging.getLogger(logger_name)
+    if getattr(target, _SensitiveQueryStringFilter._MARKER, False):
+        return
+    target.addFilter(_SensitiveQueryStringFilter())
+    setattr(target, _SensitiveQueryStringFilter._MARKER, True)
+
+
+class HttpxDartTransport:
+    """Real httpx-backed transport for DART OpenAPI calls.
+
+    Owns a single ``httpx.Client`` for the provider lifetime.  Callers
+    should construct one transport per provider trio (the factory does
+    this automatically).  Pass ``client=`` to inject a pre-built client
+    in tests if needed; otherwise the constructor builds one with the
+    settings-derived ``base_url`` / ``timeout`` / ``User-Agent``.
+
+    Lazy import: ``httpx`` is imported inside ``__init__`` so that
+    importing :mod:`app.data.dart_provider` from a process that has
+    monkeypatched ``httpx.Client`` (the v0.10 no-network guard) only
+    blows up when the operator actually attempts to construct the
+    transport -- which requires ``DART_ENABLED=true``.  Tests that
+    inject their own transport never trigger this path.
+    """
+
+    def __init__(
+        self,
+        *,
+        settings: Settings | None = None,
+        client: Any | None = None,
+        user_agent: str = "stock-ai-platform/0.11 DART transport",
+    ) -> None:
+        self._settings = settings or get_settings()
+        # Lazy import keeps module-level imports free of httpx side
+        # effects (matters for the v0.10 monkeypatch guard).
+        import httpx  # noqa: PLC0415
+
+        # Install secret-masking filter on httpx's request logger BEFORE
+        # building the client so the very first request line is masked.
+        # Idempotent: only takes effect once per process.
+        _install_sensitive_qs_filter("httpx")
+
+        if client is None:
+            client = httpx.Client(
+                base_url=self._settings.dart_base_url,
+                timeout=self._settings.dart_timeout_s,
+                headers={"User-Agent": user_agent},
+                follow_redirects=False,
+            )
+        self._client = client
+        # Cache for module-level access to httpx exception types so that
+        # tests can monkeypatch them without re-importing.
+        self._httpx = httpx
+
+    def __call__(
+        self,
+        path: str,
+        params: Mapping[str, Any],
+    ) -> ProviderCallResult:
+        """Issue a single GET request and map the response.
+
+        ``params`` already contains ``crtfc_key`` (injected by
+        ``_DartProviderBase._call``); this method MUST NOT log the
+        resolved URL or the params dict.
+        """
+        try:
+            response = self._client.get(path, params=dict(params))
+        except self._httpx.TimeoutException as exc:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.TIMEOUT,
+                f"DART request timed out after {self._settings.dart_timeout_s}s",
+            )
+        except self._httpx.HTTPError as exc:
+            # Connection refused / DNS failure / TLS error / etc. --
+            # treat as UNKNOWN; circuit breaker handles repeated
+            # failures.  We deliberately do NOT include str(exc) in the
+            # message body of ProviderCallResult -- some httpx errors
+            # carry the request URL (with query string) in their repr.
+            return ProviderCallResult.fail(
+                ProviderErrorKind.UNKNOWN,
+                f"DART transport error: {type(exc).__name__}",
+            )
+
+        status_code = response.status_code
+
+        if status_code >= 500:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.SERVER_ERROR,
+                f"DART HTTP {status_code}",
+            )
+        if status_code >= 400:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.CLIENT_ERROR,
+                f"DART HTTP {status_code}",
+            )
+        if status_code != 200:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.UNKNOWN,
+                f"DART HTTP {status_code}",
+            )
+
+        # HTTP 200 -- decode the JSON envelope.
+        try:
+            payload = response.json()
+        except ValueError:
+            return ProviderCallResult.fail(
+                ProviderErrorKind.UNKNOWN,
+                "DART HTTP 200 but body is not valid JSON",
+            )
+
+        if not isinstance(payload, Mapping):
+            return ProviderCallResult.fail(
+                ProviderErrorKind.UNKNOWN,
+                "DART HTTP 200 but body is not a JSON object",
+            )
+
+        dart_status = payload.get("status")
+        kind = classify_dart_status(
+            str(dart_status) if dart_status is not None else None
+        )
+        if kind is None:
+            # status == "000" -- success.
+            return ProviderCallResult.ok(payload)
+
+        # DART returned an envelope error code.  ``message`` is a short
+        # human-readable label like "정상" / "사용할 수 없는 키" -- safe
+        # to surface (no secret content), but we still keep it short.
+        message = str(payload.get("message") or dart_status or "")[:120]
+        return ProviderCallResult.fail(
+            kind,
+            f"DART status={dart_status} message={message}",
+        )
+
+    def close(self) -> None:
+        """Release the underlying httpx.Client (idempotent)."""
+        try:
+            self._client.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def __del__(self) -> None:  # pragma: no cover -- GC-time cleanup
+        self.close()
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
+
+def _default_transport(settings: Settings) -> "HttpxDartTransport":
+    """Construct the production httpx transport.
+
+    Separated so tests can monkeypatch the factory's ``transport=None``
+    branch without touching the real ``HttpxDartTransport.__init__``
+    side effects.
+    """
+    return HttpxDartTransport(settings=settings)
 
 
 def create_dart_providers(
@@ -773,9 +1002,16 @@ def create_dart_providers(
     Raises :class:`DartNotConfiguredError` immediately when the operator has
     not opted in, so the scheduler / job layer can short-circuit without
     leaking partial state.
+
+    v0.11 Phase A: when ``transport=None`` and the operator has set
+    ``DART_ENABLED=true`` + ``DART_API_KEY``, the factory auto-injects
+    :class:`HttpxDartTransport`.  Tests that pass their own transport
+    keep the v0.10 zero-network behaviour.
     """
     settings = settings or get_settings()
     _check_enabled(settings)
+    if transport is None:
+        transport = _default_transport(settings)
     return {
         "fundamentals": DartFundamentalProvider(
             settings=settings, transport=transport, monitor=monitor
@@ -797,6 +1033,7 @@ __all__ = [
     "DartEarningsProvider",
     "DartDisclosureProvider",
     "DartTransport",
+    "HttpxDartTransport",
     "classify_dart_status",
     "create_dart_providers",
     "parse_disclosure_item",

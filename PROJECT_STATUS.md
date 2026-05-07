@@ -36,7 +36,7 @@ Transport + Observability**.
 
 | Phase | 내용 | 태그 | 예상 게이트 |
 |---|---|---|---|
-| A | DART HTTP Transport — `HttpxDartTransport` + respx mock 테스트 | `v0.11-dart-transport` ⏳ | pytest +18 |
+| A | DART HTTP Transport — `HttpxDartTransport` (lazy httpx import) + factory 자동 주입 + `_SensitiveQueryStringFilter` (httpx URL secret 마스킹) + respx mock 테스트 27건 | `v0.11-dart-transport` ✅ | pytest 1045→1072 (+27) |
 | B | RSS HTTP Transport — `HttpxRssTransport` + respx + RSS 2.0/Atom fixture | `v0.11-rss-transport` ⏳ | pytest +12 |
 | C | Provider Observability Layer — failure history ring buffer + summary + optional Prometheus `/metrics` | `v0.11-observability` ⏳ | pytest +20 |
 | D | `/api/health/providers` 확장 + Settings 패널 보강 (success_rate_24h / recent_failures) | `v0.11-health-extended` ⏳ | pytest +8 / vitest +6 / e2e +1 |

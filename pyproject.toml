@@ -27,6 +27,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0,<9.0",
+    # v0.11 Phase A -- respx mocks httpx requests at the transport level so
+    # DART/RSS HTTP transport tests never reach the real network. Test-only
+    # dependency; production code does not import respx.
+    "respx>=0.21,<0.22",
 ]
 
 # Setuptools 의 flat-layout 자동 탐지가 top-level 디렉터리 (app / logs /

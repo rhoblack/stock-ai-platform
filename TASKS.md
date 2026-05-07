@@ -1082,16 +1082,17 @@ Provider Transport + Observability** (DART/RSS 실 httpx transport + observabili
 ring buffer + Prometheus exporter optional + `/api/health/providers` 확장).
 DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에만 동작.
 
-### Phase A: DART HTTP Transport
+### Phase A: DART HTTP Transport ✅ 인수
 
-- [ ] `respx>=0.21,<0.22` 의존성 추가 (테스트 전용)
-- [ ] `app/data/dart_provider.py` 에 `HttpxDartTransport` 구현 (`DartTransport` protocol 구현체)
-- [ ] `create_dart_providers` factory — `transport=None` + `DART_ENABLED=true` 시 `HttpxDartTransport` 자동 주입
-- [ ] HTTP status / DART `status` 코드 → `ProviderErrorKind` 매핑 (`classify_dart_status` 재사용)
-- [ ] `httpx.TimeoutException` → TIMEOUT, 4xx → CLIENT_ERROR, 5xx → SERVER_ERROR
-- [ ] respx mock 테스트 ~18건 (`tests/data/test_dart_http_transport.py`)
-- [ ] `DART_ENABLED=false` 시 `httpx.Client` 미생성 단언 유지 (v0.10 회귀 0건)
-- [ ] `DART_API_KEY` / `crtfc_key` 평문 로그 0건 caplog 단언
+- [x] `respx>=0.21,<0.22` 의존성 추가 (테스트 전용, `[project.optional-dependencies] dev`)
+- [x] `app/data/dart_provider.py` 에 `HttpxDartTransport` 구현 (`DartTransport` protocol 구현체) — `httpx` lazy import 로 v0.10 monkeypatch 가드와 호환
+- [x] `create_dart_providers` factory — `transport=None` + `DART_ENABLED=true` 시 `HttpxDartTransport` 자동 주입 (`_default_transport` helper 분리)
+- [x] HTTP status / DART `status` 코드 → `ProviderErrorKind` 매핑 (`classify_dart_status` 재사용)
+- [x] `httpx.TimeoutException` → TIMEOUT, 4xx → CLIENT_ERROR, 5xx → SERVER_ERROR, JSON 디코딩 실패 / 비-object body → UNKNOWN
+- [x] respx mock 테스트 27건 (`tests/data/test_dart_http_transport.py`) — HTTP 매핑 + DART 코드 + factory + resilience integration + secret discipline + zero-network guard
+- [x] `DART_ENABLED=false` 시 `httpx.Client` 미생성 단언 유지 (v0.10 49 케이스 회귀 0건)
+- [x] `DART_API_KEY` / `crtfc_key` 평문 로그 0건 — `_SensitiveQueryStringFilter` 가 httpx INFO 로그의 query string secret 마스킹 (`crtfc_key=***`)
+- [x] httpx exception `__str__` → `result.error_message` 미반영 (예외 클래스명만 노출, URL secret 누출 차단)
 - [ ] `tag v0.11-dart-transport + push`
 
 ### Phase B: RSS HTTP Transport
