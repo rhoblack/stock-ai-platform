@@ -1000,10 +1000,13 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 
 ---
 
-## v0.10 — Real Provider Readiness & Resilience (진행 중)
+## v0.10 — Real Provider Readiness & Resilience ✅ 마감
 
-기준선: `v0.9-final`. 회귀 게이트: pytest 916 / vitest 146 / e2e 19 / build 그린.
-세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0010`
+기준선: `v0.9-final`. 최종 게이트: **pytest 1045 (1 deselected) / vitest 153 /
+e2e 20 / build 그린**. 마감 태그 `v0.10-final`. Alembic head `0004_user_preferences`
+그대로 (v0.10 신규 revision 0건).
+
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0010` / 마감 사유: [`RELEASE_NOTES_v0.10.md`](./RELEASE_NOTES_v0.10.md)
 
 ### Phase A: Provider Resilience 실 적용 ✅ 인수
 
@@ -1026,7 +1029,7 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] `SensitiveFilter` 에 `crtfc_key` / `crtfckey` / `dart_key` 패턴 명시 추가 — `dart_api_key` / `DART_API_KEY` 는 기존 `api_key` 패턴 매칭 (테스트로 보강)
 - [x] 본문 / 전문 / 원문 / `body` / `full_text` / `paragraph` / `raw_text` / `html_body` 등 forbidden 필드는 parser 가 strip — DTO 자체에 해당 필드 부재 단언
 - [x] 외부 네트워크 호출 0건 가드 (`httpx.Client` 미생성 단언 테스트)
-- [ ] `tag v0.10-dart-provider + push`
+- [x] `tag v0.10-dart-provider + push`
 
 ### Phase C: RSS/News Provider 준비 ✅ 인수
 
@@ -1042,7 +1045,7 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] `RSS_NEWS_ENABLED=false` 또는 `RSS_FEED_URLS` 빈 문자열 시 `RssNotConfiguredError` raise — provider 인스턴스화 / transport 호출 0건
 - [x] feed URL 의 query string secret (`?api_key=...`) 은 로그에 미노출 (`_safe_url_for_log` 가 query / fragment strip)
 - [x] 외부 네트워크 호출 0건 가드 (`httpx.Client` 미생성 단언)
-- [ ] `tag v0.10-rss-provider + push`
+- [x] `tag v0.10-rss-provider + push`
 
 ### Phase D: 운영 모니터링 강화 ✅ 인수
 
@@ -1057,16 +1060,16 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] vitest 7건 (`frontend/src/tests/ProviderHealthPanel.test.tsx`) — happy / disabled / OPEN badge / 500 error / empty / secret 미렌더링 / read-only (button 0건)
 - [x] e2e 1건 (`Settings shows the read-only Provider Health panel`) — DART/RSS disabled 표시 + 패널 내 button 0건 + raw payload secret 0건
 - [x] `apiMocks.ts` + `mswServer.ts` 에 `/api/health/providers` 기본 핸들러 추가
-- [ ] `tag v0.10-health-api + push`
+- [x] `tag v0.10-health-api + push`
 
-### Phase E: 마감 (문서)
+### Phase E: 마감 (문서) ✅ 인수
 
-- [ ] `RELEASE_NOTES_v0.10.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.11 후보)
-- [ ] `README.md` v0.10 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
-- [ ] `PROJECT_STATUS.md` §0 v0.10 마감 선언으로 교체
-- [ ] `ROADMAP.md` v0.10 행 ✅ 마감
-- [ ] `TESTING.md` 기준선 갱신 (~986 pytest / ~151 vitest / 19 e2e)
-- [ ] `ARCHITECTURE.md` v0.10 마감 시점 반영
+- [x] `RELEASE_NOTES_v0.10.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.11 후보)
+- [x] `README.md` v0.10 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
+- [x] `PROJECT_STATUS.md` §0 v0.10 마감 선언으로 교체 (이전 §0-1 → §0-2 → §0-3 시간순 강등)
+- [x] `ROADMAP.md` v0.10 행 ✅ 마감 + v0.11 후보 정리
+- [x] `TESTING.md` 기준선 갱신 (1045 pytest / 153 vitest / 20 e2e / build 그린)
+- [x] `ARCHITECTURE.md` v0.10 마감 시점 반영
 - [ ] `tag v0.10-final + push`
 
 ---

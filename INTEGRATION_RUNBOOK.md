@@ -1,12 +1,19 @@
 # INTEGRATION_RUNBOOK.md
 
-> 본 문서는 **v0.9 마감 시점** 기준이다 (마감 태그 `v0.9-final`).
+> 본 문서는 **v0.10 마감 시점** 기준이다 (마감 태그 `v0.10-final`).
 > v0.5 §10 (News) / §11 (Disclosure) / §12 (테마) +
 > v0.6 §13 (Fundamental CSV) / §14 (Earnings CSV) / §15 (read-only API) +
 > v0.7 §16 (백테스트 CLI + read-only API + 화면) +
 > v0.8 §17 (Alembic + 인증 + Watchlist) +
-> v0.9 §18 (Security Middleware + 구조화 로깅 + Watchlist PATCH/DELETE + UserPreference) 모두 반영.
-> Alembic 현재 head: `0004_user_preferences`.
+> v0.9 §18 (Security Middleware + 구조화 로깅 + Watchlist PATCH/DELETE + UserPreference) +
+> v0.10 (Provider Resilience Runtime + DART/RSS provider skeleton + `GET /api/health/providers`)
+> 모두 반영. Alembic 현재 head: `0004_user_preferences` (v0.10 신규 revision 0건 —
+> DART/RSS 기존 테이블 재사용, `ProviderHealthMonitor` in-memory only).
+>
+> v0.10 신규 운영 절차는 별도 §19 추가 없이 — `DART_ENABLED=false` /
+> `RSS_NEWS_ENABLED=false` 기본 유지로 기존 시나리오 회귀 0건. 실 DART/RSS HTTP
+> 전송은 v0.11+ 에서 transport 도입 시 §19 추가 예정. 운영자는 `GET /api/health/providers`
+> 로 provider 상태를 한눈에 확인할 수 있다 (read-only, POST/PUT/DELETE 모두 405).
 
 v0.1 백엔드 전체 흐름을 **실 KIS / 실 텔레그램 없이** 로컬에서 검증하는 시나리오 문서.
 새 세션 / QA 인수자가 이 문서 하나만 따라가면 6개 잡 + 13개 GET API + dispatcher

@@ -1,16 +1,19 @@
 # Architecture
 
-> 본 문서는 **v0.9 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.9-final`).
+> 본 문서는 **v0.10 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.10-final`).
 > v0.1 Backend → v0.2 Frontend → v0.3 Analysis/Ops → v0.4 Analyst & Theme Intelligence →
 > v0.5 News·공시·테마 랭킹 → v0.6 Fundamental & Earnings Intelligence →
 > v0.7 Strategy & Backtest Foundation → v0.8 User & Migration Foundation →
-> **v0.9 Operational Security & Watchlist Polish** (Phase A~D) 이 모두 누적된 상태의
+> v0.9 Operational Security & Watchlist Polish →
+> **v0.10 Real Provider Readiness & Resilience** (Phase A~D) 이 모두 누적된 상태의
 > 시스템 구조를 반영한다.
-> v0.9 는 `app/middleware/` 패키지 (`SecurityHeadersMiddleware` / `RequestIDMiddleware` /
-> `rate_limit`) + `app/auth/brute_force.py` + `app/config/logging.py` +
-> `app/monitoring/sentry.py` + Watchlist PATCH/DELETE 4건 + `app/data/repositories/user_preferences.py` +
-> `app/data/provider_resilience.py` + Frontend 관리 UI (Watchlist / Settings / Today / StockDetail)
-> 를 추가하고, Alembic head 를 `0004_user_preferences` 로 진행했다.
+> v0.10 은 `app/data/provider_health_monitor.py` (`ProviderHealthMonitor` +
+> `call_with_resilience()`) + `app/data/dart_provider.py` (DART OpenAPI provider
+> skeleton, transport 주입형) + `app/data/rss_provider.py` (RSS 2.0 + Atom
+> provider skeleton, stdlib `xml.etree.ElementTree` only) + `app/api/health_routes.py`
+> (`GET /api/health/providers` read-only) + Frontend `ProviderHealthPanel` Settings 패널을
+> 추가했다. **신규 Alembic revision 0건** — head 그대로 `0004_user_preferences`,
+> `ProviderHealthMonitor` in-memory only.
 
 ## 1. 핵심 흐름
 

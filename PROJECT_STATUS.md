@@ -7,48 +7,118 @@
 
 ---
 
-## 0. v0.10 시작 선언 — Real Provider Readiness & Resilience
+## 0. v0.10 마감 선언 — Real Provider Readiness & Resilience
 
-**v0.10 cycle 시작.** `v0.9-final` 위에 **Real Provider Readiness & Resilience** 5 phase 진입.
+**v0.10 cycle 마감.** `v0.9-final` 위에 **Real Provider Readiness & Resilience**
+5 phase 완료. 최종 마감 태그 `v0.10-final`.
 
 - 시작 일자: **2026-05-07 (Asia/Seoul)**
-- 기준 태그: `v0.9-final`
-- 기준 게이트: pytest 916 / vitest 146 / e2e 19 / build 그린
-- Alembic head: `0004_user_preferences` (**신규 revision 없음** — DART/RSS 기존 테이블 재사용)
-- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0010`
+- 마감 일자: **2026-05-07 (Asia/Seoul)**
+- 최종 게이트:
+  - backend pytest **1045 passed** (1 deselected — test_settings_defaults 로컬
+    .env 충돌, Phase A 부터 baseline 인계)
+  - frontend vitest **153 passed** (20 파일)
+  - frontend build **그린** (`tsc --noEmit && vite build`, 3.41s)
+  - Playwright e2e **20 passed** (chromium)
+- 기준 태그: `v0.9-final` → 마감 태그: `v0.10-final`
+- Alembic head: `0004_user_preferences` (v0.10 신규 revision **0건** — DART/RSS
+  기존 테이블 재사용, `ProviderHealthMonitor` in-memory only)
+- 세부 결과: [`RELEASE_NOTES_v0.10.md`](./RELEASE_NOTES_v0.10.md)
 
-### v0.10 Phase 목표
+### v0.10 Phase 결과 요약
 
-| Phase | 내용 | 태그 | 실측 게이트 |
+| Phase | 내용 | 태그 | 게이트 |
 |---|---|---|---|
-| A | `ProviderHealthMonitor` + `call_with_resilience()` + settings 7종 + 테스트 31건 | `v0.10-provider-resilience` ✅ | pytest 916→947 (+31) |
-| B | DART Provider skeleton (DartFundamental/Earnings/Disclosure, DART_ENABLED=false, transport 주입형, parser/mapper + body 필드 strip + crtfc_key 마스킹 + 테스트 49건) | `v0.10-dart-provider` ✅ | pytest 947→995 (+48) |
-| C | RSS/News Provider skeleton (RssNewsProvider, RSS_NEWS_ENABLED=false, RSS 2.0 + Atom 동시 지원, transport 주입형, body 필드 strip + URL dedup + URL query secret 마스킹 + 테스트 33건, stdlib xml.etree only) | `v0.10-rss-provider` ✅ | pytest 995→1028 (+33) |
-| D | Provider Health read-only API (GET /api/health/providers + Settings 패널 + canonical 3 provider 항상 노출 + last_error_message 미노출 + POST/PUT/DELETE 405) | `v0.10-health-api` ✅ | pytest 1028→1045 (+17) / vitest 146→153 (+7) / e2e 19→20 (+1) |
-| E | 마감 문서 + 4 게이트 최종 확인 | `v0.10-final` ⏳ | 4 게이트 그린 |
+| A | `ProviderHealthMonitor` + `call_with_resilience()` + settings 6종 + 테스트 31건 | `v0.10-provider-resilience` | pytest 916→947 (+31) |
+| B | DART Provider skeleton (DartFundamental/Earnings/Disclosure, DART_ENABLED=false, transport 주입형, parser/mapper + body 필드 strip + crtfc_key 마스킹 + 테스트 49건) | `v0.10-dart-provider` | pytest 947→995 (+48) |
+| C | RSS/News Provider skeleton (RssNewsProvider, RSS_NEWS_ENABLED=false, RSS 2.0 + Atom 동시 지원, transport 주입형, body 필드 strip + URL dedup + URL query secret 마스킹 + 테스트 33건, stdlib xml.etree only) | `v0.10-rss-provider` | pytest 995→1028 (+33) |
+| D | Provider Health read-only API (GET /api/health/providers + Settings 패널 + canonical 3 provider 항상 노출 + last_error_message 미노출 + POST/PUT/DELETE 405) | `v0.10-health-api` | pytest 1028→1045 (+17) / vitest 146→153 (+7) / e2e 19→20 (+1) |
+| E | 마감 문서 (`RELEASE_NOTES_v0.10.md`) + 4 게이트 최종 재확인 | `v0.10-final` | 4 게이트 모두 그린 |
 
-### v0.10 핵심 정책
+### v0.10 핵심 정책 (마감 시점 재확인)
 
-- `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` 기본 — CI 에서 외부 API 호출 0건
-- RSS body/paragraph 저장 0건 — 메타데이터 (title/url/published_at/source/category) 만
-- Alembic 새 revision 0건 — DART/RSS 기존 테이블 재사용
-- Prometheus/Grafana / 백테스트 고도화 → v0.11 연기
-- 자동매매 / 실 KIS 주문 0건 유지
+- `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` 기본 — 모든 테스트 / CI 에서
+  외부 API 호출 0건 (`httpx.Client` 미생성 단언 4건: DART / RSS / Phase D 응답)
+- DART / RSS / News 본문 (body / paragraph / full_text / 본문 / 원문 / 전문)
+  저장 0건 — parser 사전 strip + DTO 자체에 부재
+- Alembic 새 revision 0건 — `news_items` / `financial_statements` 기존 테이블
+  재사용; `ProviderHealthMonitor` 는 in-memory only
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 — DART/RSS score 반영은
+  v0.11+ 후보
+- `DART_API_KEY` / `crtfc_key` / RSS feed URL query string secret 응답·로그·UI
+  평문 노출 0건 — `SensitiveFilter` (6 변형 마스킹) + `_safe_url_for_log` (query
+  / fragment strip) + Provider Health 응답에서 `last_error_message` 의도적
+  미포함
+- 자동매매 / 실 KIS 주문 / `BrokerInterface` 구현 / FULL_AUTO / APPROVAL /
+  SMALL_AUTO 0건 (v0.1~v0.10 일관 정책)
+- 신규 mutation 라우터 0건 — `GET /api/health/providers` 만 추가, POST/PUT/DELETE
+  모두 405
 
-### v0.11 후보
+### v0.11 후보 (우선순위 순)
 
-1. Prometheus exporter + Grafana 대시보드 (외부 노출 규모 확인 후)
-2. 백테스트 고도화 (walk-forward / 실 비용 모델, recommendation_results 3~6개월 누적 후)
-3. CSP / rate limit 고도화 (운영 트래픽 수집 후)
-4. 인증 고도화 (refresh token / 다중 사용자 / OAuth)
-5. DART/RSS score 반영 (ScoringEngine weight 보강)
-6. LLM 보강 (News sentiment / 재무 자동화)
-7. Watchlist 가격 알림 / target return alert
-8. 자동매매 (Future Backlog — 별도 보안·컴플라이언스·자본 한도 사이클 선행 필수)
+1. 실 DART / RSS httpx transport 도입 (Phase B/C skeleton 위에 실 HTTP 전송 +
+   라이선스 검토(사람) 선행 필수)
+2. Prometheus exporter + Grafana 대시보드 (v0.10 in-memory monitor 외부 시계열
+   DB 노출, 외부 노출 규모 확인 후)
+3. DART/RSS score 반영 (`RealNewsScoreProducer` / `RealFundamentalScoreProducer`
+   위에 DART/RSS 데이터 연결, 룰 기반 검증 후 weight 보강)
+4. 백테스트 고도화 (walk-forward / 다중 전략 포트폴리오 / 실 broker fee
+   schedule, recommendation_results 3~6개월 누적 후)
+5. 인증 고도화 (refresh token / 다중 사용자 / OAuth / SSO / RBAC)
+6. CSP / rate limit 고도화 (실 트래픽 수집 후 정책 수립)
+7. LLM 보강 (News sentiment / 재무 분석 / 자동 전략 — 룰 기반 검증 후)
+8. Provider Health UI 고도화 (실시간 갱신 / WebSocket / `GET /api/health/jobs`
+   분리)
+9. Watchlist 가격 알림 / target return alert (알림 시스템 = 별도 cycle)
+10. 자동매매 (Future Backlog — 별도 보안·컴플라이언스·자본 한도 사이클 선행 필수)
 
 ---
 
-## 0-1. v0.9 마감 선언 — Operational Security & Watchlist Polish
+## 0-1. v0.10 시작 선언 → 마감으로 갱신 (기록 보존)
+
+### v0.10 채택 결론 (시나리오 비교 요약)
+
+`PLANS.md` `PLAN-0010` 4 시나리오 비교 후 채택: **Modified X + light Z = "Real
+Provider Readiness & Resilience"**.
+
+- ✅ **시나리오 X 핵심 채택** — DART/RSS Provider 구현 + Provider resilience 실
+  적용 (Phase A~C)
+- ⚠️ **시나리오 Z 부분 채택** — Sentry 가이드 + provider health API 만. Prometheus
+  / Grafana 는 v0.11+ 연기
+- ❌ **시나리오 Y 연기** — 백테스트 고도화 (walk-forward / 실 비용 모델). v0.11+
+  로 연기 (recommendation_results 3~6개월 누적 필요)
+- ❌ **시나리오 W 거부** — 복합 (X+Y+Z) 범위 과다, 리스크 관리 곤란
+
+기준선: `v0.9-final` (HEAD `90e3db3`). 회귀 게이트: pytest 916 / vitest 146 /
+e2e 19 / build 그린. Alembic head: `0004_user_preferences`.
+
+### v0.10 진입 시 정의된 phase 목표 (최종 결과는 §0 참조)
+
+| Phase | 시점 목표 | 결과 |
+|---|---|---|
+| A | Provider Resilience Runtime 도입 | ✅ pytest +31 |
+| B | DART Provider 구현 | ✅ pytest +48 |
+| C | RSS/News Provider 준비 | ✅ pytest +33 |
+| D | 운영 모니터링 강화 (`GET /api/health/providers` + 프런트 패널) | ✅ pytest +17 / vitest +7 / e2e +1 |
+| E | 마감 문서 + 4 게이트 최종 확인 | ✅ 본 문서 |
+
+### v0.10 에서 절대 하지 않을 것 (정책 — 마감 시점 재확인)
+
+- ❌ 자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO
+- ❌ `BrokerInterface` 구현 (placeholder 유지)
+- ❌ 실 DART / RSS / 뉴스 / Telegram 자동 호출 — provider skeleton + transport
+  주입형 만, 실 httpx 전송은 v0.11+
+- ❌ ScoringEngine / HoldingCheckEngine 본 weight 변경
+- ❌ Provider enable/disable mutation API — `.env` + 백엔드 재시작만
+- ❌ 본문 저장 (body / paragraph / full_text / 본문 / 원문 / 전문)
+- ❌ `DART_API_KEY` / `crtfc_key` / URL query secret 응답·로그·UI 평문 노출
+- ❌ 다중 사용자 / RBAC / OAuth / SSO / refresh token (단일 사용자 운영 유지)
+- ❌ Prometheus exporter / Grafana 대시보드 (외부 노출 규모 확인 후)
+- ❌ Alembic 새 revision (DART/RSS 기존 테이블 재사용 + monitor in-memory only)
+
+---
+
+## 0-2. v0.9 마감 선언 — Operational Security & Watchlist Polish
 
 **v0.9 cycle 마감.** 기준선 `v0.8-final` 위에 **Operational Security &
 Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
@@ -86,7 +156,7 @@ Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
 
 ---
 
-## 0-2. v0.9 시작 선언 → 마감으로 갱신 (기록 보존)
+## 0-3. v0.9 시작 선언 → 마감으로 갱신 (기록 보존)
 
 ### v0.9 채택 결론 (후보 비교 요약)
 

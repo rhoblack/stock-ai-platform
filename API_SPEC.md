@@ -1,10 +1,17 @@
 # API_SPEC.md
 
-> 본 문서는 **v0.9 마감 시점** 기준이다 (마감 태그 `v0.9-final`).
+> 본 문서는 **v0.10 마감 시점** 기준이다 (마감 태그 `v0.10-final`).
 > v0.5 §14 테마 + v0.6 §15 재무·실적 + v0.7 §16 백테스트 + v0.8 §17 인증 +
 > v0.8 §18 Watchlist + v0.9 §19 Watchlist 고도화 + v0.9 §20 UserPreference +
+> v0.10 §21 Provider Health (read-only) +
 > 추천 / 보유 evidence 화이트리스트 + Strategy / Backtest 응답에 broker / 주문 필드
 > 0건 가드가 모두 반영되어 있다.
+>
+> **v0.10 Phase D 신규 엔드포인트 (write 라우터 0건 추가, read-only GET 1건):**
+> - `GET /api/health/providers` — `ProviderHealthMonitor` 상태 + Settings opt-in
+>   합성 (canonical 3 provider 항상 노출, `last_error_message` 미노출). POST/PUT/DELETE 모두 405.
+>
+> v0.10 cycle 의 누적 write 라우터 변동 0건 (v0.9 의 11건 그대로 유지).
 >
 > **v0.9 Phase C 신규 엔드포인트 (v0.8 5건 + v0.9 6건 = 총 11건 write 라우터):**
 > - `PATCH /api/watchlists/{id}` — name 변경 / is_default 토글 (이전 default 자동 demote)
