@@ -290,6 +290,18 @@ class Settings:
         default_factory=lambda: _as_bool(os.getenv("PROVIDER_DATA_INGESTION_ENABLED"), False),
     )
 
+    # v0.13 Phase A -- Provider Score Policy Engine.
+    # When false (default) ProviderScorePolicy.apply_policy() is a no-op for
+    # every data_source value, including FAKE.  All existing scoring tests and
+    # production flows are fully preserved.  When true, component scores
+    # produced by real providers are multiplied by their reliability factor
+    # (PROVIDER=1.00, CSV=0.90, MANUAL=0.80); FAKE sources always bypass the
+    # factor regardless of this flag.  ScoringEngine weights are never
+    # changed by this setting.
+    provider_score_policy_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("PROVIDER_SCORE_POLICY_ENABLED"), False),
+    )
+
     # v0.11 Phase C -- Prometheus exporter for provider observability.
     # Default-OFF: GET /metrics returns 404 unless PROMETHEUS_ENABLED=true.
     # The endpoint exposes only in-memory ProviderHealthMonitor counters --

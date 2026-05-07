@@ -1244,14 +1244,15 @@ Provider Score Policy + Score Delta + Validation Report + Backtest Export CLI**.
 ScoringEngine 본 weight 변경 0건 — policy factor 는 producer 출력에 곱해지는 별도 layer.
 DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic revision 0건.
 
-### Phase A: Provider Score Policy Engine
+### Phase A: Provider Score Policy Engine ✅ 완료 (`v0.13-provider-policy`)
 
-- [ ] `app/scoring/provider_policy.py` 신규 — `ProviderScorePolicy` + `PolicyResult` + `DATA_SOURCE_RELIABILITY` 매핑
-- [ ] `app/config/settings.py` 에 `PROVIDER_SCORE_POLICY_ENABLED: bool = False` 추가
-- [ ] `RealNewsScoreProducer` / `DisclosureRiskProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` 에 policy 통합 (FAKE bypass, PROVIDER/CSV/MANUAL factor 적용)
-- [ ] ScoringEngine weight (`technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%`) 회귀 단언 (Decimal 정확도 포함) — weight 변경 0건
-- [ ] 단위 테스트 ~20건 (`tests/unit/test_provider_policy.py`) — factor 매핑 / FAKE bypass / policy OFF bypass / 경계값
-- [ ] `tag v0.13-provider-policy + push`
+- [x] `app/scoring/provider_policy.py` 신규 — `ProviderScorePolicy` + `DATA_SOURCE_RELIABILITY` 매핑 + `_BYPASS_SOURCES` + `_to_decimal()`
+- [x] `app/scoring/__init__.py` 신규 — `ProviderScorePolicy` / `DATA_SOURCE_RELIABILITY` export
+- [x] `app/config/settings.py` 에 `PROVIDER_SCORE_POLICY_ENABLED: bool = False` 추가 (v0.13 Phase A — 코멘트 포함)
+- [ ] `RealNewsScoreProducer` / `DisclosureRiskProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` 에 policy 통합 (FAKE bypass, PROVIDER/CSV/MANUAL factor 적용) — **Phase B+ 범위**
+- [x] ScoringEngine weight (`technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%`) 회귀 단언 (Decimal 정확도 포함) — weight 변경 0건 (`test_scoring_engine_new_recommendation_weights_unchanged` / `test_scoring_engine_holding_weights_unchanged`)
+- [x] 단위 테스트 28건 (`tests/unit/test_provider_policy.py`) — factor 매핑 / FAKE bypass / policy OFF bypass / 경계값 / 음수 / float·Decimal 입력 / ROUND_HALF_UP / 외부 호출 0건 단언
+- [x] `tag v0.13-provider-policy + push` — **게이트: pytest 1223 / vitest 165 / build 그린**
 
 ### Phase B: Score Delta Recording in Evidence
 

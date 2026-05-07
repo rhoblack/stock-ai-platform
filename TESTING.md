@@ -1,10 +1,10 @@
 # TESTING.md
 
-> 본 문서는 **v0.12 Phase D 시점** 기준으로 갱신된다 (`v0.12-phase-d`
-> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.12 신규 테스트 카테고리를
+> 본 문서는 **v0.13 Phase A 시점** 기준으로 갱신된다 (`v0.13-provider-policy`
+> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.13 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.12 Phase D 시점)
+## 1. 현재 회귀 게이트 (v0.13 Phase A 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
@@ -12,10 +12,10 @@ provider transport injection 3중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1194 passed, 1 deselected** (v0.12 Phase D: 1183 → 1194, +11 신규 — /folds + /comparison read-only API + forbidden field guard) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **165 passed** (v0.12 Phase D: 158 → 165, +7 신규 — folds 표 / comparison 표 / data_source chip / forbidden field guard) |
+| backend pytest | `python -m pytest -q` | **1223 passed** (v0.13 Phase A: 1194 → 1223, +29 — ProviderScorePolicy 28건 + test_settings_defaults 해소 1건) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **165 passed** (변경 없음 — Phase A 는 프런트 미변경) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
-| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (변경 없음 — Phase D 는 e2e 미보강) |
+| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (변경 없음 — Phase A 는 e2e 미보강) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
@@ -1733,6 +1733,78 @@ v0.12 Phase D 는 신규 read-only API 2종 (`/api/backtest/runs/{id}/folds`,
 - frontend vitest **158 → 165 passed (+7)** — 회귀 0건
 - frontend build 그린 (`tsc --noEmit && vite build`)
 - 외부 HTTP 호출 0건; DB 모델 변경 0건; ScoringEngine weight 변경 0건; Alembic revision 0건
+
+---
+
+## 6.35 v0.13 Phase A — ProviderScorePolicy Engine 테스트
+
+`app/scoring/provider_policy.py` (신규) / `app/scoring/__init__.py` (신규) /
+`app/config/settings.py` (`provider_score_policy_enabled` 추가).
+`tests/unit/test_provider_policy.py` 28건 신규.
+
+### 6.35.1 DATA_SOURCE_RELIABILITY 상수 검증 (4건)
+
+| 케이스 | 검증 내용 |
+|---|---|
+| `test_provider_factor_is_1_00` | `DATA_SOURCE_RELIABILITY["PROVIDER"] == Decimal("1.00")` |
+| `test_csv_factor_is_0_90` | `DATA_SOURCE_RELIABILITY["CSV"] == Decimal("0.90")` |
+| `test_manual_factor_is_0_80` | `DATA_SOURCE_RELIABILITY["MANUAL"] == Decimal("0.80")` |
+| `test_fake_absent_from_reliability_map` | `"FAKE" not in DATA_SOURCE_RELIABILITY` (별도 bypass 경로) |
+
+### 6.35.2 Policy 활성 — 알려진 data_source (4건)
+
+| 케이스 | 입력 | 기댓값 |
+|---|---|---|
+| `test_provider_no_attenuation` | score=80, "PROVIDER" | 80.0000 (×1.00) |
+| `test_csv_attenuates_10_percent` | score=80, "CSV" | 72.0000 (×0.90) |
+| `test_manual_attenuates_20_percent` | score=80, "MANUAL" | 64.0000 (×0.80) |
+| `test_csv_non_round_score` | score=77, "CSV" | 69.3000 (77×0.9) |
+
+### 6.35.3 FAKE bypass (2건)
+
+- `test_fake_bypass_when_policy_enabled`: enabled=True, "FAKE" → score 그대로
+- `test_fake_bypass_when_policy_disabled`: enabled=False, "FAKE" → score 그대로
+
+### 6.35.4 Policy 비활성 — 전 data_source bypass (4건)
+
+disabled 시 PROVIDER / CSV / MANUAL / 미지 data_source 모두 score 그대로 반환.
+
+### 6.35.5 미지 / None / 빈 문자열 data_source (3건)
+
+policy 활성 상태에서 unknown / None / "" → factor 1.00 fallback, score 그대로.
+
+### 6.35.6 경계값 / 음수 (3건)
+
+| 케이스 | 입력 | 기댓값 |
+|---|---|---|
+| `test_zero_score_csv` | score=0, "CSV" | 0.0000 |
+| `test_max_score_100_provider` | score=100, "PROVIDER" | 100.0000 |
+| `test_negative_score_manual` | score=-10, "MANUAL" | -8.0000 |
+
+### 6.35.7 입력 타입 / 반올림 (4건)
+
+- `test_float_input_csv`: 80.0(float) → 72.0000
+- `test_decimal_input_exact_preservation_provider`: Decimal 입력 유지
+- `test_rounding_half_up_at_boundary`: 0.55555×0.9 = 0.499995 → 0.5000 (ROUND_HALF_UP)
+- `test_quantize_4_decimal_places_csv`: 결과는 항상 4 소수점
+
+### 6.35.8 기본 상태 / ScoringEngine weight / 외부 호출 (5건)
+
+- `test_default_policy_is_disabled`: `ProviderScorePolicy()` enabled=False
+- `test_enabled_property_reflects_constructor_arg`
+- `test_scoring_engine_new_recommendation_weights_unchanged`: technical 35% / news 25% / supply 15% / fundamental 15% / ai 10% — 변경 0건
+- `test_scoring_engine_holding_weights_unchanged`: technical 35% / news 20% / earnings 20% / ai 15% / profit_management 10% — 변경 0건
+- `test_no_external_network_calls`: `socket.getaddrinfo` / `create_connection` monkeypatch — 외부 호출 0건
+
+### 6.35.9 회귀 기준
+
+- backend pytest **1194 → 1223 passed (+29)** — 회귀 0건
+  - Phase A 신규 28건 + test_settings_defaults 해소 1건 (`provider_score_policy_enabled` 추가로 로컬 .env 충돌 해소)
+  - 기존 1194건 전량 통과 확인
+- frontend vitest **165 passed** — 변경 없음 (Phase A 는 프런트 미변경)
+- frontend build 그린
+- 외부 HTTP 호출 0건; DB 모델 변경 0건; Alembic revision 0건
+- ScoringEngine weight 변경 0건 (단언으로 영구 고정)
 
 ## 7. 금지 사항
 
