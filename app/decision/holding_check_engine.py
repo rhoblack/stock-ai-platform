@@ -60,6 +60,8 @@ from app.decision.scoring_engine import (
     HoldingScoreInputs,
     ScoringEngine,
 )
+from app.scoring.provider_policy import ProviderScorePolicy
+from app.scoring.score_delta import compute_score_delta
 
 
 CHECK_TYPE_PRE_MARKET = "PRE_MARKET"
@@ -229,11 +231,13 @@ class HoldingCheckEngine:
         decision_log_repository: DecisionLogRepository,
         score_producer: ScoreProducerInterface | None = None,
         disclosure_risk_producer: DisclosureRiskProducer | None = None,
+        score_policy: ProviderScorePolicy | None = None,
     ) -> None:
         self._scoring_engine = scoring_engine
         self._risk_engine = risk_engine
         self._score_producer = score_producer or DummyScoreProducer()
         self._disclosure_risk_producer = disclosure_risk_producer
+        self._score_policy = score_policy
         self._holding_repository = holding_repository
         self._daily_price_repository = daily_price_repository
         self._indicator_repository = indicator_repository
@@ -380,6 +384,16 @@ class HoldingCheckEngine:
             disclosure_result.evidence if disclosure_result is not None else None
         )
 
+        # v0.13 Phase B — compute score_delta when score_policy is injected.
+        score_delta = (
+            compute_score_delta(
+                components=_holding_delta_components(components),
+                policy=self._score_policy,
+            )
+            if self._score_policy is not None
+            else None
+        )
+
         snapshot = self._snapshot_repository.add(
             DataSnapshot(
                 snapshot_time=started_at,
@@ -397,6 +411,7 @@ class HoldingCheckEngine:
                     "news_evidence": news_evidence,
                     "earnings_evidence": earnings_evidence,
                     "disclosure_risk_evidence": disclosure_risk_evidence,
+                    "score_delta": score_delta.as_dict() if score_delta is not None else None,
                 },
             ),
         )
@@ -473,3 +488,26 @@ def _holding_score_inputs(
         ai_score=components.ai_score,
         risk_penalty=risk_penalty,
     )
+
+
+def _holding_delta_components(
+    components: HoldingComponentScores,
+) -> list[tuple[str, object, str | None]]:
+    """Build (name, score, data_source) tuples for compute_score_delta.
+
+    data_source is read from metadata when a real producer sets it.
+    Falls back to "FAKE" so DummyScoreProducer → bypass → delta=0.
+    """
+    meta = components.metadata or {}
+    mode = meta.get("mode", "")
+
+    def _src(name: str) -> str | None:
+        if mode == "rule_based_dummy":
+            return "FAKE"
+        return meta.get(f"{name}_data_source") or "FAKE"
+
+    return [
+        ("news", components.news_score, _src("news")),
+        ("earnings", components.earnings_score, _src("earnings")),
+        ("ai", components.ai_score, _src("ai")),
+    ]

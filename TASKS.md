@@ -1254,14 +1254,16 @@ DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic r
 - [x] 단위 테스트 28건 (`tests/unit/test_provider_policy.py`) — factor 매핑 / FAKE bypass / policy OFF bypass / 경계값 / 음수 / float·Decimal 입력 / ROUND_HALF_UP / 외부 호출 0건 단언
 - [x] `tag v0.13-provider-policy + push` — **게이트: pytest 1223 / vitest 165 / build 그린**
 
-### Phase B: Score Delta Recording in Evidence
+### Phase B: Score Delta Recording in Evidence ✅ 완료 (`v0.13-score-delta`)
 
-- [ ] `app/scoring/score_delta.py` 신규 — `ScoreDeltaResult` + `compute_score_delta()`
-- [ ] `RecommendationEngine` — 추천 scoring 시 `score_delta` evidence_json 기록 (Alembic 0건)
-- [ ] `HoldingCheckEngine` — holding scoring 시 `score_delta` evidence_json 기록 (Alembic 0건)
-- [ ] `app/api/routes.py` — recommendation / holding_check evidence whitelist 에 `score_delta` 추가
-- [ ] 통합 테스트 ~15건 (`tests/integration/test_score_delta.py`) — delta 계산 정확도 / whitelist 통과 / forbidden field guard
-- [ ] `tag v0.13-score-delta + push`
+- [x] `app/scoring/score_delta.py` 신규 — `ScoreDeltaResult` + `ComponentDelta` + `compute_score_delta()`
+- [x] `app/scoring/__init__.py` — `ScoreDeltaResult` / `ComponentDelta` / `compute_score_delta` export 추가
+- [x] `RecommendationEngine` — `score_policy` 파라미터 + `score_delta` evidence_json 기록 (Alembic 0건)
+- [x] `HoldingCheckEngine` — `score_policy` 파라미터 + `score_delta` evidence_json 기록 (Alembic 0건)
+- [x] `app/api/routes.py` — `_SCORE_DELTA_EVIDENCE_FIELDS` whitelist + recommendation / holding_check 양쪽 추출
+- [x] `app/api/schemas.py` — `RecommendationItemSchema` / `HoldingCheckSchema` 에 `score_delta` 필드 추가
+- [x] 단위 테스트 18건 (`tests/unit/test_score_delta.py`) — policy OFF / FAKE bypass / CSV·MANUAL·PROVIDER attenuation / multi-component / None score / rounding / as_dict() / ScoringEngine weight 단언
+- [x] `tag v0.13-score-delta + push` — **게이트: pytest 1241 / vitest 165 / build 그린**
 
 ### Phase C: Validation Report read-only API + UI
 

@@ -1,5 +1,16 @@
 # Architecture
 
+> 본 문서는 **v0.13 Phase B 시점** 기준으로 부분 갱신된다.
+> **v0.13 Phase A** — `app/scoring/provider_policy.py` 신규: `ProviderScorePolicy` +
+> `DATA_SOURCE_RELIABILITY` (PROVIDER=1.00 / CSV=0.90 / MANUAL=0.80) + `_BYPASS_SOURCES={"FAKE"}`.
+> `settings.provider_score_policy_enabled=False` (default OFF). ScoringEngine weight 변경 0건.
+> **v0.13 Phase B** — `app/scoring/score_delta.py` 신규: `ScoreDeltaResult` + `ComponentDelta` +
+> `compute_score_delta()`. `RecommendationEngine` / `HoldingCheckEngine` 에 `score_policy` 선택
+> 파라미터 추가 — None 이면 delta 미기록, ProviderScorePolicy 전달 시 `market_context_json`의
+> `score_delta` 키에 기록. `app/api/routes.py` `_SCORE_DELTA_EVIDENCE_FIELDS` whitelist 추가.
+> Alembic revision 0건 — 기존 `evidence_json` JSON 컬럼 재활용.
+> 최종 게이트(Phase B): pytest 1241 / vitest 165 / build 그린.
+>
 > 본 문서는 **v0.12 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.12-final`).
 > v0.12 는 v0.11 위에 다음 4개 Phase 를 추가했다:
 > **Phase A** — `app/data/ingestion.py` 4 어댑터 (default OFF,

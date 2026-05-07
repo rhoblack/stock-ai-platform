@@ -123,6 +123,9 @@ class RecommendationItemSchema(_BaseSchema):
     # Both whitelisted at the API layer; absent for pre-v0.6 runs.
     fundamental_evidence: Optional[Dict[str, Any]] = None
     earnings_evidence: Optional[Dict[str, Any]] = None
+    # v0.13 Phase B — score_delta from ProviderScorePolicy (None for pre-v0.13
+    # runs or when no score_policy was injected into RecommendationEngine).
+    score_delta: Optional[Dict[str, Any]] = None
     results: List[RecommendationResultSchema] = []
 
 
@@ -201,6 +204,8 @@ class HoldingCheckSchema(_BaseSchema):
     news_evidence: Optional[Dict[str, Any]] = None
     disclosure_risk_evidence: Optional[Dict[str, Any]] = None
     earnings_evidence: Optional[Dict[str, Any]] = None
+    # v0.13 Phase B — score_delta from ProviderScorePolicy.
+    score_delta: Optional[Dict[str, Any]] = None
 
 
 class HoldingChecksResponse(_BaseSchema):

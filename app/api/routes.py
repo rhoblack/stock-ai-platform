@@ -205,6 +205,16 @@ _EARNINGS_EVIDENCE_FIELDS = {
     "operating_income_consensus",
     "reason",
 }
+# v0.13 Phase B — score_delta evidence whitelist.
+# Inner ``components`` list contains only safe fields (name / data_source /
+# factor / before / after); no body / secret / raw-text content.
+_SCORE_DELTA_EVIDENCE_FIELDS = {
+    "policy_enabled",
+    "score_before",
+    "score_after",
+    "delta",
+    "components",
+}
 
 
 def _whitelist_evidence(
@@ -267,6 +277,9 @@ def _recommendation_to_schema(
         earnings_evidence=_whitelist_evidence(
             snapshot, "earnings_evidence", _EARNINGS_EVIDENCE_FIELDS,
         ),
+        score_delta=_whitelist_evidence(
+            snapshot, "score_delta", _SCORE_DELTA_EVIDENCE_FIELDS,
+        ),
         results=[_recommendation_result_to_schema(r) for r in results],
     )
 
@@ -304,6 +317,9 @@ def _holding_check_to_schema(
         ),
         earnings_evidence=_whitelist_evidence(
             snapshot, "earnings_evidence", _EARNINGS_EVIDENCE_FIELDS,
+        ),
+        score_delta=_whitelist_evidence(
+            snapshot, "score_delta", _SCORE_DELTA_EVIDENCE_FIELDS,
         ),
     )
 

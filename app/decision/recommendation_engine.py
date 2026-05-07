@@ -72,6 +72,8 @@ from app.decision.scoring_engine import (
     ScoreBreakdown,
     ScoringEngine,
 )
+from app.scoring.provider_policy import ProviderScorePolicy
+from app.scoring.score_delta import ScoreDeltaResult, compute_score_delta
 
 
 _RUN_STATUS_RUNNING = "RUNNING"
@@ -96,6 +98,9 @@ class _Candidate:
     # v0.5 Phase C — DisclosureRiskProducer evidence (None when producer is
     # not injected, which is the v0.4 / earlier default behavior).
     disclosure_risk_evidence: dict[str, Any] | None = None
+    # v0.13 Phase B — score_delta from ProviderScorePolicy (None when no
+    # score_policy was injected — preserves pre-v0.13 behavior unchanged).
+    score_delta: ScoreDeltaResult | None = None
 
 
 @dataclass(frozen=True)
@@ -258,10 +263,12 @@ class RecommendationEngine:
         report_signal_event_repository: ReportSignalEventRepository | None = None,
         report_score_log_repository: ReportScoreLogRepository | None = None,
         disclosure_risk_producer: DisclosureRiskProducer | None = None,
+        score_policy: ProviderScorePolicy | None = None,
     ) -> None:
         self._scoring_engine = scoring_engine
         self._risk_engine = risk_engine
         self._score_producer = score_producer or DummyScoreProducer()
+        self._score_policy = score_policy
         self._universe_repository = universe_repository
         self._member_repository = member_repository
         self._stock_repository = stock_repository
@@ -358,6 +365,14 @@ class RecommendationEngine:
                     base_total_score=score.total_score,
                 )
             )
+            score_delta = (
+                compute_score_delta(
+                    components=_recommendation_delta_components(components),
+                    policy=self._score_policy,
+                )
+                if self._score_policy is not None
+                else None
+            )
             candidates.append(
                 _Candidate(
                     stock=stock,
@@ -376,6 +391,7 @@ class RecommendationEngine:
                         if disclosure_result is not None
                         else None
                     ),
+                    score_delta=score_delta,
                 ),
             )
 
@@ -469,6 +485,9 @@ class RecommendationEngine:
                     "news_evidence": news_evidence,
                     "fundamental_evidence": fundamental_evidence,
                     "disclosure_risk_evidence": disclosure_risk_evidence,
+                    "score_delta": candidate.score_delta.as_dict()
+                    if candidate.score_delta is not None
+                    else None,
                 },
             ),
         )
@@ -624,3 +643,27 @@ class RecommendationEngine:
             else None,
             recommendation_run_id=run_id,
         )
+
+
+def _recommendation_delta_components(
+    components: RecommendationComponentScores,
+) -> list[tuple[str, Any, str | None]]:
+    """Build (name, score, data_source) tuples for compute_score_delta.
+
+    data_source is read from metadata when a real producer sets it.
+    Falls back to "FAKE" so DummyScoreProducer → bypass → delta=0.
+    """
+    meta = components.metadata or {}
+    mode = meta.get("mode", "")
+
+    def _src(name: str) -> str | None:
+        if mode == "rule_based_dummy":
+            return "FAKE"
+        return meta.get(f"{name}_data_source") or "FAKE"
+
+    return [
+        ("news", components.news_score, _src("news")),
+        ("supply", components.supply_score, _src("supply")),
+        ("fundamental", components.fundamental_score, _src("fundamental")),
+        ("ai", components.ai_score, _src("ai")),
+    ]
