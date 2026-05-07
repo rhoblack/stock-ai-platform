@@ -7,7 +7,55 @@
 
 ---
 
-## 0. v0.13 마감 선언 — Provider Score Policy & Validation Report
+## 0. v0.14 시작 선언 — Paper / Simulation Trading Foundation
+
+**v0.14 cycle 시작.** `v0.13-final` 위에 **SimulationBroker (BrokerInterface 첫 구현체) +
+VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API + 13번째 화면 `/paper`**
+구현 예정. 채택 시나리오: **Scenario X — Paper Trading Full Stack**.
+
+- 시작 일자: **2026-05-08 (Asia/Seoul)**
+- 기준 게이트: pytest **1277 passed** / vitest **175 passed** / e2e **21 passed** / build 그린
+- 기준 태그: `v0.13-final` → 예상 마감 태그: `v0.14-final`
+- Alembic head: `0004_user_preferences` → v0.14 신규 revision **2건** 예정
+  (`0005_virtual_trading_core`: VirtualAccount + VirtualOrder /
+   `0006_virtual_positions`: VirtualPosition + VirtualFill + VirtualPnLSnapshot)
+- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0014`
+
+### v0.14 채택 결론 (시나리오 비교 요약)
+
+`PLANS.md` `PLAN-0014` 4 시나리오 비교 후 채택: **Scenario X — Paper Trading Full Stack**.
+
+| 시나리오 | 내용 | 결정 |
+|---|---|---|
+| **X** | SimulationBroker + VirtualAccount/Order/Position/PnL + Paper API + Frontend 13번째 화면 | ✅ **핵심 채택** |
+| Y | Approval Trading 준비 (OrderCandidate 설계, KIS 0건) | ❌ 기각 — Paper Trading 기반 없이 설계 부유, v0.15+ |
+| Z | Backtest 고도화 중심 | ⚠️ Phase A 에 Export CLI 일부 흡수 |
+| W | KIS 실주문 wrapper skeleton | ❌ 기각 — 실거래 위험, 미성숙 단계 |
+
+### v0.14 Phase 목표
+
+| Phase | 내용 | 예상 태그 | 예상 pytest |
+|---|---|---|---|
+| A | Backtest Export CLI + ProviderScorePolicy→Producer 통합 | `v0.14-export-policy` | **1277→~1297 (+~20)** |
+| B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | **~1297→~1337 (+~40)** |
+| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **~1337→~1367 (+~30)** |
+| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **~1367→~1393 (+~26)** |
+| E | Frontend 13번째 화면 `/paper` + `RELEASE_NOTES_v0.14.md` + 4 게이트 확인 | `v0.14-final` | vitest **175→~185 (+~10)** / e2e **21→22 (+1)** |
+
+### v0.14 핵심 정책
+
+- **SimulationBroker 는 KIS API 를 호출하지 않는다** — 100% 내부 시뮬레이션, import 금지 단언
+- **`PAPER_TRADING_ENABLED=False` 기본** — 명시 enable 시에만 POST /api/paper/orders 활성
+- **VirtualOrder 는 real KIS 주문과 물리적으로 분리** — 별도 테이블, 별도 라우터
+- **자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL / SMALL_AUTO 코드 0건** (v0.1~v0.14 일관)
+- **Alembic 2 revisions** (0005 + 0006), `compare_metadata` 0건 가드
+- **ScoringEngine 본 weight 변경 0건** — 누적 데이터 + validation report 결과 필요
+- **신규 pip 의존성 0건** — stdlib only
+- **DART/RSS/Prometheus/Provider Data Ingestion default OFF 유지**
+
+---
+
+## 0-1. v0.13 마감 선언 — Provider Score Policy & Validation Report
 
 **v0.13 cycle 마감.** `v0.12-final` 위에 **Provider Score Policy Engine +
 Score Delta in evidence_json + Validation Report Read-only API/UI** 4 Phase 완료.

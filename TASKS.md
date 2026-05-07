@@ -1311,11 +1311,96 @@ DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic r
 
 ---
 
-## v0.14+ — Backlog
+## v0.14 — Paper / Simulation Trading Foundation (시작 선언)
 
-자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) §0 v0.13 후보 참조. 한 줄 요약:
+기준선: `v0.13-final`. 회귀 게이트: pytest 1277 / vitest 175 / e2e 21 / build 그린.
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0014`. 채택 시나리오: **Scenario X —
+Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)**.
+자동매매 / 실 KIS 주문 / FULL_AUTO 0건.
 
-- **ScoringEngine 본 weight 보강** — v0.13 validation report 결과 기반 (누적 데이터 6개월+ 필요)
+### Phase A: Backtest Export CLI + ProviderScorePolicy→Producer 통합
+
+- [ ] `scripts/export_backtest.py` 신규 — `--run-id`, `--format csv|json`, `--output PATH`, `--dry-run`
+- [ ] fold / comparison / sector breakdown 포함 (forbidden field guard: evidence_json / source_file_path 제외)
+- [ ] 통합 테스트 ~8건 (`tests/integration/test_backtest_export.py`) — CSV/JSON 출력 / 금지 필드 / dry-run / 404
+- [ ] `app/analysis/score_producers.py` — `RealNewsScoreProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` 에 `ProviderScorePolicy.apply()` 통합 (PROVIDER_SCORE_POLICY_ENABLED=False 기본 유지)
+- [ ] 단위 테스트 ~12건 — policy 통합 단언 (기존 behavior OFF 시 변경 0건 포함)
+- [ ] `tag v0.14-export-policy + push` — **게이트: pytest ~1297 (+~20)**
+
+### Phase B: SimulationBroker + VirtualAccount/VirtualOrder 도메인
+
+- [ ] `app/broker/__init__.py` 신규 — `SimulationBroker` export
+- [ ] `app/broker/simulation_broker.py` 신규 — `SimulationBroker` (BrokerInterface 첫 구현체, KIS API 0건)
+- [ ] `app/db/models.py` — `VirtualAccount` (33번째) + `VirtualOrder` (34번째) ORM 추가
+- [ ] `alembic/versions/0005_virtual_trading_core.py` 신규 — 2 테이블 migration
+- [ ] `app/data/repositories/virtual_account.py` 신규
+- [ ] `app/data/repositories/virtual_order.py` 신규 (idempotency key + 중복 방지)
+- [ ] `app/config/settings.py` — `PAPER_TRADING_ENABLED: bool = False` 추가
+- [ ] `tests/unit/test_project_structure.py` — `paper_trading_enabled` defaults 단언
+- [ ] `tests/unit/test_simulation_broker.py` 신규 — KIS API import 0건 단언 포함
+- [ ] `tests/integration/test_virtual_account.py` 신규 (~20건)
+- [ ] `compare_metadata` 0건 가드 확인
+- [ ] `tag v0.14-sim-broker + push` — **게이트: pytest ~1337 (+~40)**
+
+### Phase C: VirtualPosition + PnL 추적 + CostModel 확장
+
+- [ ] `app/db/models.py` — `VirtualPosition` (35번째) + `VirtualFill` (36번째) + `VirtualPnLSnapshot` (37번째) ORM 추가
+- [ ] `alembic/versions/0006_virtual_positions.py` 신규 — 3 테이블 migration
+- [ ] `app/data/repositories/virtual_position.py` 신규
+- [ ] `app/data/repositories/virtual_pnl_snapshot.py` 신규
+- [ ] `app/paper/pnl_tracker.py` 신규 — PnL 계산 + daily snapshot 생성
+- [ ] `app/backtest/cost_model.py` — fee 0.015% + stamp_tax 0.18%(매도 only) + slippage 0.05% 확장
+- [ ] `app/broker/simulation_broker.py` — `execute_pending_orders()` 구현 (daily_prices 기준 체결)
+- [ ] `tests/unit/test_pnl_tracker.py` 신규 (~15건)
+- [ ] `tests/integration/test_virtual_positions.py` 신규 (~15건)
+- [ ] `compare_metadata` 0건 가드 확인
+- [ ] `tag v0.14-pnl-tracker + push` — **게이트: pytest ~1367 (+~30)**
+
+### Phase D: Paper Trading API + 스케줄러 잡
+
+- [ ] `app/api/paper_routes.py` 신규
+  - `GET /api/paper/account` — VirtualAccount 집계 (read-only)
+  - `GET /api/paper/orders` — 주문 이력 (read-only)
+  - `GET /api/paper/positions` — 포지션 현황 (read-only)
+  - `GET /api/paper/pnl` — PnL 이력 (read-only)
+  - `POST /api/paper/orders` — paper order 생성 (PAPER_TRADING_ENABLED=True + AUTH required, KIS API 0건)
+  - `DELETE /api/paper/orders/{id}` — paper order 취소
+- [ ] `app/api/schemas.py` — Paper Trading 스키마 8종 추가
+- [ ] `app/api/__init__.py` — `paper_router` export
+- [ ] `app/main.py` — `paper_router` 등록
+- [ ] `app/scheduler/jobs.py` — `execute_paper_orders` (16:00 KST) + `create_paper_pnl_snapshot` (16:30 KST) 잡 추가
+- [ ] `app/scheduler/scheduler.py` — 2 잡 등록 (PAPER_TRADING_ENABLED=False 시 SKIPPED)
+- [ ] `tests/integration/test_paper_api.py` 신규 (~26건) — GET read-only / POST paper order / KIS API 0건 단언 / 405 guard
+- [ ] `tag v0.14-paper-api + push` — **게이트: pytest ~1393 (+~26)**
+
+### Phase E: Frontend 13번째 화면 + 마감 문서
+
+- [ ] `frontend/src/api/types.ts` — Paper Trading 타입 추가
+- [ ] `frontend/src/api/paper.ts` 신규 — fetchPaperAccount / fetchPaperOrders / fetchPaperPositions / fetchPaperPnl / submitPaperOrder / cancelPaperOrder
+- [ ] `frontend/src/hooks/usePaperTrading.ts` 신규 — 6 TanStack Query hooks
+- [ ] `frontend/src/pages/PaperTrading/index.tsx` 신규 (13번째 화면 `/paper`) — VirtualAccountCard / PaperOrderForm / VirtualPositionsTable / PnLChart / PaperOrdersTable
+- [ ] `frontend/src/router.tsx` — PaperTradingPage lazy + `/paper` route
+- [ ] `frontend/src/components/layout/Sidebar.tsx` — `TrendingUp` 아이콘 + `페이퍼 트레이딩 (β)` 메뉴 (13번째)
+- [ ] `frontend/src/tests/mswServer.ts` — paper GET 핸들러 추가 (default empty)
+- [ ] `frontend/src/tests/PaperTrading.test.tsx` 신규 — vitest ~10건 (page wrapper / empty / happy / no-automation guard)
+- [ ] `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts` — sidebar 12→13 menus + `/paper` navigation
+- [ ] `RELEASE_NOTES_v0.14.md` 신규
+- [ ] `README.md` v0.14 갱신 (배너 / 기능 목록 / 누적 사이클 표 / 회귀 기준선)
+- [ ] `PROJECT_STATUS.md` §0 v0.14 마감 선언
+- [ ] `ROADMAP.md` v0.14 행 ✅ 마감
+- [ ] `TESTING.md` 기준선 갱신
+- [ ] `ARCHITECTURE.md` / `API_SPEC.md` / `INTEGRATION_RUNBOOK.md` / `DB_SCHEMA.md` v0.14 반영
+- [ ] 최종 4 게이트 확인 (pytest ~1393 / vitest ~185 / e2e 22 / build)
+- [ ] `tag v0.14-final + push`
+
+---
+
+## v0.15+ — Backlog
+
+자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) 참조. 한 줄 요약:
+
+- **Approval Trading 준비** — OrderCandidate / 승인 플로우 설계 + skeleton (Paper Trading 안정 후, v0.15 후보)
+- **ScoringEngine 본 weight 보강** — v0.13/v0.14 validation report 결과 기반 (누적 데이터 6개월+ 필요)
 - **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위 시각화 layer (외부 인프라)
 - **ProviderHealthMonitor 영속화** — DB / Redis 백업으로 재시작 후 history 유지
 - **인증 고도화** — refresh token / 다중 사용자 / OAuth / RBAC (단일 사용자 운영 검증 후)
@@ -1323,10 +1408,9 @@ DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic r
 - **LLM sentiment / 자동 요약** — 룰 기반 검증 후 (외부 LLM API 비용 / 보안 / 라이선스)
 - **WebSocket / SSE 실시간 갱신** — Provider Health / 백테스트 진행 (현재 polling)
 - **`/api/health/jobs` 분리 + Provider toggle GUI** — 인증 + 보안 검토 동반
-- **Paper trading (VirtualAccount / VirtualOrder / SimulationBroker)** — 별도 보안·컴플라이언스 사이클 선행 필수
 - **모바일 / 태블릿 / lightweight-charts 마이그레이션** — UX 고도화
 - **Watchlist 가격 알림 / target return alert** — 알림 시스템 별도 cycle
-- **Future Backlog (자동매매)** — MockBroker / ReplayBroker / APPROVAL / SMALL_AUTO / FULL_AUTO 모두 별도 보안·컴플라이언스 사이클 선행 필수
+- **Future Backlog (자동매매)** — APPROVAL / SMALL_AUTO / FULL_AUTO 모두 별도 보안·컴플라이언스 사이클 선행 필수
 
 ## 완료 기준
 

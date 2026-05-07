@@ -3423,3 +3423,336 @@ python scripts/export_backtest.py --run-id 1 --dry-run
 - 자동매매 / 실 KIS 주문 / Broker 코드 0건
 - 비밀값 / URL query secret / body text 평문 노출 0건
 - ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 (회귀 단언)
+
+---
+
+## PLAN-0014: v0.14 Paper / Simulation Trading Foundation (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.13-final` (커밋 `c7ddbd7`, 2026-05-08)
+- 회귀 게이트: backend pytest **1277 passed** / frontend vitest **175 passed** / Playwright e2e **21 passed** / build 그린
+- Alembic head: `0004_user_preferences` (v0.13 신규 revision 0건 승계)
+- v0.13 누적 기능: ProviderScorePolicy 승수 엔진 (default OFF) + ScoreDeltaResult in evidence_json + Validation Report GET API 4종 + 12번째 화면 `/validation`
+- `BrokerInterface` 는 v0.1~v0.13 내내 ABC placeholder 만 존재 — v0.14 에서 `SimulationBroker` 첫 구현체 도입
+
+### 목표
+
+v0.13 의 Validation Report 기반 위에 **Paper / Simulation Trading Foundation** 을 구축한다.
+실제 KIS 주문 없이 전략 신호 → 가상 주문 → 가상 체결 → PnL 추적 흐름을 완성한다.
+`SimulationBroker` 가 `BrokerInterface` 를 첫 구현하고, `VirtualAccount` / `VirtualOrder` /
+`VirtualPosition` / `VirtualPnLSnapshot` 도메인이 Alembic 2 revision 으로 추가된다.
+자동매매 / 실 KIS 주문 / FULL_AUTO / APPROVAL 은 이번 사이클에서도 구현하지 않는다.
+
+### 라이선스 / 약관 메모
+
+- 신규 외부 API 0건 — SimulationBroker 는 내부 시뮬레이션만 (KIS 실주문 API 비호출)
+- DART/RSS 라이선스 검토 승계 (v0.11 검토 기준, default OFF 유지)
+- Paper order 생성 → 실 KIS 주문 연결 금지 (코드 레벨 가드 + 테스트 단언)
+
+### 후보 시나리오 비교 (v0.14 진입 시점)
+
+| # | 시나리오 | 가치 | 난이도 | 위험 | 외부 의존성 | DB/Alembic | v1.0 기여 | v0.14 채택 |
+|---|---|---|---|---|---|---|---|---|
+| **X** | **Paper Trading Full Stack** — SimulationBroker + VirtualAccount/Order/Position/PnL + API + UI (권장) | **매우 높음** — APPROVAL 모드 기반 구축, 전략 신호의 실질적 검증 가능 | **높음** — 5 ORM 신규, 상태머신, PnL 계산, 스케줄러 2잡, 프런트 | **중** — 실주문 누출 방지 설계 필요, 코드 레벨 가드 필수 | 없음 (내부 시뮬레이션) | 2 revisions / 5 테이블 | **매우 높음** | ✅ **채택** |
+| Y | Approval Trading 준비 — OrderCandidate / 승인 플로우 설계만, KIS wrapper 0건 | 중 — Paper Trading 기반 없이는 설계가 부유함. 구현 불가 단계 | 중 | 낮음 | 없음 | 1 revision | 중 | ❌ v0.15+ — Paper Trading 안정 후 |
+| Z | Backtest 고도화 — Grid Search 파라미터 튜닝 + walk-forward 보강 + Backtest Export CLI | 중-높음 — 기존 기능 강화. Backtest Export CLI 는 Phase A 에 흡수 | 중 | 낮음 | 없음 | 0 | 중 | ⚠️ Phase A 일부 흡수 |
+| W | KIS order wrapper skeleton — 실 KIS 주문 API wrapper 기초 코드 | 낮음 (현단계) | 높음 | **매우 높음** — 실 KIS 주문 연결 위험, 미성숙 단계 | KIS 실 API | 2-3 revisions | 중 | ❌ 기각 — 실거래 위험 |
+
+**채택 근거 (Scenario X)**:
+- v0.7 BacktestEngine 이 과거 데이터 기반 replay 를 제공했다면, v0.14 SimulationBroker 는 실시간 가상 주문 실행을 제공한다 — 전략 연구 도구의 자연스러운 진화
+- `PAPER_TRADING_ENABLED=False` 기본 — 기존 운영에 영향 0건
+- BrokerInterface 첫 구현체이지만 KIS API 호출 0건 — 100% 내부 시뮬레이션
+- Approval Trading (Y) 은 Paper Trading 이 안정된 후 v0.15+ 에서 진입
+- KIS wrapper (W) 는 컴플라이언스·보안 사이클 별도 선행 필수 → 기각
+
+### v0.14 할 것 / 하지 않을 것
+
+**할 것:**
+
+- `scripts/export_backtest.py` — Backtest Export CLI (v0.13 이연분, Phase A)
+- `ProviderScorePolicy` → `RealNewsScoreProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` 통합 (Phase A)
+- `app/broker/simulation_broker.py` — `SimulationBroker` (BrokerInterface 첫 구현체, Phase B)
+- `VirtualAccount` (33번째 테이블) + `VirtualOrder` (34번째 테이블) ORM + Alembic `0005_virtual_trading_core` (Phase B)
+- `VirtualPosition` (35번째) + `VirtualFill` (36번째) + `VirtualPnLSnapshot` (37번째) ORM + Alembic `0006_virtual_positions` (Phase C)
+- PnL 추적 서비스 + CostModel 확장 (fee 0.015% + stamp_tax 0.18% 매도 only + slippage 0.05% placeholder) (Phase C)
+- Paper Trading API (GET 4종 + POST paper/orders + DELETE 취소) + 스케줄러 잡 2건 (Phase D)
+- 프런트 13번째 화면 `/paper` (Phase E)
+- `RELEASE_NOTES_v0.14.md` + 4 게이트 최종 확인 (Phase E)
+
+**하지 않을 것:**
+- ❌ 실거래 자동매매 / KIS 실주문 / FULL_AUTO / APPROVAL / SMALL_AUTO — v0.1~v0.14 일관 0건
+- ❌ 실 BrokerInterface 를 KIS API 에 연결 — SimulationBroker 는 내부 시뮬레이션만
+- ❌ 사용자 승인 없는 paper order 자동 생성 (스케줄러 잡은 체결 처리만, 주문 생성은 명시 POST 만)
+- ❌ ScoringEngine / HoldingCheckEngine 본 weight 변경 (walk-forward + validation report 결과 + 6개월+ 데이터 필요)
+- ❌ DART/RSS/Prometheus/Provider Data Ingestion default ON 변경
+- ❌ 신규 pip 의존성 (stdlib only)
+- ❌ LLM 기반 전략 자동 생성 / Grafana 통합
+- ❌ 다중 사용자 SaaS / OAuth / RBAC
+- ❌ Approval Trading OrderCandidate 구현 (v0.15+)
+- ❌ 비밀값 / API key / URL query secret / body text 노출
+
+### Paper Trading 범위
+
+```
+Paper Trading 흐름:
+
+[전략 신호 / 수동 POST] → POST /api/paper/orders → VirtualOrder(CREATED)
+                                ↓ (스케줄러: 16:00 장 종료)
+                       execute_pending_orders()
+                                ↓ (current daily_prices 기준 체결)
+                       VirtualFill → VirtualOrder(FILLED) → VirtualPosition 갱신
+                                ↓ (스케줄러: 16:30)
+                       create_daily_pnl_snapshot() → VirtualPnLSnapshot
+                                ↓
+                       GET /api/paper/account | /orders | /positions | /pnl
+```
+
+**핵심 설계 원칙:**
+- `SimulationBroker` 는 KIS API 를 호출하지 않는다 — `submit_order()` 는 DB write 만
+- `execute_pending_orders()` 는 `daily_prices` 테이블의 close price 기준 체결 (실 체결가 아님)
+- paper order 와 real KIS 주문은 코드 경로가 완전히 분리 — 혼동 불가 구조
+- `PAPER_TRADING_ENABLED=False` 기본 — 명시 enable 없이는 API 자체가 503 응답
+
+### SimulationBroker 설계 범위
+
+```python
+# app/broker/simulation_broker.py
+class SimulationBroker:
+    """BrokerInterface 첫 구현체 — 100% 내부 시뮬레이션, KIS API 비호출"""
+
+    def submit_order(session, account_id, symbol, side, quantity, limit_price=None,
+                     idempotency_key=None) -> VirtualOrder:
+        # VirtualOrder(CREATED) DB write, KIS API 호출 0건
+        # duplicate idempotency_key → 기존 order 반환 (멱등)
+
+    def cancel_order(session, order_id) -> VirtualOrder:
+        # CREATED/SUBMITTED → CANCELED (terminal state 는 변경 불가)
+
+    def execute_pending_orders(session, as_of_date) -> list[VirtualFill]:
+        # daily_prices[as_of_date].close_price 기준 체결
+        # CostModel: fee 0.015% + stamp_tax 0.18%(매도 only) + slippage 0.05%
+        # VirtualPosition 갱신, VirtualFill 기록
+```
+
+### VirtualAccount / VirtualOrder / VirtualPosition / PnL 데이터 모델
+
+```
+virtual_accounts (33번째 테이블) — Alembic 0005
+  id: Integer PK
+  name: String(64) not null
+  initial_cash: Numeric(18,4) not null default 10_000_000
+  cash_balance: Numeric(18,4) not null
+  paper_trading_enabled: Boolean default True
+  created_at: DateTime
+  updated_at: DateTime
+
+virtual_orders (34번째 테이블) — Alembic 0005
+  id: Integer PK
+  account_id: FK → virtual_accounts.id (CASCADE DELETE)
+  symbol: String(20) not null (index)
+  side: Enum('BUY', 'SELL')
+  quantity: Integer not null
+  limit_price: Numeric(18,4) nullable (null = market order simulation)
+  status: Enum('CREATED', 'SUBMITTED', 'FILLED', 'PARTIAL_FILLED', 'CANCELED', 'REJECTED')
+  idempotency_key: String(64) unique nullable
+  fill_price: Numeric(18,4) nullable
+  fill_quantity: Integer nullable
+  rejection_reason: String(256) nullable
+  created_at: DateTime (index)
+  executed_at: DateTime nullable
+
+virtual_positions (35번째 테이블) — Alembic 0006
+  id: Integer PK
+  account_id: FK → virtual_accounts.id (CASCADE DELETE)
+  symbol: String(20) not null
+  quantity: Integer not null default 0
+  avg_cost: Numeric(18,4) not null default 0
+  realized_pnl: Numeric(18,4) not null default 0
+  updated_at: DateTime
+  UNIQUE(account_id, symbol)
+
+virtual_fills (36번째 테이블) — Alembic 0006
+  id: Integer PK
+  order_id: FK → virtual_orders.id
+  fill_price: Numeric(18,4)
+  fill_quantity: Integer
+  fee: Numeric(18,4)  -- 거래 수수료 0.015%
+  stamp_tax: Numeric(18,4)  -- 증권거래세 0.18% (매도 only)
+  slippage: Numeric(18,4)  -- 슬리피지 추정 0.05%
+  net_amount: Numeric(18,4)  -- fill_price × fill_quantity ± cost
+  filled_at: DateTime
+
+virtual_pnl_snapshots (37번째 테이블) — Alembic 0006
+  id: Integer PK
+  account_id: FK → virtual_accounts.id
+  snapshot_date: Date (index)
+  cash_balance: Numeric(18,4)
+  market_value: Numeric(18,4)  -- 보유 포지션 현재가 총액
+  total_value: Numeric(18,4)   -- cash + market_value
+  realized_pnl: Numeric(18,4)
+  unrealized_pnl: Numeric(18,4)
+  total_pnl: Numeric(18,4)
+  created_at: DateTime
+  UNIQUE(account_id, snapshot_date)
+```
+
+### Paper Trading API 설계
+
+**GET (read-only, PAPER_TRADING_ENABLED 무관):**
+- `GET /api/paper/account` — VirtualAccount 집계 (cash / market_value / total_value / realized_pnl / unrealized_pnl)
+- `GET /api/paper/orders?status=&symbol=&limit=50` — 주문 이력 (idempotency_key 제외)
+- `GET /api/paper/positions` — 현재 포지션 (symbol / quantity / avg_cost / unrealized_pnl)
+- `GET /api/paper/pnl?from_date=&to_date=` — 일별 PnL 이력
+
+**POST / DELETE (PAPER_TRADING_ENABLED=True 시에만 활성, AUTH required):**
+- `POST /api/paper/orders` — VirtualOrder 생성 (body: symbol / side / quantity / limit_price / idempotency_key)
+- `DELETE /api/paper/orders/{id}` — CREATED/SUBMITTED 상태 주문 취소
+
+**forbidden field guard:** API key / secret / source_file_path / real_order_id / KIS 관련 필드 응답 0건
+
+**모든 paper 라우터:** real KIS API import 0건 단언 (테스트 명시)
+
+### Alembic Revision 계획
+
+```
+0005_virtual_trading_core: virtual_accounts + virtual_orders (2 테이블)
+0006_virtual_positions: virtual_positions + virtual_fills + virtual_pnl_snapshots (3 테이블)
+```
+`compare_metadata` 0건 가드 — Phase B/C 각각 인수 시 자동 검증
+
+### Phase 구성
+
+| Phase | 내용 | 예상 태그 | 예상 게이트 |
+|---|---|---|---|
+| A | Backtest Export CLI (`scripts/export_backtest.py`) + ProviderScorePolicy → producer 통합 | `v0.14-export-policy` | pytest **1277→~1297 (+~20)** |
+| B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | pytest **~1297→~1337 (+~40)** |
+| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | pytest **~1337→~1367 (+~30)** |
+| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | pytest **~1367→~1393 (+~26)** |
+| E | Frontend 13번째 화면 `/paper` + `RELEASE_NOTES_v0.14.md` + 4 게이트 최종 확인 | `v0.14-final` | vitest **175→~185 (+~10)** / e2e **21→22 (+1)** |
+
+### Phase A — Backtest Export CLI + ProviderScorePolicy→Producer 통합
+
+**목표:** v0.13 에서 이연된 Backtest Export CLI 를 구현하고, ProviderScorePolicy 를 실 producer 들에 통합한다.
+
+**수정할 파일:**
+- `scripts/export_backtest.py` (신규) — argparse CLI, `--run-id` / `--format csv|json` / `--output PATH` / `--dry-run`
+- `app/analysis/score_producers.py` — `RealNewsScoreProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` 에 policy 통합
+- `tests/integration/test_backtest_export.py` (신규) — CSV/JSON 출력 / 금지 필드 / dry-run / 404
+- `tests/unit/test_score_producers.py` — policy 통합 단언 추가
+
+**수정하지 않을 파일:**
+- `app/api/`, `app/db/models.py`, `app/main.py`, `frontend/` — Phase A 범위 외
+
+**완료 기준:** pytest ~1277→~1297 (+~20). 회귀 0건. Forbidden field (evidence_json / source_file_path) export 출력 0건.
+
+---
+
+### Phase B — SimulationBroker + VirtualAccount/VirtualOrder 도메인
+
+**목표:** BrokerInterface 의 첫 구현체 `SimulationBroker` 를 만들고, VirtualAccount + VirtualOrder ORM + Alembic 0005 를 추가한다.
+
+**수정할 파일:**
+- `app/broker/__init__.py` (신규) — SimulationBroker export
+- `app/broker/simulation_broker.py` (신규) — `SimulationBroker` (KIS API 0건)
+- `app/db/models.py` — `VirtualAccount` (33번째) + `VirtualOrder` (34번째) ORM 추가
+- `alembic/versions/0005_virtual_trading_core.py` (신규)
+- `app/data/repositories/virtual_account.py` (신규)
+- `app/data/repositories/virtual_order.py` (신규)
+- `app/config/settings.py` — `PAPER_TRADING_ENABLED: bool = False` 추가
+- `tests/unit/test_simulation_broker.py` (신규)
+- `tests/integration/test_virtual_account.py` (신규)
+- `tests/unit/test_project_structure.py` — `paper_trading_enabled` defaults 단언
+
+**수정하지 않을 파일:**
+- `app/api/`, `frontend/`, `app/analysis/` (scoring/recommendation 코드) — Phase B 범위 외
+
+**완료 기준:** pytest ~1297→~1337 (+~40). `compare_metadata` 0건. SimulationBroker 에서 KIS API 직접 호출 0건 단언.
+
+---
+
+### Phase C — VirtualPosition + PnL 추적 + CostModel 확장
+
+**목표:** VirtualPosition / VirtualFill / VirtualPnLSnapshot ORM + Alembic 0006 추가. PnLTracker 서비스 + CostModel 확장.
+
+**수정할 파일:**
+- `app/db/models.py` — `VirtualPosition` (35번째) + `VirtualFill` (36번째) + `VirtualPnLSnapshot` (37번째) ORM 추가
+- `alembic/versions/0006_virtual_positions.py` (신규)
+- `app/data/repositories/virtual_position.py` (신규)
+- `app/data/repositories/virtual_pnl_snapshot.py` (신규)
+- `app/paper/pnl_tracker.py` (신규) — PnL 계산 + snapshot 생성
+- `app/backtest/cost_model.py` — fee 0.015% + stamp_tax 0.18% (매도 only) + slippage 0.05% 확장
+- `app/broker/simulation_broker.py` — `execute_pending_orders()` 구현 (daily_prices 기준 체결)
+- `tests/unit/test_pnl_tracker.py` (신규)
+- `tests/integration/test_virtual_positions.py` (신규)
+
+**수정하지 않을 파일:**
+- `app/api/`, `frontend/` — Phase C 범위 외
+
+**완료 기준:** pytest ~1337→~1367 (+~30). `compare_metadata` 0건. CostModel 은 기존 BacktestEngine 회귀 통과.
+
+---
+
+### Phase D — Paper Trading API + 스케줄러 잡
+
+**목표:** Paper Trading read-only API (GET 4종) + paper order 생성/취소 API (POST/DELETE, AUTH required) + 스케줄러 잡 2건.
+
+**수정할 파일:**
+- `app/api/paper_routes.py` (신규) — GET account/orders/positions/pnl + POST orders + DELETE orders/{id}
+- `app/api/schemas.py` — Paper Trading 스키마 8종 추가
+- `app/api/__init__.py` — `paper_router` export 추가
+- `app/main.py` — `paper_router` 등록
+- `app/scheduler/jobs.py` — `execute_paper_orders` 잡 (16:00 KST) + `create_paper_pnl_snapshot` 잡 (16:30 KST)
+- `app/scheduler/scheduler.py` — 2 잡 등록 (PAPER_TRADING_ENABLED=False 시 SKIPPED)
+- `tests/integration/test_paper_api.py` (신규)
+
+**수정하지 않을 파일:**
+- `frontend/` — Phase E 범위. `app/analysis/`, `app/scoring/` — 변경 없음.
+
+**완료 기준:** pytest ~1367→~1393 (+~26). POST /api/paper/orders 에서 KIS API import 0건 단언. GET 은 AUTH 없이도 조회 가능 (read-only).
+
+---
+
+### Phase E — Frontend 13번째 화면 + 마감 문서
+
+**목표:** `/paper` 프런트 화면 + 마감 문서 + 4 게이트 최종 확인.
+
+**수정할 파일 (Frontend):**
+- `frontend/src/api/types.ts` — Paper Trading 타입 추가
+- `frontend/src/api/paper.ts` (신규) — fetchPaperAccount / fetchPaperOrders / fetchPaperPositions / fetchPaperPnl / submitPaperOrder / cancelPaperOrder
+- `frontend/src/hooks/usePaperTrading.ts` (신규) — 6 TanStack Query hooks
+- `frontend/src/pages/PaperTrading/index.tsx` (신규) — VirtualAccountCard / PaperOrderForm / VirtualPositionsTable / PnLChart / PaperOrdersTable
+- `frontend/src/router.tsx` — PaperTradingPage lazy + `/paper` route
+- `frontend/src/components/layout/Sidebar.tsx` — `TrendingUp` 아이콘 + `페이퍼 트레이딩 (β)` 메뉴 (13번째)
+- `frontend/src/tests/mswServer.ts` — paper GET 핸들러 추가
+- `frontend/src/tests/PaperTrading.test.tsx` (신규) — vitest ~10건
+- `frontend/e2e/fixtures/apiMocks.ts` — paper fixtures 추가
+- `frontend/e2e/dashboard.spec.ts` — sidebar 12→13 menus + `/paper` navigation
+
+**수정할 파일 (문서):**
+- `RELEASE_NOTES_v0.14.md` (신규)
+- `README.md`, `PROJECT_STATUS.md`, `ROADMAP.md`, `TASKS.md`, `TESTING.md`, `API_SPEC.md`, `ARCHITECTURE.md`, `INTEGRATION_RUNBOOK.md`, `DB_SCHEMA.md`
+
+**완료 기준:** 4 게이트 그린 (pytest ~1393 / vitest ~185 / e2e 22 / build). 자동매매 / 실주문 UI 부재 가드 (e2e). paper order submit 버튼은 `/paper` 페이지에만 존재하며 no-automation 체크에서 제외.
+
+### 핵심 정책 (cycle-wide)
+
+- **SimulationBroker 는 KIS API 를 호출하지 않는다** — 코드 레벨 import 금지 단언
+- **PAPER_TRADING_ENABLED=False 기본** — 명시 enable 시에만 POST /api/paper/orders 활성
+- **VirtualOrder 는 real KIS 주문과 물리적으로 분리** — 별도 테이블, 별도 라우터, 별도 스키마
+- **DART/RSS/Prometheus/Provider Data Ingestion default OFF 유지** — v0.13 정책 그대로
+- **ScoringEngine / HoldingCheckEngine 본 weight 변경 0건** — validation report 결과 축적 필요
+- **신규 pip 의존성 0건** — 기존 의존성 내 구현
+- **자동매매 / FULL_AUTO / APPROVAL / SMALL_AUTO 코드 0건** — 자동 주문 생성 / KIS 실거래 0건
+- **비밀값 / URL query secret / body text 평문 노출 0건**
+
+### 완료 기준 (cycle-wide)
+
+- 4 게이트 그린: pytest ~1393 (1277 → +~116) / vitest ~185 (175 → +~10) / e2e 22 (+1) / build
+- 6 태그 push: `v0.14-export-policy` → `v0.14-sim-broker` → `v0.14-pnl-tracker` → `v0.14-paper-api` → `v0.14-final`
+- Alembic 2 revisions: `0005_virtual_trading_core` + `0006_virtual_positions`
+- SimulationBroker 에서 KIS API import 0건 단언 (명시 테스트)
+- 자동매매 / 실 KIS 주문 / BrokerInterface 실거래 연결 0건
+- DART/RSS/Prometheus/Provider Data Ingestion/Score Policy 모두 기본 OFF 유지
+- `compare_metadata` diff 0건 (각 Phase B/C 인수 시점)
+- 비밀값 / URL query secret 노출 0건
