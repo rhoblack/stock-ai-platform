@@ -1429,3 +1429,75 @@ curl -s -X DELETE http://localhost:8000/api/watchlists/99999 \
 - UserPreference / watchlist 신규 라우터에 KIS / DART / Broker / 자동매매 import 0건
 - 모든 응답에 password / password_hash / secret / broker / account / quantity / order_* 0건
 - mutating endpoint 누적 9건 (auth 2 + watchlist 6 + preferences 1) — `test_mutating_endpoint_count_unchanged` 단언 유지
+
+---
+
+## 21. v0.12 Provider Data Ingestion + Walk-forward Backtest CLI (v0.12)
+
+### 21.1 Provider Data Ingestion enable 절차
+
+> **기본값**: `PROVIDER_DATA_INGESTION_ENABLED=false` — 아무것도 하지 않음.
+> 실 enable 전 반드시 DART API 키 및 RSS feed URL 라이선스를 운영자가 검토해야 함.
+
+```dotenv
+# .env (운영자가 명시 설정 필요 — 기본 false)
+PROVIDER_DATA_INGESTION_ENABLED=true
+DART_ENABLED=true
+# DART_API_KEY 는 환경 변수에만 설정 — 코드/로그/응답 평문 노출 금지
+DART_API_KEY=YOUR_KEY_HERE
+RSS_NEWS_ENABLED=true
+RSS_FEED_URLS=https://your-rss-feed-url/
+```
+
+enable 후 어댑터 수동 호출 예시 (python REPL):
+
+```python
+from app.data.ingestion import ingest_dart_disclosures, ingest_rss_news
+from app.db.session import get_session_factory
+from app.config.settings import Settings
+
+settings = Settings()
+SessionFactory = get_session_factory(settings.database_url)
+with SessionFactory() as session:
+    result = ingest_dart_disclosures(session, settings)
+    print(result)  # {"inserted": N, "skipped_disabled": False, ...}
+```
+
+### 21.2 Walk-forward Backtest CLI
+
+기본 단순 백테스트 위에 walk-forward fold 분리 검증 추가:
+
+```powershell
+# walk-forward 기본 (60일 train / 20일 validate, dry-run)
+python scripts/run_backtest.py --walk-forward --strategy top_grade
+
+# 파라미터 조정
+python scripts/run_backtest.py --walk-forward \
+  --train-window-days 90 --validate-window-days 30 --gap-days 5 \
+  --strategy high_score --commit
+
+# Multi-strategy 비교 (dry-run)
+python scripts/run_backtest.py --multi \
+  --strategies top_grade,high_score,multi_signal
+
+# Multi-strategy 비교 (commit + sector breakdown 포함)
+python scripts/run_backtest.py --multi --strategies top_grade,high_score --commit
+```
+
+결과 확인:
+
+```powershell
+# folds API
+curl http://localhost:8000/api/backtest/runs/1/folds | python -m json.tool
+
+# comparison API
+curl http://localhost:8000/api/backtest/runs/1/comparison | python -m json.tool
+```
+
+### 21.3 v0.12 안전 가드
+
+- alembic head = `0004_user_preferences` 유지 (v0.12 신규 revision **0건**)
+- `GET /api/backtest/runs/{id}/folds` / `/comparison` — GET only, POST/PUT/PATCH/DELETE 모두 405
+- 응답에 `source_file_path` / `raw_text` / `본문` / `api_key` / `token` / `secret` / `order_id` / `quantity` / `broker` 0건
+- ScoringEngine weight (`technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%`) 변경 0건
+- 신규 pip 의존성 0건

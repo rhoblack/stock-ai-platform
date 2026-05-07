@@ -7,18 +7,21 @@
 
 ---
 
-## 0. v0.12 시작 선언 — Provider Data Scoring & Backtest Validation
+## 0. v0.12 마감 선언 — Provider Data Scoring & Backtest Validation
 
-**v0.12 cycle 시작.** `v0.11-final` 위에 **Provider Data Scoring & Backtest
-Validation** 5 phase 진입.
+**v0.12 cycle 마감.** `v0.11-final` 위에 **Provider Data Scoring & Backtest
+Validation** 5 phase 완료. 최종 마감 태그 `v0.12-final`.
 
 - 시작 일자: **2026-05-07 (Asia/Seoul)**
-- 기준 태그: `v0.11-final` (HEAD `09eadfa`)
-- 기준 게이트: backend pytest **1119 passed (1 deselected)** / frontend vitest
-  **158 passed** / Playwright e2e **21 passed** / build 그린
-- Alembic head: `0004_user_preferences` (**v0.12 신규 revision 없음 예상** —
-  walk-forward fold 결과는 기존 `backtest_runs.notes` JSON 재활용)
-- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0012`
+- 마감 일자: **2026-05-07 (Asia/Seoul)**
+- 최종 게이트:
+  - backend pytest **1194 passed** (1 deselected — test_settings_defaults 로컬 .env 충돌, Phase A 부터 baseline 인계)
+  - frontend vitest **165 passed** (20 파일)
+  - frontend build **그린** (`tsc --noEmit && vite build`, ~2.9s)
+  - Playwright e2e **21 passed** (chromium)
+- 기준 태그: `v0.11-final` → 마감 태그: `v0.12-final`
+- Alembic head: `0004_user_preferences` (v0.12 신규 revision **0건** — walk-forward fold / comparison 결과 모두 `summary_json` 재활용)
+- 세부 결과: [`RELEASE_NOTES_v0.12.md`](./RELEASE_NOTES_v0.12.md)
 
 ### v0.12 채택 결론 (시나리오 비교 요약)
 
@@ -40,7 +43,7 @@ Scoring + Backtest Validation**.
 | B | Walk-forward Backtest Engine — `app/backtest/walk_forward.py` (`WalkForwardBacktestEngine` + `FoldResult` + `WalkForwardSummary` + `generate_folds()`) + train/validate window sliding (기본 60/20일, gap_days=0) + IS/OOS metrics 집계 + fold metadata `summary_json["walk_forward_folds"]` (Alembic 0건) + CLI `--walk-forward`/`--train-window-days`/`--validate-window-days`/`--gap-days` + 통합 테스트 17건 | `v0.12-walk-forward` ✅ | pytest 1149→1167 (+17, 1 deselected 유지) |
 | C | Multi-strategy Comparison + Regime/Sector Breakdown — `app/backtest/multi_strategy_runner.py` (`MultiStrategyRunner` + `StrategyResult` + `MultiStrategyComparison`) + `app/backtest/regime_breakdown.py` (`SectorBreakdownEntry` + `aggregate_sector_breakdown()`) + 같은 기간/유니버스 보장 + UNKNOWN bucket 안전 처리 + CLI `--multi`/`--strategies`/`--no-regime-breakdown`/`--no-sector-breakdown` + `summary_json["multi_strategy_comparison"]` 저장 (Alembic 0건) + 통합 테스트 16건 | `v0.12-multi-strategy` ✅ | pytest 1167→1183 (+16, 1 deselected 유지) |
 | D | Backtest Read-only API/UI 확장 + evidence.data_source chip — `GET /api/backtest/runs/{id}/folds` + `/comparison` + `BacktestFoldSchema`/`BacktestComparisonResponse`/`SectorBreakdownSchema` (`app/api/schemas.py`) + `app/api/routes.py` 2 라우터 (GET only, 405 검증) + `useBacktestFolds`/`useBacktestComparison` hooks + 백테스트 화면 fold 표/비교 표/sector breakdown/best strategy 강조/data_source chip (PROVIDER/FAKE/CSV/MANUAL) + backend 12건 (`test_backtest_api_phase_d.py`) + vitest 7건 + MSW 2건 | `v0.12-scoring-readonly` ✅ | pytest 1183→1194 (+11) / vitest 158→165 (+7) |
-| E | 마감 — `RELEASE_NOTES_v0.12.md` + 4 게이트 최종 확인 | `v0.12-final` ⏳ | 4 게이트 그린 |
+| E | 마감 — `RELEASE_NOTES_v0.12.md` + 4 게이트 최종 확인 | `v0.12-final` ✅ | pytest 1194 / vitest 165 / e2e 21 / build 그린 |
 
 ### v0.12 핵심 정책
 
@@ -79,7 +82,7 @@ Scoring + Backtest Validation**.
 
 ---
 
-## 0-1. v0.11 마감 선언 — Real Provider Transport & Observability
+## 0-1. v0.11 마감 선언 — Real Provider Transport & Observability (강등: 이전 §0)
 
 **v0.11 cycle 마감.** `v0.10-final` 위에 **Real Provider Transport &
 Observability** 5 phase 완료. 최종 마감 태그 `v0.11-final`.

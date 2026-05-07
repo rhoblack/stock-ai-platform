@@ -4,42 +4,46 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.11 Real Provider Transport & Observability — 마감 완료.**
-> 최종 마감 태그 `v0.11-final`. v0.11 은 v0.10 의 transport 주입형 DART/RSS
-> skeleton 위에 **실 httpx 전송 + provider observability 인프라** 를 쌓은
-> 사이클이다.
-> **DART HTTP Transport** (`HttpxDartTransport` lazy httpx import + factory 자동
-> 주입 + 27 respx 테스트) → **RSS HTTP Transport** (`HttpxRssTransport`
-> follow_redirects=True + 19 respx 테스트, `SensitiveQueryStringFilter` 를
-> `app/config/logging.py` 로 추출하여 DART/RSS 공유) → **Provider Observability +
-> Prometheus** (bounded ring buffer 200 calls / 50 failures + `Summary24h` +
-> optional `prometheus-client` `/metrics` default OFF + 21 테스트) → **Provider
-> Health API/UI 확장** (`/api/health/providers` 6 신규 필드 + Settings
-> `SuccessRateBar` / `RecentFailuresList` + 13 테스트).
+> **v0.12 Provider Data Scoring & Backtest Validation — 마감 완료.**
+> 최종 마감 태그 `v0.12-final`. v0.12 는 v0.11 의 **실 DART/RSS HTTP transport**
+> 위에 **Provider Data Ingestion → walk-forward backtest 검증 → multi-strategy
+> 비교 → read-only API/UI 확장** 을 완성한 사이클이다.
+> **Phase A** (`app/data/ingestion.py` 4 어댑터, `data_source` provenance DTO,
+> `PROVIDER_DATA_INGESTION_ENABLED=False` 기본, +30 pytest) →
+> **Phase B** (`WalkForwardBacktestEngine` + `generate_folds()`, IS/OOS fold
+> sliding, `summary_json["walk_forward_folds"]`, +17 pytest) →
+> **Phase C** (`MultiStrategyRunner` + `SectorBreakdownEntry` +
+> `aggregate_sector_breakdown()`, `summary_json["multi_strategy_comparison"]`,
+> +16 pytest) →
+> **Phase D** (`GET /api/backtest/runs/{id}/folds` + `/comparison`, 5 Pydantic
+> 스키마, `useBacktestFolds` / `useBacktestComparison` hooks, fold/comparison 표
+> + sector breakdown + best strategy 배지 + `data_source` chip UI, +12 pytest / +7
+> vitest).
 > 자동매매 / 실주문 / Broker 구현 / LLM / Telegram 자동 발송 은 여전히 **0건**.
 > 모든 provider 는 default OFF 유지 — `DART_ENABLED=false` /
-> `RSS_NEWS_ENABLED=false` / `PROMETHEUS_ENABLED=false` 기본. 운영자가 명시 enable
-> 했을 때만 실 HTTP / Prometheus exposure 가 발생한다.
+> `RSS_NEWS_ENABLED=false` / `PROMETHEUS_ENABLED=false` /
+> `PROVIDER_DATA_INGESTION_ENABLED=false` 기본. ScoringEngine weight 변경 0건.
+> Alembic 신규 revision 0건.
 >
-> 최신 통과 회귀 게이트 — **백엔드 pytest 1119 (1 deselected) / frontend vitest 158 /
+> 최신 통과 회귀 게이트 — **백엔드 pytest 1194 (1 deselected) / frontend vitest 165 /
 > Playwright e2e 21 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
 > SMALL_AUTO 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface` 는
 > ABC placeholder 만 유지). 인증 (`AUTH_ENABLED=false` 기본) 이므로 기존
 > read-only GET API 는 그대로 OPEN. 자세한 정책은 [`AGENTS.md`](./AGENTS.md) /
 > [`ROADMAP.md`](./ROADMAP.md) 참조.
 >
-> **저작권 / 데이터 정책 (v0.4 ~ v0.11 누적)**: 리포트·뉴스·공시·재무·실적 원문 본문
+> **저작권 / 데이터 정책 (v0.4 ~ v0.12 누적)**: 리포트·뉴스·공시·재무·실적 원문 본문
 > (paragraph) 저장 0건, PDF / Excel BLOB 저장 0건, 자동 크롤링 0건,
-> `source_file_path` 외부 노출 0건. `WatchlistItem` / `UserPreference` ORM 에
-> broker / account / quantity / order_* 컬럼 0건.
+> `source_file_path` 외부 노출 0건. `WatchlistItem` / `UserPreference` / backtest
+> 관련 ORM 에 broker / account / quantity / order_* 컬럼 0건.
 > **평문 IP / 평문 password 저장 0건** — `LoginAuditLog.source_ip_hash` 는
 > SHA256 만, password 는 scrypt hash 만. 알림 설정 UI 는 저장 전용 — 실 Telegram
 > 발송 0건. **DART_API_KEY / crtfc_key / RSS feed URL 의 query string secret 은
 > 응답 / 로그 / UI 어디에도 평문 노출 0건** — `SensitiveFilter` (6 변형 마스킹) +
 > 공유 `SensitiveQueryStringFilter` (httpx INFO 로그의 `?crtfc_key=...` /
 > `?api_key=...` 자동 마스킹) + transport `error_message` 가 예외 클래스명만
-> carry + Provider Health 응답에서 `last_error_message` 의도적 미포함 + 16
-> forbidden substring paranoid scan. **외부 API 자동 호출 0건** — 모든 테스트에서
+> carry + Provider Health 응답에서 `last_error_message` 의도적 미포함 + paranoid
+> forbidden substring scan. **외부 API 자동 호출 0건** — 모든 테스트에서
 > `respx` transport-layer mock + `httpx.Client` 미생성 단언 병행.
 >
 > **누적 인수 태그**: `v0.1-backend-final` → `v0.1-backend-kis-paper-verified`
@@ -60,7 +64,9 @@
 > `v0.10-provider-runtime` → `v0.10-provider-resilience` → `v0.10-dart-provider`
 > → `v0.10-rss-provider` → `v0.10-health-api` → `v0.10-final` →
 > `v0.11-dart-transport` → `v0.11-rss-transport` → `v0.11-observability` →
-> `v0.11-health-extended` → **`v0.11-final`**.
+> `v0.11-health-extended` → `v0.11-final` →
+> `v0.12-provider-ingestion` → `v0.12-walk-forward` → `v0.12-multi-strategy` →
+> `v0.12-scoring-readonly` → **`v0.12-final`**.
 >
 > 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
@@ -79,7 +85,9 @@
 > [`RELEASE_NOTES_v0.10.md`](./RELEASE_NOTES_v0.10.md) (v0.10 Real Provider Readiness
 > & Resilience, 1045 / 153 / 20) /
 > [`RELEASE_NOTES_v0.11.md`](./RELEASE_NOTES_v0.11.md) (v0.11 Real Provider Transport
-> & Observability, **1119 / 158 / 21**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.12 참조.
+> & Observability, 1119 / 158 / 21) /
+> [`RELEASE_NOTES_v0.12.md`](./RELEASE_NOTES_v0.12.md) (v0.12 Provider Data Scoring
+> & Backtest Validation, **1194 / 165 / 21**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.13 참조.
 
 ## 1. 프로젝트 목표
 
@@ -139,9 +147,13 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **Provider Observability + Prometheus exporter (v0.11)** — `ProviderHealthMonitor` 에 bounded ring buffer (`recent_calls` deque maxlen=200 + `recent_failures` deque maxlen=50) + `Summary24h(call_count_24h / success_count_24h / failure_count_24h / success_rate_24h / avg_attempts)`. optional `prometheus-client` (Apache 2.0): 4 Counter + 1 Gauge (circuit_state CLOSED=0/OPEN=1/HALF_OPEN=2/UNREGISTERED=3) + 1 Histogram (attempts). `GET /metrics` → `PROMETHEUS_ENABLED=false` 기본 시 404, true 시 200+text/plain. POST/PUT/DELETE 405. lazy `_emit_prometheus` hook (try/except 격리)
 - **Provider Health API/UI 24h aggregates (v0.11)** — `/api/health/providers` 6 신규 필드 (`call_count_24h` / `success_count_24h` / `failure_count_24h` / `success_rate_24h: float?` / `avg_attempts_24h: float?` / `recent_failures: list[5]`). `RecentFailureSummary` 는 `{timestamp, error_kind}` 만 (message 필드 부재). Settings 패널에 `SuccessRateBar` (≥99% emerald / ≥95% amber / <95% red / null slate) + `avg_attempts` 셀 + `RecentFailuresList` 카드 (실패 1건+ provider 만 노출). 패널 내 button / form / switch 0건 유지
 - data_snapshots / decision_logs / job_runs / notification_logs persistence
-- 테스트 가능한 구조 (backend pytest **1119**, vitest **158**, e2e **21**, build)
+- **Provider Data Ingestion (v0.12)** — `app/data/ingestion.py` 4 어댑터 (`ingest_dart_disclosures` / `ingest_rss_news` / `ingest_dart_fundamentals` / `ingest_dart_earnings`). `PROVIDER_DATA_INGESTION_ENABLED=False` 기본. 4 DTO 에 `data_source: str` provenance (`PROVIDER`/`FAKE`/`CSV`/`MANUAL`). ScoringEngine weight 변경 0건 / Alembic revision 0건
+- **Walk-forward Backtest Engine (v0.12)** — `WalkForwardBacktestEngine` + `generate_folds()` (60/20일 기본 sliding, IS/OOS 겹침 없음) + IS/OOS `win_rate_5d` / `avg_return_5d` 집계 + `summary_json["walk_forward_folds"]` 직렬화 + CLI `--walk-forward` / `--train-window-days` / `--validate-window-days` / `--gap-days`
+- **Multi-strategy Comparison + Sector Breakdown (v0.12)** — `MultiStrategyRunner` + `SectorBreakdownEntry` + `aggregate_sector_breakdown()` + `summary_json["multi_strategy_comparison"]` 직렬화 + `best_strategy_by_win_rate_5d` / `_by_avg_return_5d` ranking + CLI `--multi` / `--strategies`
+- **Backtest read-only API 확장 (v0.12)** — `GET /api/backtest/runs/{id}/folds` + `GET /api/backtest/runs/{id}/comparison` (GET only, mutation 405). fold 표 / comparison 표 / sector breakdown / best strategy 배지 / `data_source` chip (PROVIDER=파랑 / FAKE=황 / CSV=보라 / MANUAL=회색) 프런트 보강
+- 테스트 가능한 구조 (backend pytest **1194**, vitest **165**, e2e **21**, build)
 
-## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.11 일관 정책)
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.12 일관 정책)
 
 다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
 별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.

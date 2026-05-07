@@ -1,18 +1,20 @@
 # Architecture
 
-> 본 문서는 **v0.12 Phase A 시점** 기준으로 갱신된다 (`v0.12-provider-ingestion`
-> 태그 포함). v0.11 마감 위에 **Provider Data Ingestion** 어댑터 모듈
-> (`app/data/ingestion.py`) 이 추가되었다. v0.11 의 `HttpxDartTransport` /
-> `HttpxRssTransport` 를 v0.5/v0.6 의 collector / importer 로 연결하는
-> 4 어댑터 (`ingest_dart_disclosures` / `ingest_rss_news` /
-> `ingest_dart_fundamentals` / `ingest_dart_earnings`) 가 default OFF
-> (`PROVIDER_DATA_INGESTION_ENABLED=false` 기본) 로 도입되었고, 모든 DTO 에
-> `data_source` provenance 태그 (`PROVIDER`/`FAKE`/`CSV`/`MANUAL`) 가 추가되었다.
-> ScoringEngine 본 weight 변경 0건. Alembic 새 revision 0건 (`data_source` 는
-> runtime-only DTO 필드). evidence 빌더 4종 (`_safe_news_evidence` /
-> `_safe_disclosure_evidence` / `_safe_fundamental_evidence` /
-> `_safe_earnings_evidence`) 에 `data_source` 허용 (DB 컬럼 부재 시 omit,
-> Phase D 컬럼 추가 후 자동 노출).
+> 본 문서는 **v0.12 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.12-final`).
+> v0.12 는 v0.11 위에 다음 4개 Phase 를 추가했다:
+> **Phase A** — `app/data/ingestion.py` 4 어댑터 (default OFF,
+> `PROVIDER_DATA_INGESTION_ENABLED=false`), 4 DTO `data_source` provenance,
+> evidence 빌더 `data_source` 허용, Alembic revision 0건.
+> **Phase B** — `app/backtest/walk_forward.py` (`WalkForwardBacktestEngine` +
+> `generate_folds()`, IS/OOS fold sliding, `summary_json["walk_forward_folds"]`).
+> **Phase C** — `app/backtest/multi_strategy_runner.py` (`MultiStrategyRunner` +
+> `StrategyResult`) + `app/backtest/regime_breakdown.py` (`SectorBreakdownEntry` +
+> `aggregate_sector_breakdown()`), `summary_json["multi_strategy_comparison"]`.
+> **Phase D** — `GET /api/backtest/runs/{id}/folds` + `/comparison` (read-only,
+> mutation 405), 5 Pydantic 스키마, `useBacktestFolds` / `useBacktestComparison`
+> hooks, Backtest UI fold/comparison 표 + `data_source` chip.
+> ScoringEngine / HoldingCheckEngine 본 weight 변경 0건. Alembic 신규 revision 0건.
+> 최종 게이트: pytest 1194 / vitest 165 / e2e 21 / build 그린.
 >
 > 본 문서는 **v0.11 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.11-final`).
 > v0.1 Backend → v0.2 Frontend → v0.3 Analysis/Ops → v0.4 Analyst & Theme Intelligence →

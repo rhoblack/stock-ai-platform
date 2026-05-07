@@ -1154,7 +1154,7 @@ e2e 21 / build 그린**. 마감 태그 `v0.11-final`. Alembic head `0004_user_pr
 
 ---
 
-## v0.12 — Provider Data Scoring & Backtest Validation (시작 선언)
+## v0.12 — Provider Data Scoring & Backtest Validation ✅ 마감
 
 기준선: `v0.11-final`. 회귀 게이트: pytest 1119 / vitest 158 / e2e 21 / build 그린.
 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0012`. 채택 시나리오: **Scenario X — Provider
@@ -1182,7 +1182,7 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - [x] 호출자가 직접 transport 주입 시 `httpx.Client` 미생성 단언 (4 어댑터 동시 검증)
 - [x] 통합 테스트 30건 (`tests/integration/test_provider_data_ingestion.py`)
 - [x] v0.10/v0.11 누적 회귀 0건 — backend pytest 1119 → 1149 (+30)
-- [ ] `tag v0.12-provider-ingestion + push`
+- [x] `tag v0.12-provider-ingestion + push`
 
 ### Phase B: Walk-forward Backtest Engine ✅ 인수
 
@@ -1193,7 +1193,7 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - [x] `scripts/run_backtest.py` 보강 — `--walk-forward`, `--train-window-days`, `--validate-window-days`, `--gap-days` CLI 옵션
 - [x] 통합 테스트 17건 (`tests/integration/test_walk_forward_engine.py`) — 폴드 생성 순수논리 5건 + 엔진 dry/commit 9건 + CLI 2건 + 직렬화 1건
 - [x] v0.7 BacktestEngine 회귀 0건 — backend pytest 1149→1167 (+17, 1 deselected 유지)
-- [ ] `tag v0.12-walk-forward + push`
+- [x] `tag v0.12-walk-forward + push`
 
 ### Phase C: Multi-strategy Comparison + Regime/Sector Breakdown ✅ 인수
 
@@ -1204,7 +1204,7 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - [x] 같은 기간/유니버스 보장 (`_fetch_recs_with_sector` 동일 쿼리 패턴) + sector 누락 종목 → `UNKNOWN` bucket 안전 처리
 - [x] 통합 테스트 16건 (`tests/integration/test_multi_strategy_comparison.py`) — sector 순수집계 2건 + 엔진 dry 3건 + 순위 2건 + breakdown 3건 + commit 2건 + 직렬화 1건 + CLI 3건
 - [x] v0.7 + Phase B 회귀 0건 — backend pytest 1167→1183 (+16, 1 deselected 유지)
-- [ ] `tag v0.12-multi-strategy + push`
+- [x] `tag v0.12-multi-strategy + push`
 
 ### Phase D: Backtest Read-only API/UI 확장 + Provider Score Evidence ✅
 
@@ -1220,19 +1220,19 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - [x] vitest 9건 추가 (`frontend/src/tests/Backtest.test.tsx`) — folds 2건 + comparison 2건 + data_source chip 2건 + forbidden 1건 (기존 7건 포함 총 16건)
 - [x] MSW default 핸들러 2건 추가 (`mswServer.ts`) — folds / comparison 빈 응답
 - [x] secret / token / api_key / URL query secret / body text 노출 0건 paranoid scan 완료
-- [ ] `tag v0.12-scoring-readonly + push`
+- [x] `tag v0.12-scoring-readonly + push`
 
-### Phase E: 마감 (문서)
+### Phase E: 마감 (문서) ✅ 인수
 
-- [ ] `RELEASE_NOTES_v0.12.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.13 후보)
-- [ ] `README.md` v0.12 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
-- [ ] `PROJECT_STATUS.md` §0 v0.12 마감 선언으로 교체
-- [ ] `ROADMAP.md` v0.12 행 ✅ 마감
-- [ ] `TESTING.md` 기준선 갱신 (~1176 pytest / ~163 vitest / 22 e2e)
-- [ ] `ARCHITECTURE.md` v0.12 마감 시점 반영
-- [ ] `API_SPEC.md` `/folds` + `/comparison` + `evidence.data_source` 안내
-- [ ] `INTEGRATION_RUNBOOK.md` Provider Data Ingestion enable 절차 + walk-forward CLI 안내
-- [ ] `tag v0.12-final + push`
+- [x] `RELEASE_NOTES_v0.12.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.13 후보)
+- [x] `README.md` v0.12 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
+- [x] `PROJECT_STATUS.md` §0 v0.12 마감 선언으로 교체
+- [x] `ROADMAP.md` v0.12 행 ✅ 마감
+- [x] `TESTING.md` 기준선 갱신 (1194 pytest / 165 vitest / 21 e2e)
+- [x] `ARCHITECTURE.md` v0.12 마감 시점 반영
+- [x] `API_SPEC.md` `/folds` + `/comparison` + `evidence.data_source` 안내 (Phase D 에서 완료)
+- [x] `INTEGRATION_RUNBOOK.md` Provider Data Ingestion enable 절차 + walk-forward CLI 안내
+- [x] `tag v0.12-final + push`
 
 ---
 
