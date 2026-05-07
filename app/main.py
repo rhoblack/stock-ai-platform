@@ -7,7 +7,13 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api import auth_router, preferences_router, router as api_router, watchlist_router
+from app.api import (
+    auth_router,
+    health_router,
+    preferences_router,
+    router as api_router,
+    watchlist_router,
+)
 from app.auth.brute_force import BruteForceGuard
 from app.auth.security import validate_auth_settings
 from app.config.logging import configure_logging
@@ -155,6 +161,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(watchlist_router)
     app.include_router(preferences_router)
+    app.include_router(health_router)
     app.include_router(api_router)
     return app
 

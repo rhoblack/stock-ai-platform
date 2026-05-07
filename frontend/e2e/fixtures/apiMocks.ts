@@ -718,6 +718,47 @@ const WATCHLIST_DETAIL_1 = {
   ],
 }
 
+const PROVIDER_HEALTH_DEFAULT_OFF = {
+  // v0.10 Phase D — DART / RSS default-OFF; KIS configured but unregistered
+  // (no calls have flowed through call_with_resilience in the e2e fixture).
+  items: [
+    {
+      provider_name: 'kis',
+      enabled: true,
+      configured: true,
+      circuit_state: 'UNREGISTERED',
+      call_count: 0,
+      success_count: 0,
+      failure_count: 0,
+      last_error_kind: null,
+      last_called_at: null,
+    },
+    {
+      provider_name: 'dart',
+      enabled: false,
+      configured: false,
+      circuit_state: 'UNREGISTERED',
+      call_count: 0,
+      success_count: 0,
+      failure_count: 0,
+      last_error_kind: null,
+      last_called_at: null,
+    },
+    {
+      provider_name: 'rss',
+      enabled: false,
+      configured: false,
+      circuit_state: 'UNREGISTERED',
+      call_count: 0,
+      success_count: 0,
+      failure_count: 0,
+      last_error_kind: null,
+      last_called_at: null,
+    },
+  ],
+  count: 3,
+}
+
 const SETTINGS_SAFE = {
   app_env: 'e2e',
   app_name: 'stock_ai_platform',
@@ -772,6 +813,8 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; meth
   { pattern: /\/api\/market-regime\/latest/, payload: TODAY.market_regime },
   { pattern: /\/api\/news/, payload: { items: [], limit: 20, offset: 0 } },
   { pattern: /\/api\/settings$/, payload: SETTINGS_SAFE },
+  // v0.10 Phase D — read-only Provider Health snapshot.
+  { pattern: /\/api\/health\/providers$/, payload: PROVIDER_HEALTH_DEFAULT_OFF },
 ]
 
 export async function installApiMocks(page: Page): Promise<void> {

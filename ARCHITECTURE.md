@@ -392,6 +392,57 @@ _safe_url_for_log(url)    → query / fragment strip 후 host + path 만 로그
 - DB 스키마 변경 없음 (`news_items` 기존 테이블 재사용, Alembic head 그대로
   `0004_user_preferences`)
 
+### 3.15 Provider Health read-only API (v0.10 Phase D)
+
+**Backend — `app/api/health_routes.py`:**
+```text
+GET /api/health/providers
+    └─ get_health_monitor() → ProviderHealthMonitor.get_status(name)
+    └─ Settings (dart_enabled / rss_news_enabled / kis_app_key 등) opt-in 합성
+    └─ ProviderHealthResponse(items=[ProviderHealthItem, ...], count)
+```
+
+```text
+HTTP GET /api/health/providers
+    │
+    ▼
+get_provider_health(settings)         (read-only handler)
+    │  for name in (kis, dart, rss):
+    │    enabled    = _is_enabled(name, settings)         (Settings 기반)
+    │    configured = _is_configured(name, settings)      (자격증명 존재)
+    │    stats      = monitor.get_status(name)            (in-memory)
+    │    item       = ProviderHealthItem(...)              (no last_error_message)
+    │  + monitor.get_all_status() 의 추가 등록 provider append
+    ▼
+ProviderHealthResponse  →  Pydantic 직렬화 (Decimal/dt 패턴 동일)
+```
+
+- canonical 3 provider (`kis` / `dart` / `rss`) 항상 포함 — 운영자가 어떤
+  provider 도 활성화하지 않은 상태에서도 UI 가 default-OFF 를 명시적으로 표시
+- POST / PUT / DELETE 0건 (모두 405) — provider enable/disable 토글은 `.env`
+  + 백엔드 재시작으로만 가능 (v0.10 cycle 정책)
+- 응답 secret 차단 whitelist: `last_error_message` 제외 / `dart_api_key` /
+  `crtfc_key` / `kis_app_*` / `rss_feed_urls` / `?api_key=` / `access_token`
+  /`password` 등 모두 0건 (테스트 paranoid 단언)
+- 외부 네트워크 호출 0건 — handler 는 in-memory monitor + Settings 만 read
+
+**Frontend:**
+```text
+frontend/src/api/providerHealth.ts        # GET /api/health/providers wrapper
+frontend/src/hooks/useProviderHealth.ts   # useQuery, staleTime 30s, refetch 60s
+frontend/src/components/common/ProviderHealthPanel.tsx
+                                          # read-only table (provider × badges + counts)
+```
+
+- Settings 화면 (`/settings`) 의 UserPreference section 아래 + system
+  read-only section 위에 삽입 — 운영자가 한 화면에서 KIS/DART/RSS 상태
+  파악 가능
+- Read-only — 패널 내 button / checkbox / switch / form 0건 (e2e 단언)
+- 백엔드가 secret 을 leak 해도 컴포넌트가 그것을 렌더하지 않음 — UI 도
+  whitelist 만 사용 (`provider_name / enabled / configured / circuit_state /
+  call_count / success_count / failure_count / last_error_kind /
+  last_called_at` 9 필드)
+
 ## 4. Import Pipeline (v0.4)
 
 운영자가 직접 작성한 메타데이터 CSV 를 시스템에 적재하는 read-only 파이프라인.

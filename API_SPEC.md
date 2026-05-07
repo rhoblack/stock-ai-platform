@@ -995,6 +995,71 @@ Watchlist 항목의 메모 수정.
 - `notification_preferences_json` 의 비밀 키 포함 시 422 (저장 전 거부)
 - Detailed health endpoint (`GET /api/health/detailed`) — v0.10 후보 (v0.9 미구현)
 
+## v0.10 Phase D — Provider Health (read-only)
+
+### GET /api/health/providers
+
+`ProviderHealthMonitor` (in-memory) 의 현재 상태와 운영자 opt-in 플래그를 합쳐
+provider 별 read-only 스냅샷을 반환한다.
+
+**정책:**
+- 외부 HTTP 호출 0건 — 응답은 in-memory 통계 + Settings 만으로 구성
+- POST / PUT / DELETE 0건 — provider enable/disable 토글은 `.env` 수정 + 백엔드
+  재시작으로만 가능 (해당 메서드는 모두 405)
+- 응답에 절대 포함되지 않는 필드: `dart_api_key`, `crtfc_key`, `kis_app_key`,
+  `kis_app_secret`, `rss_feed_urls`, `access_token`, `password`,
+  `last_error_message` (URL query secret 포함 가능성). `last_error_kind`
+  (TIMEOUT / SERVER_ERROR / CLIENT_ERROR / RATE_LIMIT / UNKNOWN) 만 노출
+- 응답은 항상 canonical 3 provider (`kis`, `dart`, `rss`) 를 우선 포함하며
+  추가 등록된 experimental provider 가 있을 경우 monitor iteration 순서로 append
+
+**응답 (`ProviderHealthResponse`):**
+
+```json
+{
+  "items": [
+    {
+      "provider_name": "dart",
+      "enabled": false,
+      "configured": false,
+      "circuit_state": "UNREGISTERED",
+      "call_count": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "last_error_kind": null,
+      "last_called_at": null
+    }
+  ],
+  "count": 3
+}
+```
+
+| 필드 | 타입 | 의미 |
+|---|---|---|
+| provider_name | string | `kis` / `dart` / `rss` 또는 운영자가 등록한 임의 이름 |
+| enabled | bool | 운영자 토글 (`DART_ENABLED` / `RSS_NEWS_ENABLED` / KIS key 존재) |
+| configured | bool | 최소 자격증명 / config 존재 (DART_API_KEY / RSS_FEED_URLS / KIS app_key+secret) |
+| circuit_state | string | `CLOSED` / `OPEN` / `HALF_OPEN` / `UNREGISTERED` |
+| call_count | int | monitor 가 기록한 누적 호출 수 |
+| success_count | int | 성공 횟수 |
+| failure_count | int | 실패 횟수 |
+| last_error_kind | string? | 마지막 실패의 `ProviderErrorKind` enum 값 (`TIMEOUT` 등) |
+| last_called_at | string? | ISO-8601 UTC, in-memory 만 (재시작 시 초기화) |
+
+**상태 조합 의미:**
+
+| enabled | configured | circuit_state | UI 표시 |
+|---|---|---|---|
+| false | false | UNREGISTERED | "비활성 — .env 에서 enable 필요" |
+| true | false | UNREGISTERED | "활성이지만 자격증명 누락 — DART_API_KEY 등 확인 필요" (warning) |
+| true | true | CLOSED | "정상 동작 중" |
+| true | true | OPEN | "circuit breaker OPEN — 외부 provider 장애로 fast-fail 중" |
+| true | true | HALF_OPEN | "복구 시도 중 — probe 호출 1회 진행" |
+
+**금지:**
+- POST / PUT / DELETE `/api/health/providers` (모두 405)
+- provider enable / disable / reset breaker 등 mutation API 0건 (운영자 직접 재시작)
+
 ## 금지 API
 
 v0.1 ~ v0.8 모든 cycle 에서 다음 API 는 만들지 않는다.

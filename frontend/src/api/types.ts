@@ -760,3 +760,28 @@ export interface UserPreferenceUpdateRequest {
   dashboard_layout_json?: unknown | null
   notification_preferences_json?: unknown | null
 }
+
+// ----- v0.10 Phase D — Provider Health -----
+
+export type ProviderCircuitState =
+  | 'CLOSED'
+  | 'OPEN'
+  | 'HALF_OPEN'
+  | 'UNREGISTERED'
+
+export interface ProviderHealthItem {
+  provider_name: string
+  enabled: boolean
+  configured: boolean
+  circuit_state: ProviderCircuitState
+  call_count: number
+  success_count: number
+  failure_count: number
+  last_error_kind: string | null
+  last_called_at: string | null
+}
+
+export interface ProviderHealthResponse {
+  items: ProviderHealthItem[]
+  count: number
+}

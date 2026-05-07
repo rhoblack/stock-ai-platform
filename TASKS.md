@@ -1044,14 +1044,19 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] 외부 네트워크 호출 0건 가드 (`httpx.Client` 미생성 단언)
 - [ ] `tag v0.10-rss-provider + push`
 
-### Phase D: 운영 모니터링 강화
+### Phase D: 운영 모니터링 강화 ✅ 인수
 
-- [ ] `GET /api/health/providers` 라우터 구현
-- [ ] `GET /api/health/jobs` 라우터 구현
-- [ ] `frontend/src/api/health.ts` + `hooks/useHealthStatus.ts` 신규
-- [ ] Jobs 화면에 `HealthPanel` 컴포넌트 추가
-- [ ] pytest ~10건 (`tests/routers/test_health.py`)
-- [ ] vitest ~5건 (`frontend/src/tests/HealthPanel.test.tsx`)
+- [x] `GET /api/health/providers` 라우터 구현 (`app/api/health_routes.py`) — `ProviderHealthMonitor.get_all_status()` + Settings opt-in 플래그 합성
+- [x] canonical 3 provider (`kis` / `dart` / `rss`) 항상 노출 + experimental provider monitor iteration 순서로 append
+- [x] `last_error_message` 응답 미포함 (URL query secret 누출 방지) — `last_error_kind` enum 만 노출
+- [x] POST / PUT / DELETE 0건 (모두 405) — provider 토글은 `.env` 수정 + 재시작
+- [x] `GET /api/health/jobs` — Phase D 범위 보류 (이미 `GET /api/jobs` 존재; 분리 필요시 v0.11+)
+- [x] `frontend/src/api/providerHealth.ts` + `frontend/src/hooks/useProviderHealth.ts` 신규 (staleTime 30s, refetchInterval 60s, refetchOnWindowFocus=false)
+- [x] Settings 화면에 `ProviderHealthPanel` 추가 — provider별 enabled / configured / circuit_state 배지 + counts + last_error_kind
+- [x] backend pytest 17건 (`tests/integration/test_health_providers.py`) — happy / disabled / OPEN / secret-mask / no-network / 405 가드
+- [x] vitest 7건 (`frontend/src/tests/ProviderHealthPanel.test.tsx`) — happy / disabled / OPEN badge / 500 error / empty / secret 미렌더링 / read-only (button 0건)
+- [x] e2e 1건 (`Settings shows the read-only Provider Health panel`) — DART/RSS disabled 표시 + 패널 내 button 0건 + raw payload secret 0건
+- [x] `apiMocks.ts` + `mswServer.ts` 에 `/api/health/providers` 기본 핸들러 추가
 - [ ] `tag v0.10-health-api + push`
 
 ### Phase E: 마감 (문서)

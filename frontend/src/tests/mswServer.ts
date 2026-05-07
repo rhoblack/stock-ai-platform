@@ -233,6 +233,48 @@ export const handlers = [
       updated_at: '2026-05-06T00:00:00',
     }),
   ),
+  // v0.10 Phase D — Provider Health (read-only)
+  http.get('*/api/health/providers', () =>
+    HttpResponse.json({
+      items: [
+        {
+          provider_name: 'kis',
+          enabled: false,
+          configured: false,
+          circuit_state: 'UNREGISTERED',
+          call_count: 0,
+          success_count: 0,
+          failure_count: 0,
+          last_error_kind: null,
+          last_called_at: null,
+        },
+        {
+          provider_name: 'dart',
+          enabled: false,
+          configured: false,
+          circuit_state: 'UNREGISTERED',
+          call_count: 0,
+          success_count: 0,
+          failure_count: 0,
+          last_error_kind: null,
+          last_called_at: null,
+        },
+        {
+          provider_name: 'rss',
+          enabled: false,
+          configured: false,
+          circuit_state: 'UNREGISTERED',
+          call_count: 0,
+          success_count: 0,
+          failure_count: 0,
+          last_error_kind: null,
+          last_called_at: null,
+        },
+      ],
+      count: 3,
+    }),
+  ),
+
   http.put('*/api/users/me/preferences', async ({ request }) => {
     const body = await request.json() as Record<string, unknown>
     return HttpResponse.json({

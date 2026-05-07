@@ -146,6 +146,70 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     await expect(page.getByTestId('mcap-row-005930')).toHaveCount(0)
   })
 
+  test('Settings shows the read-only Provider Health panel (v0.10 Phase D)', async ({
+    page,
+  }) => {
+    await page.goto('/settings')
+    await expect(page.getByTestId('provider-health-panel')).toBeVisible()
+    await expect(page.getByTestId('provider-health-table')).toBeVisible()
+    // Canonical 3 rows always surface.
+    await expect(page.getByTestId('provider-row-kis')).toBeVisible()
+    await expect(page.getByTestId('provider-row-dart')).toBeVisible()
+    await expect(page.getByTestId('provider-row-rss')).toBeVisible()
+
+    // DART / RSS default-OFF in the e2e fixture.
+    await expect(page.getByTestId('provider-row-dart')).toHaveAttribute(
+      'data-enabled',
+      'false',
+    )
+    await expect(page.getByTestId('provider-row-dart')).toHaveAttribute(
+      'data-configured',
+      'false',
+    )
+    await expect(page.getByTestId('provider-row-rss')).toHaveAttribute(
+      'data-enabled',
+      'false',
+    )
+    await expect(page.getByTestId('provider-enabled-dart')).toContainText(
+      'disabled',
+    )
+    await expect(page.getByTestId('provider-configured-rss')).toContainText(
+      'not_configured',
+    )
+
+    // Read-only — no buttons inside the panel, no enable/disable toggle.
+    const buttonsInsidePanel = await page
+      .getByTestId('provider-health-panel')
+      .locator('button, [role="switch"], input[type="checkbox"]')
+      .count()
+    expect(buttonsInsidePanel).toBe(0)
+
+    // Forbidden secret substrings absent from page text + raw API payload.
+    for (const forbidden of [
+      'crtfc_key',
+      'dart_api_key',
+      'last_error_message',
+    ]) {
+      await expect(page.getByText(forbidden)).toHaveCount(0)
+    }
+    const payload = await page.evaluate(async () => {
+      const r = await fetch('/api/health/providers')
+      return r.json()
+    })
+    const raw = JSON.stringify(payload)
+    for (const forbidden of [
+      'crtfc_key',
+      'dart_api_key',
+      'rss_feed_urls',
+      'kis_app_secret',
+      'last_error_message',
+      'access_token',
+      'password',
+    ]) {
+      expect(raw).not.toContain(forbidden)
+    }
+  })
+
   test('Settings shows masked secrets only — no plaintext leak', async ({ page }) => {
     await page.goto('/settings')
     await expect(page.getByTestId('settings-freeze-banner')).toBeVisible()

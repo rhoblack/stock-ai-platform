@@ -1,17 +1,20 @@
 # TESTING.md
 
-> 본 문서는 **v0.10 Phase C 시점** 기준으로 갱신된다 (`v0.10-rss-provider`
+> 본 문서는 **v0.10 Phase D 시점** 기준으로 갱신된다 (`v0.10-health-api`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.10 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.10 Phase C 시점)
+## 1. 현재 회귀 게이트 (v0.10 Phase D 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1028 passed, 1 deselected** (v0.10 Phase C: 995 → 1028, +33 신규 — RSS/Atom provider skeleton + parser + dedup + URL secret masking) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1045 passed, 1 deselected** (v0.10 Phase D: 1028 → 1045, +17 신규 — GET /api/health/providers + secret discipline + 405 가드) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **153 passed** (Phase D: 146 → 153, +7 신규 — ProviderHealthPanel) |
+| frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.41s) |
+| Playwright e2e | `cd frontend && npm run e2e` | **20 passed** (Phase D: 19 → 20, +1 신규 — Settings Provider Health 패널) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **146 passed** (19 파일, jsdom + msw v2; Phase C 117 → Phase D 146; +29 신규) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
@@ -1162,6 +1165,67 @@ query secret 마스킹 가드. **외부 네트워크 호출 0건** — feedparse
 - 본문 저장 필드 0건 (parser strip + DTO 필드 부재 단언)
 - URL query secret 평문 로그 0건 (`_safe_url_for_log` 적용 + caplog 단언)
 - 신규 의존성 0건 (stdlib `xml.etree.ElementTree` 만 사용)
+
+## 6.26 v0.10 Phase D — Provider Health read-only API + UI 테스트
+
+총 **25 케이스 신규**: backend 17건 + vitest 7건 + e2e 1건. 외부 네트워크 호출
+0건, secret 응답 누출 0건, mutation 0건.
+
+### 6.26.1 Backend `tests/integration/test_health_providers.py` (17 케이스)
+
+- canonical 3 row 항상 노출 (kis / dart / rss 고정 순서)
+- DART/RSS default-OFF → `enabled=False` / `configured=False` /
+  `circuit_state="UNREGISTERED"`
+- DART_ENABLED=true + DART_API_KEY 설정 → `enabled=True` / `configured=True`
+- RSS_NEWS_ENABLED=true + RSS_FEED_URLS 설정 → `enabled=True` /
+  `configured=True`
+- enabled-but-not-configured 분리 표시 (DART_ENABLED=true + DART_API_KEY=""
+  → enabled True / configured False)
+- KIS app_key + secret 설정 시 enabled / configured True
+- monitor 에 success 2 + fail 1 기록 → call_count=3 / success=2 / failure=1
+  / last_error_kind="TIMEOUT" / circuit_state="CLOSED"
+- circuit_state OPEN 강제 → 응답에 OPEN 그대로 전파
+- secret 누출 단언 (paranoid forbidden substring 14종): `crtfc_key /
+  dart_api_key / DART_API_KEY / rss_feed_urls / kis_app_key /
+  kis_app_secret / access_token / password / jwt_secret / ?api_key=` 등
+- `last_error_message` 응답 미포함 (URL query secret 누출 차단) — `LEAKMEXYZ`
+  fixture 로 검증
+- `httpx.Client` 미생성 (route 처리 중 외부 호출 0건 단언)
+- experimental provider 등록 시 canonical 3 다음에 append
+- POST / PUT / DELETE 모두 405 (read-only 정책)
+
+### 6.26.2 Frontend `frontend/src/tests/ProviderHealthPanel.test.tsx` (7 케이스)
+
+- happy path: 3 row 렌더 (kis / dart / rss)
+- disabled / not_configured 배지 텍스트 단언 + `data-enabled` /
+  `data-configured` 속성
+- OPEN circuit state → red badge + `data-state="OPEN"` + last_error
+  배지에 "TIMEOUT" 표시
+- 500 응답 → `provider-health-error` placeholder, 원시 에러 미노출
+- 빈 items → `provider-health-empty` placeholder
+- 백엔드가 hypothetical 하게 secret 필드를 leak 해도 UI 가 텍스트로
+  렌더링하지 않음 (paranoid container.textContent 검사)
+- read-only — 패널 내 button / checkbox / switch 0건
+
+### 6.26.3 e2e `dashboard.spec.ts` (1 케이스)
+
+- `/settings` 진입 시 `provider-health-panel` + `provider-health-table`
+  visible
+- DART/RSS `data-enabled="false"` / `data-configured="false"` 단언
+- 패널 내 button / switch / checkbox 0건 단언
+- 페이지 텍스트 + raw `/api/health/providers` payload 양쪽에서 forbidden
+  substring 0건 (`crtfc_key`, `dart_api_key`, `rss_feed_urls`,
+  `kis_app_secret`, `last_error_message`, `access_token`, `password`)
+
+### 6.26.4 회귀 기준
+
+- backend pytest **1028 → 1045 passed (+17)** — 회귀 0건, 1 deselected 유지
+- frontend vitest **146 → 153 passed (+7)** — 20 파일
+- frontend build 그린 (`tsc --noEmit && vite build`, 3.41s)
+- Playwright e2e **19 → 20 passed (+1)** — chromium
+- 외부 네트워크 호출 0건 (`httpx.Client` 미생성 단언)
+- secret / token / api_key / URL query secret 응답·UI·로그 노출 0건
+- mutation API 0건 (POST/PUT/DELETE `/api/health/providers` 모두 405)
 
 ## 7. 금지 사항
 

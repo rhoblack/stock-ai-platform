@@ -14,6 +14,7 @@ import { useSettings } from '@/hooks/useSettings'
 import { useWatchlists } from '@/hooks/useWatchlists'
 import { useUserPreferences, useUpdateUserPreferences } from '@/hooks/useUserPreferences'
 import { KeyValueGrid } from '@/components/common/KeyValueGrid'
+import { ProviderHealthPanel } from '@/components/common/ProviderHealthPanel'
 import { SafetyFlagBadge } from '@/components/common/SafetyFlagBadge'
 import { ApiError } from '@/api/client'
 import type { SettingsResponse } from '@/api/types'
@@ -35,6 +36,11 @@ export function SettingsPage() {
 
       {/* User Preference section (writable) */}
       <UserPreferenceSection />
+
+      <hr className="border-border" />
+
+      {/* v0.10 Phase D — Provider Health (read-only) */}
+      <ProviderHealthPanel />
 
       <hr className="border-border" />
 
