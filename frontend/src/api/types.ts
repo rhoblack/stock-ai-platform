@@ -761,6 +761,66 @@ export interface UserPreferenceUpdateRequest {
   notification_preferences_json?: unknown | null
 }
 
+// ----- v0.12 Phase D — Walk-forward folds / Multi-strategy comparison -----
+
+export interface BacktestFoldItem {
+  fold_index: number
+  train_start: string
+  train_end: string
+  validate_start: string
+  validate_end: string
+  is_oos_gap: number
+  is_signal_count: number
+  is_buy_count: number
+  is_win_rate_5d: string | null
+  is_avg_return_5d: string | null
+  oos_signal_count: number
+  oos_buy_count: number
+  oos_win_rate_5d: string | null
+  oos_avg_return_5d: string | null
+}
+
+export interface BacktestFoldsResponse {
+  run_id: number
+  mode: string
+  total_folds: number
+  avg_oos_win_rate_5d: string | null
+  avg_oos_avg_return_5d: string | null
+  folds: BacktestFoldItem[]
+}
+
+export interface SectorBreakdownItem {
+  sector: string
+  signal_count: number
+  buy_count: number
+  win_rate_5d: string | null
+  avg_return_5d: string | null
+}
+
+export interface BacktestComparisonStrategyItem {
+  strategy_name: string
+  strategy_version: string
+  signal_count: number
+  buy_count: number
+  pass_count: number
+  avoid_count: number
+  win_rate_5d: string | null
+  avg_return_5d: string | null
+  cost_adjusted_avg_return_5d: string | null
+  max_drawdown: string | null
+  regime_breakdown: RegimeBreakdownItem[]
+  sector_breakdown: SectorBreakdownItem[]
+}
+
+export interface BacktestComparisonResponse {
+  run_id: number
+  mode: string
+  total_strategies: number
+  best_strategy_by_win_rate_5d: string | null
+  best_strategy_by_avg_return_5d: string | null
+  strategies: BacktestComparisonStrategyItem[]
+}
+
 // ----- v0.10 Phase D — Provider Health -----
 
 export type ProviderCircuitState =

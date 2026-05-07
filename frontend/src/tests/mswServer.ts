@@ -233,6 +233,28 @@ export const handlers = [
       updated_at: '2026-05-06T00:00:00',
     }),
   ),
+  // v0.12 Phase D — Backtest folds / comparison (read-only, default empty)
+  http.get('*/api/backtest/runs/:runId/folds', ({ params }) =>
+    HttpResponse.json({
+      run_id: Number(params.runId ?? 0),
+      mode: 'walk_forward',
+      total_folds: 0,
+      avg_oos_win_rate_5d: null,
+      avg_oos_avg_return_5d: null,
+      folds: [],
+    }),
+  ),
+  http.get('*/api/backtest/runs/:runId/comparison', ({ params }) =>
+    HttpResponse.json({
+      run_id: Number(params.runId ?? 0),
+      mode: 'multi_strategy_comparison',
+      total_strategies: 0,
+      best_strategy_by_win_rate_5d: null,
+      best_strategy_by_avg_return_5d: null,
+      strategies: [],
+    }),
+  ),
+
   // v0.10 Phase D / v0.11 Phase D — Provider Health (read-only)
   // Phase D adds call_count_24h / success_count_24h / failure_count_24h /
   // success_rate_24h / avg_attempts_24h / recent_failures.  Default fixture

@@ -2,11 +2,16 @@ import { useMemo, useState } from 'react'
 import { useStrategies } from '@/hooks/useStrategies'
 import { useBacktestRuns } from '@/hooks/useBacktestRuns'
 import { useBacktestRunDetail } from '@/hooks/useBacktestRunDetail'
+import { useBacktestFolds } from '@/hooks/useBacktestFolds'
+import { useBacktestComparison } from '@/hooks/useBacktestComparison'
 import { cn } from '@/lib/utils'
 import type {
+  BacktestComparisonStrategyItem,
+  BacktestFoldItem,
   BacktestResultItem,
   BacktestRunItem,
   RegimeBreakdownItem,
+  SectorBreakdownItem,
   StrategyItem,
 } from '@/api/types'
 
@@ -22,6 +27,13 @@ const ACTION_TONE: Record<string, string> = {
   AVOID:
     'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-900/40',
   PASS: 'bg-muted text-muted-foreground border-border',
+}
+
+const DATA_SOURCE_TONE: Record<string, string> = {
+  PROVIDER: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-900/40',
+  FAKE: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-900/40',
+  CSV: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-200 dark:border-purple-900/40',
+  MANUAL: 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900/30 dark:text-gray-200 dark:border-gray-900/40',
 }
 
 function ActionBadge({ value }: { value: string | null }) {
@@ -40,6 +52,22 @@ function ActionBadge({ value }: { value: string | null }) {
   )
 }
 
+function DataSourceChip({ value }: { value: string | null | undefined }) {
+  if (!value) return null
+  const tone = DATA_SOURCE_TONE[value.toUpperCase()] ?? DATA_SOURCE_TONE.MANUAL
+  return (
+    <span
+      data-testid={`backtest-data-source-${value}`}
+      className={cn(
+        'inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium',
+        tone,
+      )}
+    >
+      {value}
+    </span>
+  )
+}
+
 export function BacktestPage() {
   const [strategyFilter, setStrategyFilter] = useState<string>('ALL')
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
@@ -50,6 +78,8 @@ export function BacktestPage() {
     limit: 20,
   })
   const detail = useBacktestRunDetail(selectedRunId)
+  const folds = useBacktestFolds(selectedRunId)
+  const comparison = useBacktestComparison(selectedRunId)
 
   const strategyOptions = useMemo<Array<'ALL' | string>>(
     () => ['ALL', ...(strategies.data?.items.map(s => s.name) ?? [])],
@@ -101,6 +131,10 @@ export function BacktestPage() {
           loading={detail.isLoading}
           error={detail.isError}
           data={detail.data}
+          foldsLoading={folds.isLoading}
+          foldsData={folds.data}
+          comparisonLoading={comparison.isLoading}
+          comparisonData={comparison.data}
         />
       )}
     </section>
@@ -355,10 +389,18 @@ function RunDetailSection({
   loading,
   error,
   data,
+  foldsLoading,
+  foldsData,
+  comparisonLoading,
+  comparisonData,
 }: {
   loading: boolean
   error: boolean
   data: RunDetailData | undefined
+  foldsLoading: boolean
+  foldsData: { total_folds: number; folds: BacktestFoldItem[]; avg_oos_win_rate_5d: string | null; avg_oos_avg_return_5d: string | null } | undefined
+  comparisonLoading: boolean
+  comparisonData: { total_strategies: number; strategies: BacktestComparisonStrategyItem[]; best_strategy_by_win_rate_5d: string | null; best_strategy_by_avg_return_5d: string | null } | undefined
 }) {
   if (loading) {
     return (
@@ -420,6 +462,12 @@ function RunDetailSection({
           {data.notes}
         </p>
       )}
+
+      {/* Walk-forward folds */}
+      <WalkForwardFoldsSection loading={foldsLoading} data={foldsData} />
+
+      {/* Multi-strategy comparison */}
+      <MultiStrategyComparisonSection loading={comparisonLoading} data={comparisonData} />
 
       <div data-testid="backtest-detail-regime-breakdown">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -488,6 +536,7 @@ function RunDetailSection({
                   <th className="px-2 py-1 font-medium">5d</th>
                   <th className="px-2 py-1 font-medium">cost_adj_5d</th>
                   <th className="px-2 py-1 font-medium">regime</th>
+                  <th className="px-2 py-1 font-medium">source</th>
                 </tr>
               </thead>
               <tbody>
@@ -517,6 +566,15 @@ function RunDetailSection({
                     <td className="px-2 py-1 font-mono text-[11px] text-muted-foreground">
                       {row.regime ?? '—'}
                     </td>
+                    <td className="px-2 py-1">
+                      <DataSourceChip
+                        value={
+                          typeof row.evidence_json?.data_source === 'string'
+                            ? row.evidence_json.data_source
+                            : null
+                        }
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -525,5 +583,275 @@ function RunDetailSection({
         )}
       </div>
     </section>
+  )
+}
+
+// -----------------------------------------------------------------------
+// Walk-forward folds sub-section
+// -----------------------------------------------------------------------
+
+function WalkForwardFoldsSection({
+  loading,
+  data,
+}: {
+  loading: boolean
+  data: { total_folds: number; folds: BacktestFoldItem[]; avg_oos_win_rate_5d: string | null; avg_oos_avg_return_5d: string | null } | undefined
+}) {
+  if (loading) return null
+  if (!data || data.total_folds === 0) {
+    return (
+      <div data-testid="backtest-folds-empty">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          walk-forward folds
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          walk-forward 데이터가 없습니다.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div data-testid="backtest-folds">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        walk-forward folds ({data.total_folds}){' '}
+        <span className="ml-2 font-normal text-muted-foreground">
+          avg OOS win_rate_5d: {fmtNum(data.avg_oos_win_rate_5d)} · avg OOS avg_return_5d:{' '}
+          {fmtNum(data.avg_oos_avg_return_5d)}
+        </span>
+      </h4>
+      <div className="mt-1 overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-xs" data-testid="backtest-folds-table">
+          <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1 font-medium">#</th>
+              <th className="px-2 py-1 font-medium">IS 기간</th>
+              <th className="px-2 py-1 font-medium">OOS 기간</th>
+              <th className="px-2 py-1 font-medium">IS buy</th>
+              <th className="px-2 py-1 font-medium">IS win_5d</th>
+              <th className="px-2 py-1 font-medium">OOS buy</th>
+              <th className="px-2 py-1 font-medium">OOS win_5d</th>
+              <th className="px-2 py-1 font-medium">OOS avg_5d</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.folds.map(fold => (
+              <tr
+                key={fold.fold_index}
+                data-testid={`backtest-fold-${fold.fold_index}`}
+                className="border-t border-border"
+              >
+                <td className="px-2 py-1 font-mono tabular-nums">{fold.fold_index}</td>
+                <td className="px-2 py-1 font-mono text-[11px]">
+                  {fold.train_start} ~ {fold.train_end}
+                </td>
+                <td className="px-2 py-1 font-mono text-[11px]">
+                  {fold.validate_start} ~ {fold.validate_end}
+                </td>
+                <td className="px-2 py-1 font-mono tabular-nums">{fold.is_buy_count}</td>
+                <td className="px-2 py-1 font-mono tabular-nums">
+                  {fmtNum(fold.is_win_rate_5d)}
+                </td>
+                <td className="px-2 py-1 font-mono tabular-nums">{fold.oos_buy_count}</td>
+                <td className="px-2 py-1 font-mono tabular-nums">
+                  {fmtNum(fold.oos_win_rate_5d)}
+                </td>
+                <td className="px-2 py-1 font-mono tabular-nums">
+                  {fmtNum(fold.oos_avg_return_5d)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------
+// Multi-strategy comparison sub-section
+// -----------------------------------------------------------------------
+
+function MultiStrategyComparisonSection({
+  loading,
+  data,
+}: {
+  loading: boolean
+  data: { total_strategies: number; strategies: BacktestComparisonStrategyItem[]; best_strategy_by_win_rate_5d: string | null; best_strategy_by_avg_return_5d: string | null } | undefined
+}) {
+  if (loading) return null
+  if (!data || data.total_strategies === 0) {
+    return (
+      <div data-testid="backtest-comparison-empty">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          multi-strategy comparison
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          다중 전략 비교 데이터가 없습니다.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div data-testid="backtest-comparison">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        multi-strategy comparison ({data.total_strategies})
+      </h4>
+      {(data.best_strategy_by_win_rate_5d || data.best_strategy_by_avg_return_5d) && (
+        <p
+          data-testid="backtest-comparison-best"
+          className="mt-0.5 text-xs text-muted-foreground"
+        >
+          best win_rate_5d:{' '}
+          <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+            {data.best_strategy_by_win_rate_5d ?? '—'}
+          </span>{' '}
+          · best avg_return_5d:{' '}
+          <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+            {data.best_strategy_by_avg_return_5d ?? '—'}
+          </span>
+        </p>
+      )}
+      <div className="mt-1 overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-xs" data-testid="backtest-comparison-table">
+          <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1 font-medium">strategy</th>
+              <th className="px-2 py-1 font-medium">signals</th>
+              <th className="px-2 py-1 font-medium">B / P / A</th>
+              <th className="px-2 py-1 font-medium">win_rate_5d</th>
+              <th className="px-2 py-1 font-medium">avg_return_5d</th>
+              <th className="px-2 py-1 font-medium">cost_adj_5d</th>
+              <th className="px-2 py-1 font-medium">max_dd</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.strategies.map(row => {
+              const isBestWr = row.strategy_name === data.best_strategy_by_win_rate_5d
+              const isBestAr = row.strategy_name === data.best_strategy_by_avg_return_5d
+              return (
+                <tr
+                  key={row.strategy_name}
+                  data-testid={`backtest-comparison-row-${row.strategy_name}`}
+                  className="border-t border-border"
+                >
+                  <td className="px-2 py-1">
+                    <div className="flex flex-col leading-tight">
+                      <span className={cn('font-semibold', (isBestWr || isBestAr) && 'text-emerald-700 dark:text-emerald-300')}>
+                        {row.strategy_name}
+                        {(isBestWr || isBestAr) && (
+                          <span
+                            data-testid={`backtest-comparison-best-${row.strategy_name}`}
+                            className="ml-1 text-[10px]"
+                          >
+                            ★
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        {row.strategy_version}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-2 py-1 font-mono tabular-nums">{row.signal_count}</td>
+                  <td className="px-2 py-1 font-mono tabular-nums text-muted-foreground">
+                    {row.buy_count}/{row.pass_count}/{row.avoid_count}
+                  </td>
+                  <td className="px-2 py-1 font-mono tabular-nums">
+                    {fmtNum(row.win_rate_5d)}
+                  </td>
+                  <td className="px-2 py-1 font-mono tabular-nums">
+                    {fmtNum(row.avg_return_5d)}
+                  </td>
+                  <td className="px-2 py-1 font-mono tabular-nums">
+                    {fmtNum(row.cost_adjusted_avg_return_5d)}
+                  </td>
+                  <td className="px-2 py-1 font-mono tabular-nums">
+                    {fmtNum(row.max_drawdown)}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Sector breakdown for each strategy (compact) */}
+      {data.strategies.some(s => s.sector_breakdown.length > 0) && (
+        <SectorBreakdownSection strategies={data.strategies} />
+      )}
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------
+// Sector breakdown (compact, per-strategy)
+// -----------------------------------------------------------------------
+
+function SectorBreakdownSection({
+  strategies,
+}: {
+  strategies: BacktestComparisonStrategyItem[]
+}) {
+  return (
+    <div
+      data-testid="backtest-sector-breakdown"
+      className="mt-2 flex flex-col gap-2"
+    >
+      {strategies
+        .filter(s => s.sector_breakdown.length > 0)
+        .map(s => (
+          <div key={s.strategy_name}>
+            <p className="text-[11px] font-semibold text-muted-foreground">
+              {s.strategy_name} — sector breakdown
+            </p>
+            <SectorTable items={s.sector_breakdown} strategyName={s.strategy_name} />
+          </div>
+        ))}
+    </div>
+  )
+}
+
+function SectorTable({
+  items,
+  strategyName,
+}: {
+  items: SectorBreakdownItem[]
+  strategyName: string
+}) {
+  return (
+    <div className="mt-0.5 overflow-x-auto rounded-md border border-border">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <tr>
+            <th className="px-2 py-1 font-medium">sector</th>
+            <th className="px-2 py-1 font-medium">signals</th>
+            <th className="px-2 py-1 font-medium">buy</th>
+            <th className="px-2 py-1 font-medium">win_5d</th>
+            <th className="px-2 py-1 font-medium">avg_5d</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map(entry => (
+            <tr
+              key={entry.sector}
+              data-testid={`backtest-sector-${strategyName}-${entry.sector}`}
+              className="border-t border-border"
+            >
+              <td className="px-2 py-1 font-mono">{entry.sector}</td>
+              <td className="px-2 py-1 font-mono tabular-nums">{entry.signal_count}</td>
+              <td className="px-2 py-1 font-mono tabular-nums">{entry.buy_count}</td>
+              <td className="px-2 py-1 font-mono tabular-nums">
+                {fmtNum(entry.win_rate_5d)}
+              </td>
+              <td className="px-2 py-1 font-mono tabular-nums">
+                {fmtNum(entry.avg_return_5d)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

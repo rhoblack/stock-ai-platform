@@ -1206,20 +1206,20 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - [x] v0.7 + Phase B 회귀 0건 — backend pytest 1167→1183 (+16, 1 deselected 유지)
 - [ ] `tag v0.12-multi-strategy + push`
 
-### Phase D: Backtest Read-only API/UI 확장 + Provider Score Evidence
+### Phase D: Backtest Read-only API/UI 확장 + Provider Score Evidence ✅
 
-- [ ] `GET /api/backtest/runs/{id}/folds` 신규 read-only — walk-forward fold 목록 노출
-- [ ] `GET /api/backtest/runs/{id}/comparison` 신규 read-only — 다중 전략 비교 결과 노출
-- [ ] `BacktestFoldSchema` / `BacktestComparisonSchema` 신규 (모두 read-only)
-- [ ] POST/PUT/DELETE 신규 0건 — 모든 신규 라우터 GET only (mutation 405)
-- [ ] `RecommendationItemSchema.evidence` 에 `data_source: str?` 필드 추가 (`"PROVIDER"` / `"FAKE"`) — 기존 evidence whitelist 와 호환
-- [ ] `frontend/src/api/types.ts` schema 동기화
-- [ ] `frontend/src/pages/Backtest/index.tsx` 보강 — walk-forward fold 표 + 비교 표
-- [ ] `frontend/src/components/common/RecommendationsTable.tsx` 보강 — `data_source` chip (PROVIDER vs FAKE 시각 구분)
-- [ ] backend pytest +5 (`tests/integration/test_api_routes.py` 보강)
-- [ ] vitest +5 (`frontend/src/tests/Backtest.test.tsx` 보강)
-- [ ] e2e +1 (`dashboard.spec.ts` 백테스트 화면 신규 cell + secret 단언)
-- [ ] secret / token / api_key / URL query secret / `last_error_message` 응답 0건 paranoid scan
+- [x] `GET /api/backtest/runs/{id}/folds` 신규 read-only — walk-forward fold 목록 노출
+- [x] `GET /api/backtest/runs/{id}/comparison` 신규 read-only — 다중 전략 비교 결과 노출
+- [x] `BacktestFoldSchema` / `BacktestFoldsResponse` / `BacktestComparisonStrategySchema` / `BacktestComparisonResponse` / `SectorBreakdownSchema` 신규 (모두 read-only, `app/api/schemas.py`)
+- [x] POST/PUT/DELETE 신규 0건 — 모든 신규 라우터 GET only (mutation 405 검증 pytest 2건)
+- [x] `evidence_json.data_source` chip 렌더 — `BacktestResultItem.evidence_json` 기존 필드 활용 (`"PROVIDER"` / `"FAKE"` / `"CSV"` / `"MANUAL"`) — DB 모델 / 스키마 무변경
+- [x] `frontend/src/api/types.ts` — `BacktestFoldItem`, `BacktestFoldsResponse`, `SectorBreakdownItem`, `BacktestComparisonStrategyItem`, `BacktestComparisonResponse` 추가
+- [x] `frontend/src/hooks/useBacktestFolds.ts` / `useBacktestComparison.ts` 신규
+- [x] `frontend/src/pages/Backtest/index.tsx` 보강 — walk-forward fold 표 + 다중전략 비교 표 + sector breakdown + best strategy 강조 + data_source chip
+- [x] backend 통합 테스트 14건 (`tests/integration/test_backtest_api_phase_d.py`) — folds happy/empty/404/malformed, comparison happy/empty/404/malformed, 405 ×2, forbidden field ×2
+- [x] vitest 9건 추가 (`frontend/src/tests/Backtest.test.tsx`) — folds 2건 + comparison 2건 + data_source chip 2건 + forbidden 1건 (기존 7건 포함 총 16건)
+- [x] MSW default 핸들러 2건 추가 (`mswServer.ts`) — folds / comparison 빈 응답
+- [x] secret / token / api_key / URL query secret / body text 노출 0건 paranoid scan 완료
 - [ ] `tag v0.12-scoring-readonly + push`
 
 ### Phase E: 마감 (문서)

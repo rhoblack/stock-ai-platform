@@ -1,10 +1,10 @@
 # TESTING.md
 
-> 본 문서는 **v0.12 Phase C 시점** 기준으로 갱신된다 (`v0.12-multi-strategy`
+> 본 문서는 **v0.12 Phase D 시점** 기준으로 갱신된다 (`v0.12-phase-d`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.12 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.12 Phase C 시점)
+## 1. 현재 회귀 게이트 (v0.12 Phase D 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
@@ -12,16 +12,10 @@ provider transport injection 3중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1183 passed, 1 deselected** (v0.12 Phase C: 1167 → 1183, +16 신규 — MultiStrategyRunner + SectorBreakdownEntry + aggregate_sector_breakdown + CLI --multi) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **158 passed** (변경 없음 — Phase A 는 백엔드 전용) |
-| frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.40s) |
-| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (변경 없음 — Phase A 는 백엔드 전용) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **153 passed** (Phase D: 146 → 153, +7 신규 — ProviderHealthPanel) |
-| frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.41s) |
-| Playwright e2e | `cd frontend && npm run e2e` | **20 passed** (Phase D: 19 → 20, +1 신규 — Settings Provider Health 패널) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **146 passed** (19 파일, jsdom + msw v2; Phase C 117 → Phase D 146; +29 신규) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1194 passed, 1 deselected** (v0.12 Phase D: 1183 → 1194, +11 신규 — /folds + /comparison read-only API + forbidden field guard) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **165 passed** (v0.12 Phase D: 158 → 165, +7 신규 — folds 표 / comparison 표 / data_source chip / forbidden field guard) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
-| Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
+| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (변경 없음 — Phase D 는 e2e 미보강) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
@@ -1670,6 +1664,75 @@ provenance 태그 + DB body 컬럼 부재 + ScoringEngine weight 회귀 + secret
 - 동일 유니버스 보장: `_fetch_recs_with_sector()` 가 BacktestEngine._fetch_recommendations()와 동일한 ordering/limit 적용
 - commit 시 정확히 1건의 `BacktestRun(strategy_name="MULTI")` 영속; 각 전략의 detail은 `summary_json["multi_strategy_comparison"]` — Alembic revision 0건
 - 외부 HTTP 호출 0건; ScoringEngine weight 변경 0건; 신규 pip 의존성 0건
+
+## 6.34 v0.12 Phase D — Backtest Folds / Comparison read-only API + UI 테스트
+
+v0.12 Phase D 는 신규 read-only API 2종 (`/api/backtest/runs/{id}/folds`,
+`/api/backtest/runs/{id}/comparison`) 과 프런트엔드 UI 보강만 추가한다. DB 모델
+변경 / Alembic revision / 외부 HTTP 호출 / 자동매매 코드 0건.
+
+총 **19 케이스 신규**: backend integration 12 + vitest 7.
+
+### 6.34.1 Backend `tests/integration/test_backtest_api_phase_d.py` (+12 케이스)
+
+- `test_folds_happy_path` — fold_index / train_start / oos_win_rate_5d / avg aggregates 검증
+- `test_folds_empty_when_no_walk_forward_key` — key 부재 시 200 + folds=[] (not 404)
+- `test_comparison_happy_path` — strategy names / win_rate / sector/regime breakdown 검증
+- `test_comparison_empty_when_no_multi_key` — key 부재 시 200 + strategies=[] (not 404)
+- `test_folds_404_when_run_missing` — BacktestRun 행 없음 → 404
+- `test_comparison_404_when_run_missing` — BacktestRun 행 없음 → 404
+- `test_folds_skips_non_dict_entries` — non-dict 항목(문자열 / None) 자동 건너뜀
+- `test_comparison_skips_non_dict_entries` — non-dict 항목 자동 건너뜀
+- `test_folds_mutating_methods_rejected` — POST/PUT/PATCH/DELETE → 405
+- `test_comparison_mutating_methods_rejected` — POST/PUT/PATCH/DELETE → 405
+- `test_folds_no_forbidden_fields` — 응답 텍스트에 source_file_path / raw_text / 본문 / api_key / token / secret / order_id / quantity / broker 0건
+- `test_comparison_no_forbidden_fields` — 동일 금지 필드 0건
+
+### 6.34.2 Frontend `frontend/src/tests/Backtest.test.tsx` (+7 케이스)
+
+신규 describe 블록 4개:
+
+**walk-forward folds (v0.12 Phase D)**
+- `renders fold table` — `data-testid="backtest-folds-table"` + fold 행 수 검증
+- `shows empty placeholder` — folds=[] 시 `data-testid="backtest-folds-empty"` 노출
+
+**multi-strategy comparison (v0.12 Phase D)**
+- `renders comparison table with best strategy highlight` — `data-testid="backtest-comparison-table"` + best-strategy 배지
+- `shows empty placeholder` — strategies=[] 시 `data-testid="backtest-comparison-empty"` 노출
+
+**data_source chip (v0.12 Phase D)**
+- `renders PROVIDER and FAKE chips` — `data-testid="backtest-data-source-PROVIDER"` / `backtest-data-source-FAKE`
+- `does not render chip when null` — evidence_json.data_source=null 시 chip 미노출
+
+**forbidden field guard (v0.12 Phase D)**
+- `does not render raw_text / 본문 / source_file_path` — 렌더 트리 텍스트에서 금지 문자열 0건 단언 (1 케이스)
+
+### 6.34.3 MSW 핸들러 보강
+
+`frontend/src/tests/mswServer.ts` 에 2개 기본 핸들러 추가:
+- `GET */api/backtest/runs/:runId/folds` → 200 + empty folds
+- `GET */api/backtest/runs/:runId/comparison` → 200 + empty strategies
+
+### 6.34.4 새 파일 / 변경 파일
+
+| 파일 | 변경 |
+|---|---|
+| `app/api/schemas.py` | `SectorBreakdownSchema`, `BacktestFoldSchema`, `BacktestFoldsResponse`, `BacktestComparisonStrategySchema`, `BacktestComparisonResponse` 추가 |
+| `app/api/routes.py` | `/folds`, `/comparison` 라우터 + helper 3개 추가 |
+| `tests/integration/test_backtest_api_phase_d.py` | **신규** (14 케이스) |
+| `frontend/src/api/types.ts` | 5개 타입 추가 |
+| `frontend/src/hooks/useBacktestFolds.ts` | **신규** |
+| `frontend/src/hooks/useBacktestComparison.ts` | **신규** |
+| `frontend/src/pages/Backtest/index.tsx` | 전면 보강 (folds 표 / comparison 표 / data_source chip) |
+| `frontend/src/tests/mswServer.ts` | 기본 핸들러 2개 추가 |
+| `frontend/src/tests/Backtest.test.tsx` | 9 케이스 추가 |
+
+### 6.34.5 회귀 기준
+
+- backend pytest **1183 → 1194 passed (+11)** — 회귀 0건
+- frontend vitest **158 → 165 passed (+7)** — 회귀 0건
+- frontend build 그린 (`tsc --noEmit && vite build`)
+- 외부 HTTP 호출 0건; DB 모델 변경 0건; ScoringEngine weight 변경 0건; Alembic revision 0건
 
 ## 7. 금지 사항
 

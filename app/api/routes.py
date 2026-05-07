@@ -23,6 +23,10 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import (
     AnalystReportSchema,
+    BacktestComparisonResponse,
+    BacktestComparisonStrategySchema,
+    BacktestFoldSchema,
+    BacktestFoldsResponse,
     BacktestResultSchema,
     BacktestRunDetailResponse,
     BacktestRunSchema,
@@ -57,6 +61,7 @@ from app.api.schemas import (
     ReportConsensusSchema,
     ReportSignalEventSchema,
     RiskSummarySchema,
+    SectorBreakdownSchema,
     SettingsResponse,
     StockBriefSchema,
     StockDetailResponse,
@@ -1465,6 +1470,139 @@ def get_backtest_run_detail(
         total_cost=summary.get("total_cost"),
         summary_json=summary if summary else None,
         notes=summary.get("notes"),
+    )
+
+
+# ---------- /api/backtest/runs/{run_id}/folds (v0.12 Phase D) ----------
+
+
+def _fold_from_dict(entry: dict) -> BacktestFoldSchema:
+    return BacktestFoldSchema(
+        fold_index=int(entry.get("fold_index") or 0),
+        train_start=str(entry.get("train_start") or ""),
+        train_end=str(entry.get("train_end") or ""),
+        validate_start=str(entry.get("validate_start") or ""),
+        validate_end=str(entry.get("validate_end") or ""),
+        is_oos_gap=int(entry.get("is_oos_gap") or 0),
+        is_signal_count=int(entry.get("is_signal_count") or 0),
+        is_buy_count=int(entry.get("is_buy_count") or 0),
+        is_win_rate_5d=entry.get("is_win_rate_5d"),
+        is_avg_return_5d=entry.get("is_avg_return_5d"),
+        oos_signal_count=int(entry.get("oos_signal_count") or 0),
+        oos_buy_count=int(entry.get("oos_buy_count") or 0),
+        oos_win_rate_5d=entry.get("oos_win_rate_5d"),
+        oos_avg_return_5d=entry.get("oos_avg_return_5d"),
+    )
+
+
+@router.get(
+    "/api/backtest/runs/{run_id}/folds",
+    response_model=BacktestFoldsResponse,
+    tags=["backtest"],
+)
+def get_backtest_run_folds(
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> BacktestFoldsResponse:
+    """Walk-forward fold list from ``summary_json["walk_forward_folds"]``.
+
+    Returns 404 when the run does not exist. Returns an empty ``folds`` list
+    when the run exists but has no walk-forward data (e.g. it is a standard
+    or multi-strategy run). No DB columns beyond ``summary_json`` are read.
+    """
+    run = BacktestRunRepository(session).get_by_id(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"backtest run {run_id} not found")
+    summary = run.summary_json or {}
+    raw_folds = summary.get("walk_forward_folds")
+    folds: list[BacktestFoldSchema] = []
+    if isinstance(raw_folds, list):
+        for entry in raw_folds:
+            if isinstance(entry, dict):
+                folds.append(_fold_from_dict(entry))
+    return BacktestFoldsResponse(
+        run_id=run.id,
+        mode=str(summary.get("mode") or "walk_forward"),
+        total_folds=len(folds),
+        avg_oos_win_rate_5d=summary.get("avg_oos_win_rate_5d"),
+        avg_oos_avg_return_5d=summary.get("avg_oos_avg_return_5d"),
+        folds=folds,
+    )
+
+
+# ---------- /api/backtest/runs/{run_id}/comparison (v0.12 Phase D) ----------
+
+
+def _sector_breakdown_from_list(raw: object) -> list[SectorBreakdownSchema]:
+    if not isinstance(raw, list):
+        return []
+    out: list[SectorBreakdownSchema] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        out.append(
+            SectorBreakdownSchema(
+                sector=str(entry.get("sector") or "UNKNOWN"),
+                signal_count=int(entry.get("signal_count") or 0),
+                buy_count=int(entry.get("buy_count") or 0),
+                win_rate_5d=entry.get("win_rate_5d"),
+                avg_return_5d=entry.get("avg_return_5d"),
+            )
+        )
+    return out
+
+
+def _comparison_strategy_from_dict(entry: dict) -> BacktestComparisonStrategySchema:
+    regime_bd = _regime_breakdown_from_summary({"regime_breakdown": entry.get("regime_breakdown")})
+    sector_bd = _sector_breakdown_from_list(entry.get("sector_breakdown"))
+    return BacktestComparisonStrategySchema(
+        strategy_name=str(entry.get("strategy_name") or ""),
+        strategy_version=str(entry.get("strategy_version") or ""),
+        signal_count=int(entry.get("signal_count") or 0),
+        buy_count=int(entry.get("buy_count") or 0),
+        pass_count=int(entry.get("pass_count") or 0),
+        avoid_count=int(entry.get("avoid_count") or 0),
+        win_rate_5d=entry.get("win_rate_5d"),
+        avg_return_5d=entry.get("avg_return_5d"),
+        cost_adjusted_avg_return_5d=entry.get("cost_adjusted_avg_return_5d"),
+        max_drawdown=entry.get("max_drawdown"),
+        regime_breakdown=regime_bd,
+        sector_breakdown=sector_bd,
+    )
+
+
+@router.get(
+    "/api/backtest/runs/{run_id}/comparison",
+    response_model=BacktestComparisonResponse,
+    tags=["backtest"],
+)
+def get_backtest_run_comparison(
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> BacktestComparisonResponse:
+    """Multi-strategy comparison from ``summary_json["multi_strategy_comparison"]``.
+
+    Returns 404 when the run does not exist. Returns an empty ``strategies``
+    list when the run has no multi-strategy data (standard or walk-forward run).
+    No secret / raw-payload / body-text fields are exposed.
+    """
+    run = BacktestRunRepository(session).get_by_id(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"backtest run {run_id} not found")
+    summary = run.summary_json or {}
+    raw_comparison = summary.get("multi_strategy_comparison")
+    strategies: list[BacktestComparisonStrategySchema] = []
+    if isinstance(raw_comparison, list):
+        for entry in raw_comparison:
+            if isinstance(entry, dict):
+                strategies.append(_comparison_strategy_from_dict(entry))
+    return BacktestComparisonResponse(
+        run_id=run.id,
+        mode=str(summary.get("mode") or "multi_strategy_comparison"),
+        total_strategies=len(strategies),
+        best_strategy_by_win_rate_5d=summary.get("best_strategy_by_win_rate_5d"),
+        best_strategy_by_avg_return_5d=summary.get("best_strategy_by_avg_return_5d"),
+        strategies=strategies,
     )
 
 

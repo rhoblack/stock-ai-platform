@@ -104,7 +104,7 @@ const RUN_DETAIL_42 = {
       max_drawdown: '-2.5000',
       result_status: 'SUCCESS',
       regime: 'UPTREND_EARLY',
-      evidence_json: { grade: 'A' },
+      evidence_json: { grade: 'A', data_source: 'PROVIDER' },
     },
     {
       id: 1002,
@@ -123,7 +123,7 @@ const RUN_DETAIL_42 = {
       max_drawdown: null,
       result_status: null,
       regime: 'UPTREND_EARLY',
-      evidence_json: null,
+      evidence_json: { data_source: 'FAKE' },
     },
   ],
   regime_breakdown: [
@@ -139,6 +139,89 @@ const RUN_DETAIL_42 = {
   total_cost: '0.00330',
   summary_json: { notes: 'BUY signals only' },
   notes: 'win_rate / avg_return / max_drawdown are computed over BUY signals only.',
+}
+
+const FOLDS_42 = {
+  run_id: 42,
+  mode: 'walk_forward',
+  total_folds: 2,
+  avg_oos_win_rate_5d: '0.6000',
+  avg_oos_avg_return_5d: '0.0200',
+  folds: [
+    {
+      fold_index: 0,
+      train_start: '2026-01-01',
+      train_end: '2026-01-30',
+      validate_start: '2026-01-31',
+      validate_end: '2026-03-01',
+      is_oos_gap: 0,
+      is_signal_count: 5,
+      is_buy_count: 2,
+      is_win_rate_5d: '0.5000',
+      is_avg_return_5d: '0.0100',
+      oos_signal_count: 5,
+      oos_buy_count: 2,
+      oos_win_rate_5d: '0.5000',
+      oos_avg_return_5d: '0.0100',
+    },
+    {
+      fold_index: 1,
+      train_start: '2026-03-02',
+      train_end: '2026-03-31',
+      validate_start: '2026-04-01',
+      validate_end: '2026-04-30',
+      is_oos_gap: 0,
+      is_signal_count: 5,
+      is_buy_count: 3,
+      is_win_rate_5d: '0.6667',
+      is_avg_return_5d: '0.0300',
+      oos_signal_count: 5,
+      oos_buy_count: 3,
+      oos_win_rate_5d: '0.6667',
+      oos_avg_return_5d: '0.0300',
+    },
+  ],
+}
+
+const COMPARISON_42 = {
+  run_id: 42,
+  mode: 'multi_strategy_comparison',
+  total_strategies: 2,
+  best_strategy_by_win_rate_5d: 'TopGradeStrategy',
+  best_strategy_by_avg_return_5d: 'TopGradeStrategy',
+  strategies: [
+    {
+      strategy_name: 'TopGradeStrategy',
+      strategy_version: 'v1.0.0',
+      signal_count: 2,
+      buy_count: 1,
+      pass_count: 1,
+      avoid_count: 0,
+      win_rate_5d: '1.0000',
+      avg_return_5d: '0.0500',
+      cost_adjusted_avg_return_5d: null,
+      max_drawdown: null,
+      regime_breakdown: [],
+      sector_breakdown: [
+        { sector: 'IT', signal_count: 1, buy_count: 1, win_rate_5d: '1.0000', avg_return_5d: '0.0500' },
+        { sector: 'Semiconductor', signal_count: 1, buy_count: 0, win_rate_5d: null, avg_return_5d: null },
+      ],
+    },
+    {
+      strategy_name: 'HighScoreStrategy',
+      strategy_version: 'v1.0.0',
+      signal_count: 2,
+      buy_count: 1,
+      pass_count: 1,
+      avoid_count: 0,
+      win_rate_5d: '0.0000',
+      avg_return_5d: '-0.0300',
+      cost_adjusted_avg_return_5d: null,
+      max_drawdown: null,
+      regime_breakdown: [],
+      sector_breakdown: [],
+    },
+  ],
 }
 
 describe('BacktestPage', () => {
@@ -276,5 +359,178 @@ describe('BacktestPage', () => {
     expect(screen.queryByText(/source_file_path/)).not.toBeInTheDocument()
     expect(screen.queryByText(/원문/)).not.toBeInTheDocument()
     expect(screen.queryByText(/본문/)).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase D — walk-forward folds
+// ---------------------------------------------------------------------------
+
+describe('BacktestPage — walk-forward folds (v0.12 Phase D)', () => {
+  it('renders fold table when folds endpoint returns data', async () => {
+    server.use(
+      http.get('*/api/strategies', () => HttpResponse.json(STRATEGIES)),
+      http.get('*/api/backtest/runs', () => HttpResponse.json(RUNS)),
+      http.get('*/api/backtest/runs/42', () => HttpResponse.json(RUN_DETAIL_42)),
+      http.get('*/api/backtest/runs/42/folds', () => HttpResponse.json(FOLDS_42)),
+      http.get('*/api/backtest/runs/42/comparison', () =>
+        HttpResponse.json({ run_id: 42, mode: 'multi_strategy_comparison', total_strategies: 0, best_strategy_by_win_rate_5d: null, best_strategy_by_avg_return_5d: null, strategies: [] }),
+      ),
+    )
+    renderWithProviders(<BacktestPage />, { initialEntries: ['/backtest'] })
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-run-row-42')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('backtest-run-row-42'))
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-folds')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('backtest-folds-table')).toBeInTheDocument()
+    expect(screen.getByTestId('backtest-fold-0')).toBeInTheDocument()
+    expect(screen.getByTestId('backtest-fold-1')).toBeInTheDocument()
+  })
+
+  it('shows empty placeholder when no fold data', async () => {
+    server.use(
+      http.get('*/api/strategies', () => HttpResponse.json(STRATEGIES)),
+      http.get('*/api/backtest/runs', () => HttpResponse.json(RUNS)),
+      http.get('*/api/backtest/runs/42', () => HttpResponse.json(RUN_DETAIL_42)),
+      // default empty handlers for folds/comparison already in mswServer
+    )
+    renderWithProviders(<BacktestPage />, { initialEntries: ['/backtest'] })
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-run-row-42')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('backtest-run-row-42'))
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-folds-empty')).toBeInTheDocument(),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase D — multi-strategy comparison
+// ---------------------------------------------------------------------------
+
+describe('BacktestPage — multi-strategy comparison (v0.12 Phase D)', () => {
+  it('renders comparison table with best strategy highlight', async () => {
+    server.use(
+      http.get('*/api/strategies', () => HttpResponse.json(STRATEGIES)),
+      http.get('*/api/backtest/runs', () => HttpResponse.json(RUNS)),
+      http.get('*/api/backtest/runs/42', () => HttpResponse.json(RUN_DETAIL_42)),
+      http.get('*/api/backtest/runs/42/folds', () =>
+        HttpResponse.json({ run_id: 42, mode: 'walk_forward', total_folds: 0, avg_oos_win_rate_5d: null, avg_oos_avg_return_5d: null, folds: [] }),
+      ),
+      http.get('*/api/backtest/runs/42/comparison', () => HttpResponse.json(COMPARISON_42)),
+    )
+    renderWithProviders(<BacktestPage />, { initialEntries: ['/backtest'] })
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-run-row-42')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('backtest-run-row-42'))
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-comparison')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('backtest-comparison-table')).toBeInTheDocument()
+    expect(screen.getByTestId('backtest-comparison-row-TopGradeStrategy')).toBeInTheDocument()
+    expect(screen.getByTestId('backtest-comparison-row-HighScoreStrategy')).toBeInTheDocument()
+    // Best strategy highlight
+    expect(screen.getByTestId('backtest-comparison-best')).toBeInTheDocument()
+    expect(screen.getByTestId('backtest-comparison-best-TopGradeStrategy')).toBeInTheDocument()
+    // Sector breakdown appears
+    expect(screen.getByTestId('backtest-sector-breakdown')).toBeInTheDocument()
+    expect(screen.getByTestId('backtest-sector-TopGradeStrategy-IT')).toBeInTheDocument()
+    expect(screen.getByTestId('backtest-sector-TopGradeStrategy-Semiconductor')).toBeInTheDocument()
+  })
+
+  it('shows empty placeholder when no comparison data', async () => {
+    server.use(
+      http.get('*/api/strategies', () => HttpResponse.json(STRATEGIES)),
+      http.get('*/api/backtest/runs', () => HttpResponse.json(RUNS)),
+      http.get('*/api/backtest/runs/42', () => HttpResponse.json(RUN_DETAIL_42)),
+      // default empty handlers already in mswServer
+    )
+    renderWithProviders(<BacktestPage />, { initialEntries: ['/backtest'] })
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-run-row-42')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('backtest-run-row-42'))
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-comparison-empty')).toBeInTheDocument(),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase D — data_source chip
+// ---------------------------------------------------------------------------
+
+describe('BacktestPage — data_source chip (v0.12 Phase D)', () => {
+  it('renders PROVIDER and FAKE chips from evidence_json.data_source', async () => {
+    server.use(
+      http.get('*/api/strategies', () => HttpResponse.json(STRATEGIES)),
+      http.get('*/api/backtest/runs', () => HttpResponse.json(RUNS)),
+      http.get('*/api/backtest/runs/42', () => HttpResponse.json(RUN_DETAIL_42)),
+    )
+    renderWithProviders(<BacktestPage />, { initialEntries: ['/backtest'] })
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-run-row-42')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('backtest-run-row-42'))
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-detail')).toBeInTheDocument(),
+    )
+    // RUN_DETAIL_42 has evidence_json: { data_source: 'PROVIDER' } on result 1001
+    // and { data_source: 'FAKE' } on 1002
+    expect(screen.getByTestId('backtest-data-source-PROVIDER')).toBeInTheDocument()
+    expect(screen.getByTestId('backtest-data-source-FAKE')).toBeInTheDocument()
+  })
+
+  it('does not render data_source chip when evidence_json is null', async () => {
+    const detailNoSource = {
+      ...RUN_DETAIL_42,
+      results: RUN_DETAIL_42.results.map(r => ({ ...r, evidence_json: null })),
+    }
+    server.use(
+      http.get('*/api/strategies', () => HttpResponse.json(STRATEGIES)),
+      http.get('*/api/backtest/runs', () => HttpResponse.json(RUNS)),
+      http.get('*/api/backtest/runs/42', () => HttpResponse.json(detailNoSource)),
+    )
+    renderWithProviders(<BacktestPage />, { initialEntries: ['/backtest'] })
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-run-row-42')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('backtest-run-row-42'))
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-detail')).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('backtest-data-source-PROVIDER')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('backtest-data-source-FAKE')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase D — forbidden field / automation guard
+// ---------------------------------------------------------------------------
+
+describe('BacktestPage — forbidden field guard (v0.12 Phase D)', () => {
+  it('does not render raw_text / 본문 / 원문 / source_file_path anywhere', async () => {
+    server.use(
+      http.get('*/api/strategies', () => HttpResponse.json(STRATEGIES)),
+      http.get('*/api/backtest/runs', () => HttpResponse.json(RUNS)),
+      http.get('*/api/backtest/runs/42', () => HttpResponse.json(RUN_DETAIL_42)),
+      http.get('*/api/backtest/runs/42/comparison', () => HttpResponse.json(COMPARISON_42)),
+    )
+    renderWithProviders(<BacktestPage />, { initialEntries: ['/backtest'] })
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-run-row-42')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('backtest-run-row-42'))
+    await waitFor(() =>
+      expect(screen.getByTestId('backtest-detail')).toBeInTheDocument(),
+    )
+    for (const forbidden of ['source_file_path', 'raw_text', 'full_text', '본문', '원문', '전문']) {
+      expect(screen.queryByText(new RegExp(forbidden, 'i'))).not.toBeInTheDocument()
+    }
   })
 })

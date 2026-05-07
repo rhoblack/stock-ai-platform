@@ -659,6 +659,108 @@ cost model 메타.
 order_price / order_type / side 컬럼이 없으므로 응답에도 0건. e2e 테스트가 raw
 JSON 트리에서 `source_file_path` / `order_type` / `quantity` 0건을 단언한다.
 
+### GET /api/backtest/runs/{run_id}/folds
+
+*(v0.12 Phase D)* Walk-forward 백테스트의 fold 목록을 `summary_json["walk_forward_folds"]`
+에서 읽어 반환한다. DB 모델 변경 / Alembic revision 없이 순수 JSON 파싱.
+
+오류:
+
+- 404: 해당 `run_id` 의 `backtest_runs` 행이 없음
+- key 부재 (`walk_forward_folds` 없음) → 200 + `folds: []` (not 404)
+- non-dict 항목은 자동 건너뜀
+
+응답 예시:
+
+```json
+{
+  "run_id": 42,
+  "mode": "walk_forward",
+  "total_folds": 2,
+  "avg_oos_win_rate_5d": "0.6000",
+  "avg_oos_avg_return_5d": "1.2500",
+  "folds": [
+    {
+      "fold_index": 0,
+      "train_start": "2023-01-01",
+      "train_end": "2023-06-30",
+      "validate_start": "2023-07-01",
+      "validate_end": "2023-09-30",
+      "is_oos_gap": 0,
+      "is_signal_count": 20,
+      "is_buy_count": 12,
+      "is_win_rate_5d": "0.6667",
+      "is_avg_return_5d": "1.5000",
+      "oos_signal_count": 10,
+      "oos_buy_count": 6,
+      "oos_win_rate_5d": "0.6000",
+      "oos_avg_return_5d": "1.2000"
+    }
+  ]
+}
+```
+
+**금지 동사**: POST/PUT/PATCH/DELETE → 405. 금지 필드: `source_file_path` / `raw_text` /
+`본문` / `api_key` / `token` / `secret` / `order_id` / `quantity` / `broker` 0건.
+
+### GET /api/backtest/runs/{run_id}/comparison
+
+*(v0.12 Phase D)* Multi-strategy 비교 결과를 `summary_json["multi_strategy_comparison"]`
+에서 읽어 반환한다. 각 전략의 sector/regime breakdown 포함.
+
+오류:
+
+- 404: 해당 `run_id` 의 `backtest_runs` 행이 없음
+- key 부재 (`multi_strategy_comparison` 없음) → 200 + `strategies: []` (not 404)
+- non-dict 항목은 자동 건너뜀
+
+응답 예시:
+
+```json
+{
+  "run_id": 42,
+  "mode": "multi_strategy_comparison",
+  "total_strategies": 2,
+  "best_strategy_by_win_rate_5d": "TopGradeStrategy",
+  "best_strategy_by_avg_return_5d": "TopGradeStrategy",
+  "strategies": [
+    {
+      "strategy_name": "TopGradeStrategy",
+      "strategy_version": "v1",
+      "signal_count": 30,
+      "buy_count": 18,
+      "pass_count": 12,
+      "avoid_count": 0,
+      "win_rate_5d": "0.6667",
+      "avg_return_5d": "1.5000",
+      "cost_adjusted_avg_return_5d": "1.1700",
+      "max_drawdown": "-2.5000",
+      "regime_breakdown": [
+        {
+          "regime": "UPTREND_EARLY",
+          "buy_count": 10,
+          "win_rate_5d": "0.7000",
+          "avg_return_5d": "2.0000",
+          "cost_adjusted_avg_return_5d": "1.6700"
+        }
+      ],
+      "sector_breakdown": [
+        {
+          "sector": "반도체",
+          "signal_count": 15,
+          "buy_count": 10,
+          "win_rate_5d": "0.7000",
+          "avg_return_5d": "1.8000"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**금지 동사**: POST/PUT/PATCH/DELETE → 405. 금지 필드: `source_file_path` / `raw_text` /
+`본문` / `api_key` / `token` / `secret` / `order_id` / `quantity` / `broker` 0건.
+
 ## 17. 인증 (v0.8 Phase B)
 
 v0.1 ~ v0.7 동안 일관 유지된 read-only 정책의 **첫 변경 cycle**. POST 라우터

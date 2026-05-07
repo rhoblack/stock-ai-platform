@@ -553,6 +553,85 @@ class BacktestRunDetailResponse(_BaseSchema):
     notes: Optional[str] = None
 
 
+# ----- v0.12 Phase D — Walk-forward folds / Multi-strategy comparison API -----
+
+
+class SectorBreakdownSchema(_BaseSchema):
+    """Per-sector BUY metrics for one strategy evaluation pass."""
+
+    sector: str
+    signal_count: int
+    buy_count: int
+    win_rate_5d: Optional[str] = None
+    avg_return_5d: Optional[str] = None
+
+
+class BacktestFoldSchema(_BaseSchema):
+    """One IS/OOS fold pair from a walk-forward backtest run.
+
+    All fields are read from ``summary_json["walk_forward_folds"]``; no new
+    DB columns are declared on ``backtest_runs``.
+    """
+
+    fold_index: int
+    train_start: str
+    train_end: str
+    validate_start: str
+    validate_end: str
+    is_oos_gap: int
+    is_signal_count: int
+    is_buy_count: int
+    is_win_rate_5d: Optional[str] = None
+    is_avg_return_5d: Optional[str] = None
+    oos_signal_count: int
+    oos_buy_count: int
+    oos_win_rate_5d: Optional[str] = None
+    oos_avg_return_5d: Optional[str] = None
+
+
+class BacktestFoldsResponse(_BaseSchema):
+    """Response for ``GET /api/backtest/runs/{id}/folds``."""
+
+    run_id: int
+    mode: str
+    total_folds: int
+    avg_oos_win_rate_5d: Optional[str] = None
+    avg_oos_avg_return_5d: Optional[str] = None
+    folds: List[BacktestFoldSchema] = []
+
+
+class BacktestComparisonStrategySchema(_BaseSchema):
+    """Per-strategy metrics row from a multi-strategy comparison run.
+
+    Source: ``summary_json["multi_strategy_comparison"][*]``.
+    Secret / raw-payload / body-text fields are not present on this schema.
+    """
+
+    strategy_name: str
+    strategy_version: str
+    signal_count: int
+    buy_count: int
+    pass_count: int
+    avoid_count: int
+    win_rate_5d: Optional[str] = None
+    avg_return_5d: Optional[str] = None
+    cost_adjusted_avg_return_5d: Optional[str] = None
+    max_drawdown: Optional[str] = None
+    regime_breakdown: List[RegimeBreakdownSchema] = []
+    sector_breakdown: List[SectorBreakdownSchema] = []
+
+
+class BacktestComparisonResponse(_BaseSchema):
+    """Response for ``GET /api/backtest/runs/{id}/comparison``."""
+
+    run_id: int
+    mode: str
+    total_strategies: int
+    best_strategy_by_win_rate_5d: Optional[str] = None
+    best_strategy_by_avg_return_5d: Optional[str] = None
+    strategies: List[BacktestComparisonStrategySchema] = []
+
+
 class MarketCapRankingSchema(_BaseSchema):
     rank_date: date_type
     market: str
