@@ -9,6 +9,11 @@ engine.  Requires ``--from-date`` and ``--to-date``.  ``--train-window-days``
 (default 60) and ``--validate-window-days`` (default 20) control window sizes;
 ``--gap-days`` (default 0) inserts a gap between IS and OOS windows.
 
+Pass ``--multi`` to run MultiStrategyRunner over all registered strategies (or
+a custom subset via ``--strategies``).  Requires ``--from-date`` and
+``--to-date``.  Regime and sector breakdowns are included by default; suppress
+with ``--no-regime-breakdown`` / ``--no-sector-breakdown``.
+
 This CLI **never** calls KIS / DART / Telegram and **never** places orders. It
 only reads from existing tables (``recommendations``, ``recommendation_results``,
 ``data_snapshots``) and writes (when committed) to the new ``backtest_runs`` /
@@ -23,6 +28,9 @@ Examples
     python -m scripts.run_backtest --strategy top_grade --db-url sqlite:///./trial.db --limit 50 --commit
     python -m scripts.run_backtest --strategy top_grade --walk-forward --from-date 2025-01-01 --to-date 2026-04-30
     python -m scripts.run_backtest --strategy high_score --walk-forward --from-date 2025-01-01 --to-date 2026-04-30 --train-window-days 90 --validate-window-days 30 --gap-days 5 --commit
+    python -m scripts.run_backtest --multi --from-date 2025-01-01 --to-date 2026-04-30
+    python -m scripts.run_backtest --multi --strategies top_grade,high_score --from-date 2025-01-01 --to-date 2026-04-30 --commit
+    python -m scripts.run_backtest --multi --from-date 2025-01-01 --to-date 2026-04-30 --no-sector-breakdown
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ from typing import Any
 from sqlalchemy import create_engine
 
 from app.backtest.engine import BacktestEngine, BacktestRunSummary
+from app.backtest.multi_strategy_runner import MultiStrategyComparison, MultiStrategyRunner
 from app.backtest.walk_forward import WalkForwardBacktestEngine, WalkForwardSummary
 from app.config.settings import get_settings
 from app.db.base import Base
@@ -57,12 +66,8 @@ def _parse_date(raw: str | None) -> date | None:
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--strategy",
-        required=True,
-        choices=KNOWN_STRATEGIES,
-        help=f"Strategy name (one of: {', '.join(KNOWN_STRATEGIES)})",
-    )
+
+    # --- Common ---
     parser.add_argument(
         "--from-date",
         dest="from_date",
@@ -80,7 +85,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--commit",
         action="store_true",
-        help="Persist BacktestRun + BacktestResult rows. Default is dry-run rollback.",
+        help="Persist BacktestRun rows. Default is dry-run rollback.",
     )
     parser.add_argument(
         "--db-url",
@@ -92,9 +97,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--limit",
         type=int,
         default=None,
-        help="Cap evaluated recommendations (most recent first). Default: no cap. Ignored in walk-forward mode.",
+        help="Cap evaluated recommendations (most recent first). Ignored in walk-forward mode.",
     )
-    # Walk-forward options
+
+    # --- Single-strategy (plain engine) ---
+    parser.add_argument(
+        "--strategy",
+        choices=KNOWN_STRATEGIES,
+        default=None,
+        help=f"Strategy name for plain/walk-forward mode (one of: {', '.join(KNOWN_STRATEGIES)}).",
+    )
+
+    # --- Walk-forward options ---
     parser.add_argument(
         "--walk-forward",
         dest="walk_forward",
@@ -106,14 +120,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="train_window_days",
         type=int,
         default=60,
-        help="IS (in-sample) window size in calendar days (default: 60). Walk-forward only.",
+        help="IS window size in calendar days (default: 60). Walk-forward only.",
     )
     parser.add_argument(
         "--validate-window-days",
         dest="validate_window_days",
         type=int,
         default=20,
-        help="OOS (out-of-sample) window size in calendar days (default: 20). Walk-forward only.",
+        help="OOS window size in calendar days (default: 20). Walk-forward only.",
     )
     parser.add_argument(
         "--gap-days",
@@ -122,6 +136,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0,
         help="Gap in calendar days between IS end and OOS start (default: 0). Walk-forward only.",
     )
+
+    # --- Multi-strategy options ---
+    parser.add_argument(
+        "--multi",
+        action="store_true",
+        help="Run MultiStrategyRunner over multiple strategies and compare results.",
+    )
+    parser.add_argument(
+        "--strategies",
+        dest="strategies",
+        default=None,
+        help=(
+            "Comma-separated strategy names for --multi mode "
+            f"(default: all registered strategies: {','.join(KNOWN_STRATEGIES)})."
+        ),
+    )
+    parser.add_argument(
+        "--no-regime-breakdown",
+        dest="no_regime_breakdown",
+        action="store_true",
+        help="Suppress per-regime breakdown in --multi mode.",
+    )
+    parser.add_argument(
+        "--no-sector-breakdown",
+        dest="no_sector_breakdown",
+        action="store_true",
+        help="Suppress per-sector breakdown in --multi mode.",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -131,6 +174,11 @@ def _build_session_factory(database_url: str | None):
     engine = create_engine(url, connect_args=connect_args, future=True)
     Base.metadata.create_all(engine)
     return create_session_factory(engine)
+
+
+# ---------------------------------------------------------------------------
+# Runner functions
+# ---------------------------------------------------------------------------
 
 
 def run_backtest(
@@ -199,6 +247,47 @@ def run_walk_forward_backtest(
     return summary
 
 
+def run_multi_strategy_backtest(
+    *,
+    strategy_names: list[str],
+    commit: bool,
+    from_date: date,
+    to_date: date,
+    limit: int | None = None,
+    with_regime_breakdown: bool = True,
+    with_sector_breakdown: bool = True,
+    database_url: str | None = None,
+) -> MultiStrategyComparison:
+    factory = _build_session_factory(database_url)
+    session = factory()
+    try:
+        strategies = [get_strategy(name) for name in strategy_names]
+        runner = MultiStrategyRunner(
+            session,
+            with_regime_breakdown=with_regime_breakdown,
+            with_sector_breakdown=with_sector_breakdown,
+        )
+        comparison = runner.run(
+            strategies=strategies,
+            start_date=from_date,
+            end_date=to_date,
+            limit=limit,
+            dry_run=not commit,
+        )
+        if commit:
+            session.commit()
+        else:
+            session.rollback()
+    finally:
+        session.close()
+    return comparison
+
+
+# ---------------------------------------------------------------------------
+# Print helpers
+# ---------------------------------------------------------------------------
+
+
 def _print_summary(summary: BacktestRunSummary, *, commit: bool) -> None:
     mode = "COMMIT (DB persisted)" if commit else "DRY-RUN (no DB writes)"
     print(f"Backtest - {mode}")
@@ -222,9 +311,7 @@ def _print_summary(summary: BacktestRunSummary, *, commit: bool) -> None:
     print(f"  max_drawdown                  : {_fmt(summary.max_drawdown)}")
     print(f"  cost_model_version            : {summary.cost_model_version}")
     print(f"  total_cost (fraction)         : {_fmt(summary.total_cost)}")
-    print(
-        f"  cost_adjusted_avg_return_5d   : {_fmt(summary.cost_adjusted_avg_return_5d)}",
-    )
+    print(f"  cost_adjusted_avg_return_5d   : {_fmt(summary.cost_adjusted_avg_return_5d)}")
     if summary.regime_breakdown:
         print("  regime_breakdown              :")
         for entry in summary.regime_breakdown:
@@ -272,20 +359,92 @@ def _print_walk_forward_summary(summary: WalkForwardSummary, *, commit: bool) ->
         print(f"  backtest_run_id     : {summary.backtest_run_id}")
 
 
+def _print_multi_comparison(comparison: MultiStrategyComparison, *, commit: bool) -> None:
+    mode = "COMMIT (DB persisted)" if commit else "DRY-RUN (no DB writes)"
+    print(f"Multi-Strategy Comparison - {mode}")
+    print(f"  start_date                  : {comparison.start_date}")
+    print(f"  end_date                    : {comparison.end_date}")
+    print(f"  run_date                    : {comparison.run_date}")
+    print(f"  total_strategies            : {comparison.total_strategies}")
+    print(f"  best_by_win_rate_5d         : {_fmt(comparison.best_strategy_by_win_rate_5d)}")
+    print(f"  best_by_avg_return_5d       : {_fmt(comparison.best_strategy_by_avg_return_5d)}")
+    print("  strategies                  :")
+    for r in comparison.strategy_results:
+        print(
+            f"    {r.strategy_name:<22}  sig={r.signal_count:<4}  buy={r.buy_count:<4}  "
+            f"wr5d={_fmt(r.win_rate_5d)}  ar5d={_fmt(r.avg_return_5d)}  "
+            f"cost_adj={_fmt(r.cost_adjusted_avg_return_5d)}"
+        )
+        if r.regime_breakdown:
+            for entry in r.regime_breakdown:
+                print(
+                    f"      regime {entry.regime:<14}  buy={entry.buy_count:<3}  "
+                    f"wr5d={_fmt(entry.win_rate_5d)}  ar5d={_fmt(entry.avg_return_5d)}"
+                )
+        if r.sector_breakdown:
+            for entry in r.sector_breakdown:
+                print(
+                    f"      sector {entry.sector:<20}  sig={entry.signal_count:<3}  "
+                    f"buy={entry.buy_count:<3}  wr5d={_fmt(entry.win_rate_5d)}"
+                )
+    if comparison.backtest_run_id is not None:
+        print(f"  backtest_run_id             : {comparison.backtest_run_id}")
+
+
 def _fmt(value: Any) -> str:
     return "—" if value is None else str(value)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
-    if args.walk_forward:
+    if args.multi:
+        if args.from_date is None or args.to_date is None:
+            print(
+                "error: --multi requires both --from-date and --to-date",
+                file=sys.stderr,
+            )
+            return 2
+
+        raw_strategies = args.strategies
+        if raw_strategies:
+            strategy_names = [s.strip() for s in raw_strategies.split(",") if s.strip()]
+        else:
+            strategy_names = list(KNOWN_STRATEGIES)
+
+        try:
+            comparison = run_multi_strategy_backtest(
+                strategy_names=strategy_names,
+                commit=args.commit,
+                from_date=args.from_date,
+                to_date=args.to_date,
+                limit=args.limit,
+                with_regime_breakdown=not args.no_regime_breakdown,
+                with_sector_breakdown=not args.no_sector_breakdown,
+                database_url=args.db_url,
+            )
+        except UnknownStrategyError as exc:
+            print(f"Strategy error: {exc}", file=sys.stderr)
+            return 2
+
+        _print_multi_comparison(comparison, commit=args.commit)
+
+    elif args.walk_forward:
         if args.from_date is None or args.to_date is None:
             print(
                 "error: --walk-forward requires both --from-date and --to-date",
                 file=sys.stderr,
             )
             return 2
+        if args.strategy is None:
+            print("error: --walk-forward requires --strategy", file=sys.stderr)
+            return 2
+
         try:
             summary = run_walk_forward_backtest(
                 strategy_name=args.strategy,
@@ -300,8 +459,14 @@ def main(argv: list[str] | None = None) -> int:
         except UnknownStrategyError as exc:
             print(f"Strategy error: {exc}", file=sys.stderr)
             return 2
+
         _print_walk_forward_summary(summary, commit=args.commit)
+
     else:
+        if args.strategy is None:
+            print("error: --strategy is required (or use --multi / --walk-forward)", file=sys.stderr)
+            return 2
+
         try:
             summary = run_backtest(
                 strategy_name=args.strategy,
@@ -314,6 +479,7 @@ def main(argv: list[str] | None = None) -> int:
         except UnknownStrategyError as exc:
             print(f"Strategy error: {exc}", file=sys.stderr)
             return 2
+
         _print_summary(summary, commit=args.commit)
 
     return 0

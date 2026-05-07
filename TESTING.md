@@ -1,10 +1,10 @@
 # TESTING.md
 
-> 본 문서는 **v0.12 Phase B 시점** 기준으로 갱신된다 (`v0.12-walk-forward`
+> 본 문서는 **v0.12 Phase C 시점** 기준으로 갱신된다 (`v0.12-multi-strategy`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.12 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.12 Phase B 시점)
+## 1. 현재 회귀 게이트 (v0.12 Phase C 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
@@ -12,7 +12,7 @@ provider transport injection 3중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1167 passed, 1 deselected** (v0.12 Phase B: 1149 → 1167, +17 신규 — WalkForwardBacktestEngine + generate_folds + CLI --walk-forward) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1183 passed, 1 deselected** (v0.12 Phase C: 1167 → 1183, +16 신규 — MultiStrategyRunner + SectorBreakdownEntry + aggregate_sector_breakdown + CLI --multi) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **158 passed** (변경 없음 — Phase A 는 백엔드 전용) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`, 3.40s) |
 | Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (변경 없음 — Phase A 는 백엔드 전용) |
@@ -1621,6 +1621,55 @@ provenance 태그 + DB body 컬럼 부재 + ScoringEngine weight 회귀 + secret
 - 외부 HTTP 호출 0건 (BacktestEngine 기존 정책 계승)
 - 신규 pip 의존성 0건
 - 신규 DB 컬럼 / Alembic revision 0건
+
+## 6.33 v0.12 Phase C — Multi-strategy Comparison 테스트
+
+`tests/integration/test_multi_strategy_comparison.py` 신규 **16 케이스**.
+`MultiStrategyRunner` + `aggregate_sector_breakdown()` + CLI `--multi` 커버.
+
+### 6.33.1 aggregate_sector_breakdown() 순수 논리 (DB 없음, 2건)
+
+- **basic** — IT(BUY×2), Semiconductor(BUY×1, PASS×1) 트리플 → 두 sector 집계, IT win_rate=0.5000
+- **null_sector_maps_to_unknown** — None sector → `UNKNOWN_SECTOR_BUCKET`
+
+### 6.33.2 MultiStrategyRunner dry-run (3건)
+
+- **dry_run_no_db_writes** — dry_run=True 후 `backtest_runs` 행 0건
+- **strategy_count** — `strategy_results` 길이 == 전달한 전략 수 (3건 테스트)
+- **same_universe** — 모든 전략의 `signal_count` 동일 (= 시드 recommendation 수 2건)
+
+### 6.33.3 Best-strategy ranking (2건)
+
+- **best_by_win_rate_5d** — TopGrade(1.0) > HighScore(0.0) → best=TopGradeStrategy
+- **best_by_avg_return_5d** — TopGrade(+0.05) > HighScore(-0.03) → best=TopGradeStrategy
+
+### 6.33.4 Breakdown (3건)
+
+- **regime_breakdown_populated** — `with_regime_breakdown=True` → `regime_breakdown` 리스트 반환 (BUY 신호가 UNCLASSIFIED bucket에 폴딩)
+- **sector_breakdown_uses_stock_sector** — `Stock.sector` 로 IT, Semiconductor 버킷 생성
+- **sector_breakdown_unknown_for_missing_stock** — Stock 없는 symbol → UNKNOWN 버킷
+
+### 6.33.5 Commit (2건)
+
+- **single_backtest_run** — `dry_run=False` 후 `backtest_runs` 행 1건, `strategy_name="MULTI"`, `status=SUCCESS`
+- **summary_json_structure** — `summary_json["mode"]=="multi_strategy_comparison"` + `multi_strategy_comparison` 리스트 + `best_strategy_by_win_rate_5d` 키 포함
+
+### 6.33.6 직렬화 (1건)
+
+- **as_dict** — `MultiStrategyComparison.as_dict()` 필수 키 9종 포함; 각 strategy_result에 `win_rate_5d`, `sector_breakdown`, `regime_breakdown` 포함
+
+### 6.33.7 CLI (3건)
+
+- **multi_requires_dates** — `--multi` + 날짜 누락 → exit 2
+- **multi_dry_run_exits_zero** — `--multi` + 유효 날짜 + tmp SQLite → exit 0
+- **multi_unknown_strategy_exits_2** — `--strategies nonexistent_strategy` → exit 2
+
+### 6.33.8 회귀 기준
+
+- backend pytest **1167 → 1183 passed (+16)** — 회귀 0건
+- 동일 유니버스 보장: `_fetch_recs_with_sector()` 가 BacktestEngine._fetch_recommendations()와 동일한 ordering/limit 적용
+- commit 시 정확히 1건의 `BacktestRun(strategy_name="MULTI")` 영속; 각 전략의 detail은 `summary_json["multi_strategy_comparison"]` — Alembic revision 0건
+- 외부 HTTP 호출 0건; ScoringEngine weight 변경 0건; 신규 pip 의존성 0건
 
 ## 7. 금지 사항
 

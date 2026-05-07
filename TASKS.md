@@ -1195,15 +1195,15 @@ ScoringEngine 본 weight 변경 0건 — *데이터 입력* 만 fake → real. D
 - [x] v0.7 BacktestEngine 회귀 0건 — backend pytest 1149→1167 (+17, 1 deselected 유지)
 - [ ] `tag v0.12-walk-forward + push`
 
-### Phase C: Multi-strategy Comparison + Regime/Sector Breakdown
+### Phase C: Multi-strategy Comparison + Regime/Sector Breakdown ✅ 인수
 
-- [ ] `app/backtest/multi_strategy_runner.py` 신규 — `MultiStrategyRunner.run(strategies, period, ...)`
-- [ ] `app/backtest/regime_breakdown.py` 신규 — regime / sector 별 성과 집계 helper
-- [ ] 비교 결과 + breakdown 도 `backtest_runs.notes` JSON 으로 직렬화 (`{"comparison": {...}, "regime_breakdown": {...}, "sector_breakdown": {...}}`)
-- [ ] `scripts/run_backtest.py` 보강 — `--multi --strategies TopGrade,HighScore,MultiSignal` CLI 옵션
-- [ ] 같은 기간/유니버스 보장 + sector 누락 종목 `null` group 안전 처리
-- [ ] 단위 테스트 ~12건 (`tests/integration/test_multi_strategy_comparison.py`)
-- [ ] v0.7 + Phase B 회귀 0건
+- [x] `app/backtest/multi_strategy_runner.py` 신규 — `MultiStrategyRunner` + `StrategyResult` + `MultiStrategyComparison` + `_find_best()`
+- [x] `app/backtest/regime_breakdown.py` 신규 — `SectorBreakdownEntry` + `aggregate_sector_breakdown()` 순수 집계 helper
+- [x] 비교 결과를 `backtest_runs.summary_json["multi_strategy_comparison"]` 에 직렬화; 기존 Phase B `walk_forward_folds` key와 충돌 없음 — Alembic revision 0건
+- [x] `scripts/run_backtest.py` 보강 — `--multi`, `--strategies top_grade,high_score`, `--no-regime-breakdown`, `--no-sector-breakdown` CLI 옵션
+- [x] 같은 기간/유니버스 보장 (`_fetch_recs_with_sector` 동일 쿼리 패턴) + sector 누락 종목 → `UNKNOWN` bucket 안전 처리
+- [x] 통합 테스트 16건 (`tests/integration/test_multi_strategy_comparison.py`) — sector 순수집계 2건 + 엔진 dry 3건 + 순위 2건 + breakdown 3건 + commit 2건 + 직렬화 1건 + CLI 3건
+- [x] v0.7 + Phase B 회귀 0건 — backend pytest 1167→1183 (+16, 1 deselected 유지)
 - [ ] `tag v0.12-multi-strategy + push`
 
 ### Phase D: Backtest Read-only API/UI 확장 + Provider Score Evidence
