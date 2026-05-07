@@ -1028,14 +1028,20 @@ HoldingCheckEngine 본 weight 변경 0건 정책 그대로.
 - [x] 외부 네트워크 호출 0건 가드 (`httpx.Client` 미생성 단언 테스트)
 - [ ] `tag v0.10-dart-provider + push`
 
-### Phase C: RSS/News Provider 준비
+### Phase C: RSS/News Provider 준비 ✅ 인수
 
-- [ ] `app/config.py` 에 `RSS_NEWS_ENABLED: bool = False` / `RSS_FEED_URLS: str = ""` 추가
-- [ ] `RssNewsProvider` 구현 (`app/data/rss_provider.py`)
-- [ ] body/paragraph 저장 차단 (strip_body 강제)
-- [ ] URL dedup (UNIQUE 충돌 skip)
-- [ ] `retry_with_backoff()` 적용
-- [ ] 단위 테스트 ~15건 (`tests/data/test_rss_provider.py`)
+- [x] `app/config/settings.py` 에 RSS 런타임 5종 추가 (`rss_news_enabled=False` / `rss_feed_urls=""` / `rss_timeout_s=10.0` / `rss_max_attempts=3` / `rss_provider_name="rss"`)
+- [x] `RssNewsProvider` 구현 (`app/data/rss_provider.py`) — `NewsProviderInterface` 구현, transport 주입형 (Phase B DART 패턴 동일)
+- [x] RSS 2.0 + Atom 두 포맷 모두 stdlib `xml.etree.ElementTree` 로 파싱 — 신규 의존성 0건 (`feedparser` 미사용)
+- [x] body/content/full_text/paragraph/raw_text/html_body/본문/원문/전문 등 forbidden 필드는 parser 가 strip — DTO 자체에 부재
+- [x] `<description>` 내 HTML 태그 strip + summary 500자 truncate
+- [x] URL dedup (`dedup_items` first-wins, 단일 fetch 호출 내 / 다중 feed 합산 후)
+- [x] `news_items.url` UNIQUE 정책과 정합 — collector 경계에서 upsert-ignore (문서)
+- [x] `call_with_resilience()` 적용 — provider_name=`"rss"`, retry / circuit breaker / failure isolation 자동 상속
+- [x] 단위 테스트 33건 (`tests/data/test_rss_provider.py`, mock XML fixture 기반)
+- [x] `RSS_NEWS_ENABLED=false` 또는 `RSS_FEED_URLS` 빈 문자열 시 `RssNotConfiguredError` raise — provider 인스턴스화 / transport 호출 0건
+- [x] feed URL 의 query string secret (`?api_key=...`) 은 로그에 미노출 (`_safe_url_for_log` 가 query / fragment strip)
+- [x] 외부 네트워크 호출 0건 가드 (`httpx.Client` 미생성 단언)
 - [ ] `tag v0.10-rss-provider + push`
 
 ### Phase D: 운영 모니터링 강화

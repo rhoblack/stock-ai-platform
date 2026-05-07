@@ -1,17 +1,17 @@
 # TESTING.md
 
-> 본 문서는 **v0.10 Phase B 시점** 기준으로 갱신된다 (`v0.10-dart-provider`
+> 본 문서는 **v0.10 Phase C 시점** 기준으로 갱신된다 (`v0.10-rss-provider`
 > 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.10 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.10 Phase B 시점)
+## 1. 현재 회귀 게이트 (v0.10 Phase C 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다.
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **995 passed, 1 deselected** (v0.10 Phase B: 947 → 995, +48 신규 — DART provider skeleton + parser/mapper + masking) |
+| backend pytest | `.\.venv\Scripts\python.exe -m pytest -q --deselect tests/unit/test_project_structure.py::test_settings_defaults` | **1028 passed, 1 deselected** (v0.10 Phase C: 995 → 1028, +33 신규 — RSS/Atom provider skeleton + parser + dedup + URL secret masking) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **146 passed** (19 파일, jsdom + msw v2; Phase C 117 → Phase D 146; +29 신규) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **19 passed** (chromium + page.route mock) |
@@ -1076,6 +1076,92 @@ retry 분기를 외부 호출 없이 검증한다. 회귀 기준: backend pytest
 - 외부 네트워크 호출 0건 (`httpx.Client` 미생성 단언 + transport 주입형)
 - 본문 저장 필드 0건 (parser strip + DTO 필드 부재 단언)
 - DART_API_KEY / crtfc_key 평문 로그 0건 (caplog 단언)
+
+## 6.25 v0.10 Phase C — RSS/News Provider skeleton 테스트
+
+`tests/data/test_rss_provider.py` 신규 **33 케이스**. `app/data/rss_provider.py`
+의 RSS 2.0 + Atom parser / mapper / dedup / resilience / 본문 저장 금지 / URL
+query secret 마스킹 가드. **외부 네트워크 호출 0건** — feedparser 등 신규 의존성
+도입 없이 stdlib `xml.etree.ElementTree` 만 사용. `httpx.Client` 인스턴스화 자체
+금지 단언.
+
+### 6.25.1 Settings (3 케이스)
+
+- `RSS_NEWS_ENABLED` 기본 `False`
+- `RSS_FEED_URLS` 기본 `""`
+- `RSS_TIMEOUT_S` / `RSS_MAX_ATTEMPTS` / `RSS_PROVIDER_NAME` 기본
+  (10.0 / 3 / `rss`)
+
+### 6.25.2 Disabled / not-configured 가드 (4 케이스)
+
+- `RSS_NEWS_ENABLED=false` → `RssNotConfiguredError`, transport 미호출
+- factory 도 동일 raise
+- enabled 이지만 `RSS_FEED_URLS=""` → `RssNotConfiguredError`
+- transport 미주입 → `RssNotConfiguredError` (Phase C 는 주입형 only)
+
+### 6.25.3 RSS 2.0 / Atom parser (10 케이스)
+
+- RSS 2.0 happy path — `<title>` / `<link>` / `<pubDate>` / `<description>` →
+  NewsItemDTO; channel `<title>` 가 `source` fallback
+- 본문 `<description>` 내 HTML 태그 strip (`<b>`, `<p>` 등)
+- per-item `<category>` 가 feed-level default 를 override
+- 명시 `feed_source` 가 channel `<title>` 를 override
+- Atom happy path — `<title>` / `<link rel="alternate">` / `<updated>` /
+  `<summary>` / `<category term="..."/>`
+- Atom `<updated>` 누락 시 `<published>` fallback
+- 잘못된 XML → `RssParseError`
+- 알 수 없는 root tag → `RssParseError`
+- RSS `<channel>` 누락 → 빈 list
+- Atom 빈 feed → 빈 list
+
+### 6.25.4 Forbidden body field strip (3 케이스)
+
+- `<body>` / `<content:encoded>` / `<full_text>` 가 포함된 RSS item 에서도
+  parser 가 통과하고 DTO 자체에 해당 필드 부재 (parametrize)
+- `NewsItemDTO` dataclass 자체에 `body / content / content_encoded /
+  full_text / fulltext / paragraph / raw_text / rawtext / html / html_body /
+  description_full / 본문 / 원문 / 전문` 부재 단언
+- summary `> 500 자` 입력 → 정확히 500자로 truncate
+
+### 6.25.5 Dedup (1 케이스)
+
+- 동일 URL 3-row → first wins, unique URL 만 반환 (`news_items.url` UNIQUE
+  정책과 정합)
+
+### 6.25.6 Provider 통합 (resilience + isolation, 9 케이스)
+
+- 단일 feed fetch + monitor success_count 1 단언
+- 다중 feed (2개) 의 url 교집합 → dedup 후 unique URL 만 반환
+- 1 feed SERVER_ERROR + 1 feed 정상 → 실패 isolate / 정상 feed 계속 동작
+- TIMEOUT → 빈 결과 + `last_error_kind == "TIMEOUT"` (예외 미전파)
+- transport RuntimeError raise → 빈 결과 + `last_error_kind == "UNKNOWN"`
+- circuit breaker 임계 2 + 4 feed 모두 fail → 2회 실패 후 OPEN, 나머지
+  2 feed 는 transport 호출 0건 (fast-fail)
+- `since` cutoff 필터 (1 row 통과)
+- `limit=1` cap
+- `create_rss_provider` factory
+
+### 6.25.7 URL query secret 마스킹 (2 케이스)
+
+- `https://example.com/feed.xml?api_key=SECRETXYZ` 의 SERVER_ERROR 로그
+  메시지에 `SECRETXYZ` / `api_key` 평문 미등장; host + path
+  (`example.com/feed.xml`) 만 노출
+- `_safe_url_for_log` 가 query string + fragment 제거 + netloc 보존
+  (RFC 3986 authority 는 query-string secret 과 별개)
+
+### 6.25.8 외부 네트워크 0건 가드 (1 케이스)
+
+- `httpx.Client` 를 monkeypatch 로 `AssertionError` 화 → RSS provider
+  코드 경로에서 호출 0건
+
+### 6.25.9 회귀 기준
+
+- backend pytest **995 → 1028 passed (+33)** — 회귀 0건, 1 deselected
+  유지
+- 외부 네트워크 호출 0건 (`httpx.Client` 미생성 단언)
+- 본문 저장 필드 0건 (parser strip + DTO 필드 부재 단언)
+- URL query secret 평문 로그 0건 (`_safe_url_for_log` 적용 + caplog 단언)
+- 신규 의존성 0건 (stdlib `xml.etree.ElementTree` 만 사용)
 
 ## 7. 금지 사항
 

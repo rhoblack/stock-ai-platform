@@ -57,6 +57,7 @@ app/
 │  ├─ provider_resilience.py # v0.9 Phase C — ProviderCallResult / retry_with_backoff / CircuitBreaker skeleton
 │  ├─ provider_health_monitor.py # v0.10 Phase A — ProviderHealthMonitor + call_with_resilience() (registry + retry + breaker + failure isolation)
 │  ├─ dart_provider.py      # v0.10 Phase B — DART OpenAPI provider skeleton (DartFundamental/Earnings/Disclosure, DART_ENABLED=false 기본, transport 주입형, parser/mapper, body 필드 strip)
+│  ├─ rss_provider.py       # v0.10 Phase C — RssNewsProvider (RSS 2.0 + Atom, RSS_NEWS_ENABLED=false 기본, transport 주입형, body 필드 strip + URL dedup + URL query secret 마스킹, stdlib xml.etree only)
 │  └─ repositories/         # 28 Repository (v0.1 16 + v0.4 6 + v0.6 2 + v0.8 3 + v0.9 1)
 ├─ analysis/                # TechnicalAnalyzer, IndicatorService, candle/ATR/volatility (v0.3 Phase B)
 ├─ decision/                # ScoringEngine, RecommendationEngine, HoldingCheckEngine, RiskEngine, score producers
@@ -363,6 +364,33 @@ DartDisclosureProvider    → DisclosureProviderInterface  (/api/list.json mock)
   추가 — `dart_api_key` / `DART_API_KEY` 는 기존 `api_key` 패턴 매칭
 - DB 스키마 변경 없음 (`financial_statements` / `news_items` 기존 테이블 재사용,
   Alembic head 그대로 `0004_user_preferences`)
+
+**Phase C — `app/data/rss_provider.py`:**
+```text
+RssNewsProvider           → NewsProviderInterface (RSS 2.0 + Atom 동시 지원)
+parse_feed(payload, ...)  → root tag 기반 포맷 분기 (rss / feed)
+dedup_items(items)        → URL first-wins (news_items.url UNIQUE 정합)
+_safe_url_for_log(url)    → query / fragment strip 후 host + path 만 로그
+```
+- `Settings.rss_news_enabled=False` 기본 + `Settings.rss_feed_urls=""` 기본
+  — `RssNotConfiguredError` raise. 운영자가 명시한 URL 만 fetch (자동
+  discovery / crawling 0건)
+- **신규 의존성 0건** — stdlib `xml.etree.ElementTree` 만 사용 (feedparser
+  도입 검토했으나 RSS 2.0 + Atom subset 만 다루므로 불필요)
+- Parser 가 forbidden body 필드 (`body` / `content` / `content_encoded` /
+  `full_text` / `paragraph` / `raw_text` / `html` / `html_body` /
+  `description_full` / `본문` / `원문` / `전문`) 를 사전 strip
+- `<description>` 내 HTML 태그 strip + summary 500자 truncate — 본문 누출
+  방지 다층 가드
+- URL dedup 은 fetch 호출 단위 first-wins; collector → DB 저장 시 추가로
+  `news_items.url` UNIQUE 가 두 번째 가드 (upsert-ignore)
+- 모든 transport 호출이 `call_with_resilience(provider_name="rss", ...)` 경유
+  — Phase A retry / circuit breaker / failure isolation 자동 상속
+- feed URL 의 query string secret (`?api_key=...` / `?token=...`) 은 로그에
+  미노출 — `_safe_url_for_log` 가 query / fragment strip 후 host + path 만
+  emit
+- DB 스키마 변경 없음 (`news_items` 기존 테이블 재사용, Alembic head 그대로
+  `0004_user_preferences`)
 
 ## 4. Import Pipeline (v0.4)
 

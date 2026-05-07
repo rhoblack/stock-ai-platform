@@ -23,7 +23,7 @@
 |---|---|---|---|
 | A | `ProviderHealthMonitor` + `call_with_resilience()` + settings 7종 + 테스트 31건 | `v0.10-provider-resilience` ✅ | pytest 916→947 (+31) |
 | B | DART Provider skeleton (DartFundamental/Earnings/Disclosure, DART_ENABLED=false, transport 주입형, parser/mapper + body 필드 strip + crtfc_key 마스킹 + 테스트 49건) | `v0.10-dart-provider` ✅ | pytest 947→995 (+48) |
-| C | RSS/News Provider 준비 (RssNewsProvider, RSS_NEWS_ENABLED=false, 메타데이터만) | `v0.10-rss-provider` ⏳ | pytest +15 예상 |
+| C | RSS/News Provider skeleton (RssNewsProvider, RSS_NEWS_ENABLED=false, RSS 2.0 + Atom 동시 지원, transport 주입형, body 필드 strip + URL dedup + URL query secret 마스킹 + 테스트 33건, stdlib xml.etree only) | `v0.10-rss-provider` ✅ | pytest 995→1028 (+33) |
 | D | 운영 모니터링 강화 (GET /api/health/providers + /jobs + 프런트 패널) | `v0.10-health-api` ⏳ | pytest +10 / vitest +5 예상 |
 | E | 마감 문서 + 4 게이트 최종 확인 | `v0.10-final` ⏳ | 4 게이트 그린 |
 

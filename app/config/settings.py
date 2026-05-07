@@ -254,6 +254,31 @@ class Settings:
         default_factory=lambda: os.getenv("DART_PROVIDER_NAME", "dart"),
     )
 
+    # v0.10 Phase C -- RSS / News provider runtime settings.
+    # RSS_NEWS_ENABLED=false (default) keeps RssNewsProvider inert -- the
+    # factory raises RssNotConfiguredError so any scheduler / collector that
+    # would otherwise call it short-circuits with no HTTP fetch.  Operators
+    # who opt in must also list explicit feed URLs in RSS_FEED_URLS (comma
+    # separated); auto-crawling of unspecified URLs is forbidden.  Stored
+    # rows are metadata only (title / url / published_at / source / category /
+    # short summary) -- body / paragraph / full_text fields are stripped by
+    # the parser.
+    rss_news_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("RSS_NEWS_ENABLED"), False),
+    )
+    rss_feed_urls: str = field(
+        default_factory=lambda: os.getenv("RSS_FEED_URLS", ""),
+    )
+    rss_timeout_s: float = field(
+        default_factory=lambda: float(os.getenv("RSS_TIMEOUT_S") or "10.0"),
+    )
+    rss_max_attempts: int = field(
+        default_factory=lambda: _as_int(os.getenv("RSS_MAX_ATTEMPTS"), 3),
+    )
+    rss_provider_name: str = field(
+        default_factory=lambda: os.getenv("RSS_PROVIDER_NAME", "rss"),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )
