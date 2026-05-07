@@ -1070,17 +1070,88 @@ e2e 20 / build 그린**. 마감 태그 `v0.10-final`. Alembic head `0004_user_pr
 - [x] `ROADMAP.md` v0.10 행 ✅ 마감 + v0.11 후보 정리
 - [x] `TESTING.md` 기준선 갱신 (1045 pytest / 153 vitest / 20 e2e / build 그린)
 - [x] `ARCHITECTURE.md` v0.10 마감 시점 반영
-- [ ] `tag v0.10-final + push`
+- [x] `tag v0.10-final + push`
 
 ---
 
-## v0.11+ — Backlog
+## v0.11 — Real Provider Transport & Observability (시작 선언)
 
-자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) §9 / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) §0 v0.11 후보 참조. 한 줄 요약:
+기준선: `v0.10-final`. 회귀 게이트: pytest 1045 / vitest 153 / e2e 20 / build 그린.
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0011`. 채택 시나리오: **Scenario X — Real
+Provider Transport + Observability** (DART/RSS 실 httpx transport + observability
+ring buffer + Prometheus exporter optional + `/api/health/providers` 확장).
+DART/RSS/Prometheus 모두 default OFF 유지 — 운영자 명시 enable 시에만 동작.
 
-- **Prometheus/Grafana** — 운영 모니터링 인프라 (v0.10 health API 검증 후)
-- **백테스트 고도화** — walk-forward / 실 비용 모델 (recommendation_results 3~6개월 누적 후)
-- **DART/RSS score 반영** — ScoringEngine weight 보강 (v0.10 provider 안정화 후)
+### Phase A: DART HTTP Transport
+
+- [ ] `respx>=0.21,<0.22` 의존성 추가 (테스트 전용)
+- [ ] `app/data/dart_provider.py` 에 `HttpxDartTransport` 구현 (`DartTransport` protocol 구현체)
+- [ ] `create_dart_providers` factory — `transport=None` + `DART_ENABLED=true` 시 `HttpxDartTransport` 자동 주입
+- [ ] HTTP status / DART `status` 코드 → `ProviderErrorKind` 매핑 (`classify_dart_status` 재사용)
+- [ ] `httpx.TimeoutException` → TIMEOUT, 4xx → CLIENT_ERROR, 5xx → SERVER_ERROR
+- [ ] respx mock 테스트 ~18건 (`tests/data/test_dart_http_transport.py`)
+- [ ] `DART_ENABLED=false` 시 `httpx.Client` 미생성 단언 유지 (v0.10 회귀 0건)
+- [ ] `DART_API_KEY` / `crtfc_key` 평문 로그 0건 caplog 단언
+- [ ] `tag v0.11-dart-transport + push`
+
+### Phase B: RSS HTTP Transport
+
+- [ ] `app/data/rss_provider.py` 에 `HttpxRssTransport` 구현 (`RssTransport` protocol 구현체)
+- [ ] `create_rss_provider` factory — `transport=None` + `RSS_NEWS_ENABLED=true` 시 자동 주입
+- [ ] HTTP 200 → `ProviderCallResult.ok(response.content)`; 4xx → CLIENT_ERROR; 5xx → SERVER_ERROR
+- [ ] `follow_redirects=True` + `httpx` 기본 max redirect cap
+- [ ] respx mock 테스트 ~12건 (`tests/data/test_rss_http_transport.py`) — RSS 2.0 / Atom fixture 응답 + 비-XML / 4xx / 5xx / timeout
+- [ ] feed URL query secret 평문 로그 0건 (`_safe_url_for_log` 단언 강화)
+- [ ] `RSS_NEWS_ENABLED=false` 시 `httpx.Client` 미생성 유지
+- [ ] v0.10 Phase C 33 케이스 회귀 0건
+- [ ] `tag v0.11-rss-transport + push`
+
+### Phase C: Provider Observability Layer
+
+- [ ] `prometheus-client>=0.19,<1.0` 의존성 추가
+- [ ] `ProviderStats` 에 `recent_failures: deque(maxlen=50)` + `recent_calls: deque(maxlen=200)` 추가
+- [ ] `ProviderHealthMonitor.summary_24h(now)` 구현 — `success_rate_24h` / `avg_attempts` 집계
+- [ ] `app/monitoring/prometheus.py` 신규 — Counter (call/success/failure/error_kind) + Gauge (circuit_state) + Histogram (attempts) optional
+- [ ] `app/api/metrics_routes.py` 신규 — `GET /metrics` (`PROMETHEUS_ENABLED=false` 시 404)
+- [ ] `app/config/settings.py` 에 `prometheus_enabled=False` 기본 + `prometheus_path` 추가
+- [ ] 단위 테스트 ~20건 (`tests/data/test_provider_observability.py`) — ring buffer maxlen / 24h window 경계 / Prometheus collector registry 격리 / `/metrics` 응답 schema / `PROMETHEUS_ENABLED=false` 시 404
+- [ ] v0.10 Phase A 31 케이스 회귀 0건
+- [ ] `tag v0.11-observability + push`
+
+### Phase D: `/api/health/providers` 확장 + Settings 패널 보강
+
+- [ ] `ProviderHealthItem` schema 확장 — `success_rate_24h: float?` / `avg_attempts_24h: float?` / `recent_failures: list[FailureSummary]` (last 5, `(timestamp, error_kind)` 만)
+- [ ] `last_error_message` 응답 미포함 정책 유지 (URL secret 누출 차단)
+- [ ] `frontend/src/api/types.ts` schema 동기화
+- [ ] `frontend/src/components/common/ProviderHealthPanel.tsx` 보강 — success_rate_24h progress bar + recent_failures 미니 list
+- [ ] backend pytest +8 (`tests/integration/test_health_providers.py`)
+- [ ] vitest +6 (`frontend/src/tests/ProviderHealthPanel.test.tsx`)
+- [ ] e2e +1 (Settings 패널 신규 cell visible + secret 단언 강화)
+- [ ] `tag v0.11-health-extended + push`
+
+### Phase E: 마감 (문서)
+
+- [ ] `RELEASE_NOTES_v0.11.md` 작성 (Phase A~D 산출물 + 최종 게이트 + 안전 정책 + v0.12 후보)
+- [ ] `README.md` v0.11 갱신 (기능 목록 / 제외 범위 / 누적 사이클 표 / 회귀 기준선)
+- [ ] `PROJECT_STATUS.md` §0 v0.11 마감 선언으로 교체
+- [ ] `ROADMAP.md` v0.11 행 ✅ 마감
+- [ ] `TESTING.md` 기준선 갱신 (~1103 pytest / ~159 vitest / 21 e2e)
+- [ ] `ARCHITECTURE.md` v0.11 마감 시점 반영
+- [ ] `API_SPEC.md` `/metrics` (default 404) + `/api/health/providers` 확장 안내
+- [ ] `tag v0.11-final + push`
+
+---
+
+## v0.12+ — Backlog
+
+자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) §0 v0.12 후보 참조. 한 줄 요약:
+
+- **DART/RSS score 반영** — `RealNewsScoreProducer` / `RealFundamentalScoreProducer` 위에 DART/RSS 데이터 연결 (실 transport 안정화 + 데이터 누적 후)
+- **백테스트 고도화** — walk-forward / 다중 전략 / 실 cost model (recommendation_results 3~6개월 누적 후)
+- **Grafana dashboard JSON** — Prometheus exporter 위에 시각화 (외부 인프라)
+- **인증 고도화** — refresh token / 다중 사용자 / OAuth / RBAC (단일 사용자 운영 검증 후)
+- **CSP / rate limit 고도화** — 실 트래픽 수집 후 정책 수립
+- **LLM 보강** — News sentiment / 자동 전략 생성 (룰 기반 검증 후)
 - **인증 고도화** — 다중 사용자 / OAuth / SSO / refresh token (단일 사용자 운영 검증 후)
 - **LLM 보강** — News sentiment / 재무 분석 / 자동 전략 생성 (룰 기반 검증 후)
 - **WebSocket / SSE** — 실시간 잡 / 백테스트 진행 (인증 + 모니터링 후)

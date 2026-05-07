@@ -7,7 +7,76 @@
 
 ---
 
-## 0. v0.10 마감 선언 — Real Provider Readiness & Resilience
+## 0. v0.11 시작 선언 — Real Provider Transport & Observability
+
+**v0.11 cycle 시작.** `v0.10-final` 위에 **Real Provider Transport &
+Observability** 5 phase 진입.
+
+- 시작 일자: **2026-05-07 (Asia/Seoul)**
+- 기준 태그: `v0.10-final` (HEAD `c56faf9`)
+- 기준 게이트: backend pytest **1045 passed (1 deselected)** / frontend vitest
+  **153 passed** / Playwright e2e **20 passed** / build 그린
+- Alembic head: `0004_user_preferences` (**v0.11 신규 revision 없음** — provider
+  observability 도 in-memory bounded ring buffer)
+- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0011`
+
+### v0.11 채택 결론 (시나리오 비교 요약)
+
+`PLANS.md` `PLAN-0011` 4 시나리오 비교 후 채택: **Scenario X — Real Provider
+Transport + Observability**.
+
+| 시나리오 | 내용 | 결정 |
+|---|---|---|
+| **X** | DART/RSS 실 httpx transport + provider observability 고도화 (failure history + Prometheus optional) + `/api/health/providers` 확장 | ✅ **핵심 채택** |
+| Y | DART/RSS score 반영 (ScoringEngine weight 보강) | ❌ v0.12 연기 — 실 transport 안정화 + 누적 데이터 부족 |
+| Z | 백테스트 고도화 (walk-forward / 다중 전략 / 실 cost model) | ❌ v0.12+ 연기 — recommendation_results 3~6개월 누적 필요 |
+| W | 보안/인증 고도화 (rate limit 튜닝 / CSP / refresh token / RBAC) | ❌ v0.12+ 연기 — 실 트래픽 / 단일 사용자 운영 검증 후 |
+
+### v0.11 Phase 목표
+
+| Phase | 내용 | 태그 | 예상 게이트 |
+|---|---|---|---|
+| A | DART HTTP Transport — `HttpxDartTransport` + respx mock 테스트 | `v0.11-dart-transport` ⏳ | pytest +18 |
+| B | RSS HTTP Transport — `HttpxRssTransport` + respx + RSS 2.0/Atom fixture | `v0.11-rss-transport` ⏳ | pytest +12 |
+| C | Provider Observability Layer — failure history ring buffer + summary + optional Prometheus `/metrics` | `v0.11-observability` ⏳ | pytest +20 |
+| D | `/api/health/providers` 확장 + Settings 패널 보강 (success_rate_24h / recent_failures) | `v0.11-health-extended` ⏳ | pytest +8 / vitest +6 / e2e +1 |
+| E | 마감 — `RELEASE_NOTES_v0.11.md` + 4 게이트 최종 확인 | `v0.11-final` ⏳ | 4 게이트 그린 |
+
+### v0.11 핵심 정책
+
+- DART/RSS provider **default OFF 유지** — `DART_ENABLED=true` /
+  `RSS_NEWS_ENABLED=true` 명시 enable + 운영자 라이선스 검토(사람) 선행 필수
+- Prometheus exporter **default OFF 유지** — `PROMETHEUS_ENABLED=true` 명시 시에만
+  `/metrics` 노출 (false 시 404)
+- ScoringEngine / HoldingCheckEngine 본 weight 변경 0건 — DART/RSS score 반영은
+  v0.12+ 후보
+- Alembic 새 revision 0건 — provider observability 도 in-memory bounded ring
+  buffer (50/200 entries cap)
+- 신규 mutation 라우터 0건 — `/metrics` 도 GET only (POST/PUT/DELETE 405)
+- 본문 / 비밀값 / URL query secret 응답·로그·UI 평문 노출 0건 — v0.10 정책 그대로
+  + Phase D 단언 강화
+- 자동매매 / 실 KIS 주문 / `BrokerInterface` 구현 0건 (v0.1~v0.11 일관)
+- 신규 pip 의존성 2종 — `respx>=0.21,<0.22` (테스트 only, BSD-3) +
+  `prometheus-client>=0.19,<1.0` (Apache 2.0)
+
+### v0.12 후보 (우선순위 순)
+
+1. **DART/RSS score 반영** — `RealNewsScoreProducer` (v0.5) /
+   `RealFundamentalScoreProducer` (v0.6) 위에 v0.11 의 실 transport 결과 연결.
+   ScoringEngine weight 보강은 누적 데이터 검증 후
+2. **백테스트 고도화** — walk-forward 검증 / 다중 전략 포트폴리오 / 실 broker fee
+   schedule. recommendation_results 3~6개월 누적 후
+3. **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위에 시각화 layer
+4. **인증 고도화** — refresh token / 다중 사용자 / OAuth / SSO / RBAC
+5. **CSP / rate limit 고도화** — 실 트래픽 수집 후 정책 수립
+6. **LLM 보강** — News sentiment / 재무 분석 / 자동 전략 (룰 기반 검증 후)
+7. **WebSocket / SSE 실시간 잡 / 백테스트 진행** — 현재 polling 만
+8. **Provider toggle GUI / mutation API** — 인증 + 보안 검토 동반
+9. **자동매매** (Future Backlog — 별도 보안·컴플라이언스·자본 한도 사이클 선행 필수)
+
+---
+
+## 0-1. v0.10 마감 선언 — Real Provider Readiness & Resilience
 
 **v0.10 cycle 마감.** `v0.9-final` 위에 **Real Provider Readiness & Resilience**
 5 phase 완료. 최종 마감 태그 `v0.10-final`.
@@ -74,7 +143,7 @@
 
 ---
 
-## 0-1. v0.10 시작 선언 → 마감으로 갱신 (기록 보존)
+## 0-2. v0.10 시작 선언 → 마감으로 갱신 (기록 보존)
 
 ### v0.10 채택 결론 (시나리오 비교 요약)
 
@@ -118,7 +187,7 @@ e2e 19 / build 그린. Alembic head: `0004_user_preferences`.
 
 ---
 
-## 0-2. v0.9 마감 선언 — Operational Security & Watchlist Polish
+## 0-3. v0.9 마감 선언 — Operational Security & Watchlist Polish (강등됨)
 
 **v0.9 cycle 마감.** 기준선 `v0.8-final` 위에 **Operational Security &
 Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
@@ -156,7 +225,7 @@ Watchlist Polish** 5 phase 완료. 최종 마감 태그 `v0.9-final`.
 
 ---
 
-## 0-3. v0.9 시작 선언 → 마감으로 갱신 (기록 보존)
+## 0-4. v0.9 시작 선언 → 마감으로 갱신 (강등됨)
 
 ### v0.9 채택 결론 (후보 비교 요약)
 
