@@ -1,10 +1,10 @@
 # TESTING.md
 
-> 본 문서는 **v0.13 Phase A 시점** 기준으로 갱신된다 (`v0.13-provider-policy`
-> 태그 포함). 누적 cycle 의 게이트 baseline 과 v0.4–v0.13 신규 테스트 카테고리를
+> 본 문서는 **v0.14 Phase A 시점** 기준으로 갱신되었다 (`v0.14-export-policy`
+> 태그 예정). 누적 cycle 의 게이트 baseline 과 v0.4–v0.14 신규 테스트 카테고리를
 > 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.13 Phase A 시점)
+## 1. 현재 회귀 게이트 (v0.14 Phase A 완료 시점)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
@@ -12,10 +12,10 @@ provider transport injection 3중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `python -m pytest -q` | **1277 passed** (v0.13 Phase C: 1241 → 1277, +36 — Validation Report API 36건) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **175 passed** (v0.13 Phase D: 165 → 175, +10 — Validation UI 10건) |
+| backend pytest | `python -m pytest -q` | **1322 passed** (v0.14 Phase A: 1277 → 1322, +45 — export CLI 23건 + policy 통합 단언 25건) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **175 passed** (v0.13 Phase D: 165 → 175, +10 — v0.14 Phase A 미변경) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
-| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (변경 없음 — Phase D 는 e2e 미변경) |
+| Playwright e2e | `cd frontend && npm run e2e` | **21 passed** (v0.14 Phase A 미변경) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
@@ -35,6 +35,7 @@ Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.gi
 - 비밀값 마스킹 가드 (KIS 키 / Telegram 토큰 / `source_file_path`)
 - **(v0.4)** 리포트 / 테마 / 매핑 / 시그널 이벤트 CRUD + idempotency + 저작권
   정책 (원문 본문 거부 / source_file_path 미노출)
+- **(v0.14 Phase A)** Backtest Export CLI 안전 필드 화이트리스트 + FORBIDDEN_EXPORT_FIELDS 가드 (evidence_json / source_file_path / config_json / summary_json / reason 등 절대 미노출) + ProviderScorePolicy 통합 (disabled=기본 → 기존 동작 0건 변경; enabled 시 CSV=0.90 / MANUAL=0.80 / FAKE=bypass / None→1.00 fallback)
 
 ## 3. 테스트 도구
 

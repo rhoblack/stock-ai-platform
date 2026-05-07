@@ -1318,14 +1318,15 @@ DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지. Alembic r
 Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)**.
 자동매매 / 실 KIS 주문 / FULL_AUTO 0건.
 
-### Phase A: Backtest Export CLI + ProviderScorePolicy→Producer 통합
+### Phase A: Backtest Export CLI + ProviderScorePolicy→Producer 통합 ✅
 
-- [ ] `scripts/export_backtest.py` 신규 — `--run-id`, `--format csv|json`, `--output PATH`, `--dry-run`
-- [ ] fold / comparison / sector breakdown 포함 (forbidden field guard: evidence_json / source_file_path 제외)
-- [ ] 통합 테스트 ~8건 (`tests/integration/test_backtest_export.py`) — CSV/JSON 출력 / 금지 필드 / dry-run / 404
-- [ ] `app/analysis/score_producers.py` — `RealNewsScoreProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` 에 `ProviderScorePolicy.apply()` 통합 (PROVIDER_SCORE_POLICY_ENABLED=False 기본 유지)
-- [ ] 단위 테스트 ~12건 — policy 통합 단언 (기존 behavior OFF 시 변경 0건 포함)
-- [ ] `tag v0.14-export-policy + push` — **게이트: pytest ~1297 (+~20)**
+- [x] `scripts/export_backtest.py` 신규 — `--run-id`, `--format csv|json`, `--output PATH`, `--dry-run`, `--db-url`
+- [x] forbidden field guard: evidence_json / source_file_path / config_json / summary_json / reason 등 제외 (`FORBIDDEN_EXPORT_FIELDS` 상수)
+- [x] 통합 테스트 23건 (`tests/integration/test_backtest_export.py`) — CSV/JSON 출력 / 금지 필드 / dry-run / RunNotFoundError / main() CLI / Decimal·datetime 직렬화 / 네트워크 0건
+- [x] `app/analysis/score_producers.py` — `RealNewsScoreProducer` / `RealFundamentalScoreProducer` / `RealEarningsScoreProducer` 에 `ProviderScorePolicy.apply()` 통합 (PROVIDER_SCORE_POLICY_ENABLED=False 기본 유지)
+- [x] 단위 테스트 25건 추가 (`tests/unit/test_score_producers.py`) — policy 통합 단언 (OFF 시 동일 / CSV·MANUAL 감쇠 / FAKE bypass / None fallback 1.00 / weight 불변 / 네트워크 0건)
+- [x] **게이트: pytest 1322 passed (기준 1277 +45)** — 회귀 0건
+- [ ] `tag v0.14-export-policy + push`
 
 ### Phase B: SimulationBroker + VirtualAccount/VirtualOrder 도메인
 

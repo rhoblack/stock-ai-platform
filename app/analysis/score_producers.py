@@ -40,6 +40,7 @@ from app.db.models import (
     Stock,
     StockIndicator,
 )
+from app.scoring.provider_policy import ProviderScorePolicy
 
 
 NEUTRAL_SCORE = Decimal("50")
@@ -307,11 +308,19 @@ class RealNewsScoreProducer(ScoreProducerInterface):
         *,
         fallback: ScoreProducerInterface | None = None,
         now: datetime | None = None,
+        policy: ProviderScorePolicy | None = None,
+        news_data_source: str | None = None,
     ) -> None:
         self._news_repo = news_repository
         self._fallback = fallback or DummyScoreProducer()
         # Tests inject a fixed ``now`` so recency thresholds become deterministic.
         self._now_override = now
+        # v0.14 Phase A: policy applies a data_source reliability factor.
+        # When policy is None or disabled (default), apply_policy is a no-op.
+        # news_data_source is the provenance label for the news feed
+        # (e.g. "PROVIDER", "CSV", "MANUAL", "FAKE"). None → factor 1.00.
+        self._policy = policy or ProviderScorePolicy()
+        self._news_data_source = news_data_source
 
     def _now(self) -> datetime:
         return self._now_override or datetime.now(UTC)
@@ -334,13 +343,14 @@ class RealNewsScoreProducer(ScoreProducerInterface):
     ) -> RecommendationComponentScores:
         base = self._fallback.score_recommendation(stock=stock, indicator=indicator)
         result = self._compute(stock.symbol)
+        news_score = self._policy.apply_policy(result.score, self._news_data_source)
         merged_metadata = {
             **(base.metadata or {}),
             "news_producer": "RealNewsScoreProducer",
             "news_evidence": result.evidence,
         }
         return RecommendationComponentScores(
-            news_score=result.score,
+            news_score=news_score,
             supply_score=base.supply_score,
             fundamental_score=base.fundamental_score,
             ai_score=base.ai_score,
@@ -355,13 +365,14 @@ class RealNewsScoreProducer(ScoreProducerInterface):
     ) -> HoldingComponentScores:
         base = self._fallback.score_holding(holding=holding, indicator=indicator)
         result = self._compute(holding.symbol)
+        news_score = self._policy.apply_policy(result.score, self._news_data_source)
         merged_metadata = {
             **(base.metadata or {}),
             "news_producer": "RealNewsScoreProducer",
             "news_evidence": result.evidence,
         }
         return HoldingComponentScores(
-            news_score=result.score,
+            news_score=news_score,
             earnings_score=base.earnings_score,
             ai_score=base.ai_score,
             metadata=merged_metadata,
@@ -479,9 +490,14 @@ class RealFundamentalScoreProducer(ScoreProducerInterface):
         fundamental_repository: FundamentalSnapshotRepository,
         *,
         fallback: ScoreProducerInterface | None = None,
+        policy: ProviderScorePolicy | None = None,
     ) -> None:
         self._repo = fundamental_repository
         self._fallback = fallback or DummyScoreProducer()
+        # v0.14 Phase A: policy applies a data_source reliability factor.
+        # When policy is None or disabled (default), apply_policy is a no-op.
+        # data_source is read from the FundamentalSnapshot via getattr.
+        self._policy = policy or ProviderScorePolicy()
 
     def score_recommendation(
         self,
@@ -491,7 +507,9 @@ class RealFundamentalScoreProducer(ScoreProducerInterface):
     ) -> RecommendationComponentScores:
         base = self._fallback.score_recommendation(stock=stock, indicator=indicator)
         snapshot = self._repo.get_latest_by_symbol(stock.symbol)
-        score, evidence = _score_fundamental_snapshot(snapshot)
+        raw_score, evidence = _score_fundamental_snapshot(snapshot)
+        data_source = getattr(snapshot, "data_source", None) if snapshot is not None else None
+        score = self._policy.apply_policy(raw_score, data_source)
         return RecommendationComponentScores(
             news_score=base.news_score,
             supply_score=base.supply_score,
@@ -573,10 +591,15 @@ class RealEarningsScoreProducer(ScoreProducerInterface):
         *,
         fallback: ScoreProducerInterface | None = None,
         as_of: date | None = None,
+        policy: ProviderScorePolicy | None = None,
     ) -> None:
         self._repo = earnings_repository
         self._fallback = fallback or DummyScoreProducer()
         self._as_of = as_of
+        # v0.14 Phase A: policy applies a data_source reliability factor.
+        # When policy is None or disabled (default), apply_policy is a no-op.
+        # data_source is read from the EarningsEvent via getattr.
+        self._policy = policy or ProviderScorePolicy()
 
     def _today(self) -> date:
         return self._as_of or datetime.now(UTC).date()
@@ -597,7 +620,9 @@ class RealEarningsScoreProducer(ScoreProducerInterface):
     ) -> HoldingComponentScores:
         base = self._fallback.score_holding(holding=holding, indicator=indicator)
         event = self._repo.get_latest_by_symbol(holding.symbol)
-        score, evidence = _score_earnings_event(event, as_of=self._today())
+        raw_score, evidence = _score_earnings_event(event, as_of=self._today())
+        data_source = getattr(event, "data_source", None) if event is not None else None
+        score = self._policy.apply_policy(raw_score, data_source)
         return HoldingComponentScores(
             news_score=base.news_score,
             earnings_score=score,

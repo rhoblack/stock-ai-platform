@@ -34,13 +34,21 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 
 ### v0.14 Phase 목표
 
-| Phase | 내용 | 예상 태그 | 예상 pytest |
+| Phase | 내용 | 예상 태그 | 실제 pytest |
 |---|---|---|---|
-| A | Backtest Export CLI + ProviderScorePolicy→Producer 통합 | `v0.14-export-policy` | **1277→~1297 (+~20)** |
-| B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | **~1297→~1337 (+~40)** |
-| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **~1337→~1367 (+~30)** |
-| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **~1367→~1393 (+~26)** |
+| A | Backtest Export CLI + ProviderScorePolicy→Producer 통합 | `v0.14-export-policy` | **1277→1322 (+45) ✅** |
+| B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | **~1322→~1362 (+~40)** |
+| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **~1362→~1392 (+~30)** |
+| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **~1392→~1418 (+~26)** |
 | E | Frontend 13번째 화면 `/paper` + `RELEASE_NOTES_v0.14.md` + 4 게이트 확인 | `v0.14-final` | vitest **175→~185 (+~10)** / e2e **21→22 (+1)** |
+
+### v0.14 Phase A 완료 (2026-05-08)
+
+- `scripts/export_backtest.py` 신규: CSV/JSON export CLI (safe field 화이트리스트 + FORBIDDEN_EXPORT_FIELDS 가드)
+- `app/analysis/score_producers.py`: RealNewsScoreProducer / RealFundamentalScoreProducer / RealEarningsScoreProducer에 ProviderScorePolicy 통합 (disabled 기본, 기존 동작 0건 변경)
+- `tests/integration/test_backtest_export.py` 신규 23건
+- `tests/unit/test_score_producers.py` 25건 추가
+- **실제 게이트: pytest 1322 passed / 회귀 0건 / Alembic revision 0건 / DB 모델 변경 0건 / 신규 pip 0건**
 
 ### v0.14 핵심 정책
 
