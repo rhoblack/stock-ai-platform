@@ -1,5 +1,19 @@
 # Architecture
 
+> 본 문서는 **v0.14 Phase D 시점** 기준으로 갱신된다 (`v0.14-paper-api`
+> 태그 예정). Phase C 의 PnL & Fill 엔진 위에, **Phase D** 가 Paper Trading
+> API 6 라우터 (`/api/paper/account` / `/orders` / `/positions` / `/pnl`
+> GET 4종 + `POST /orders` + `DELETE /orders/{id}`) + 스케줄러 잡 2건
+> (`execute_paper_orders` 16:00 KST + `create_paper_pnl_snapshot` 16:30 KST)
+> 을 추가했다. mutation 라우터는 `Settings.paper_trading_enabled=true` +
+> `require_auth` 필요, disabled 시 503 응답. 스케줄러 잡은 default OFF →
+> SKIPPED. 응답 forbidden 필드 12종 (api_key / token / secret /
+> source_file_path / broker_order_id / kis_order_id / real_account / broker /
+> account_number / raw_text / body / full_text) 0건 단언. paper_routes.py
+> AST 검사로 KIS / DART / RSS / requests / httpx / urllib import 0건. 프런트
+> 화면은 Phase E 책임. 실 KIS 주문 / 자동매매 / FULL_AUTO / SMALL_AUTO /
+> APPROVAL 코드 0건은 그대로 유지된다.
+>
 > 본 문서는 **v0.14 Phase C 시점** 기준으로 갱신된다 (`v0.14-pnl-tracker`
 > 태그 예정). Phase B 의 SimulationBroker / VirtualAccount / VirtualOrder
 > 위에, **Phase C** 가 paper / simulation 트레이딩의 PnL & Fill 엔진을

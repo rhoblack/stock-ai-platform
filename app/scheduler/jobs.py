@@ -95,6 +95,10 @@ JOB_NAME_UPDATE_RECOMMENDATION_RESULTS = "update_recommendation_results"
 JOB_NAME_UPDATE_REPORT_CONSENSUS = "update_report_consensus_snapshots"
 JOB_NAME_COLLECT_NEWS = "collect_news"
 JOB_NAME_COLLECT_DISCLOSURES = "collect_disclosures"
+# v0.14 Phase D -- paper / simulation trading jobs.  Both default to SKIPPED
+# when ``Settings.paper_trading_enabled`` is False (default).
+JOB_NAME_EXECUTE_PAPER_ORDERS = "execute_paper_orders"
+JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT = "create_paper_pnl_snapshot"
 
 
 @dataclass(frozen=True)
@@ -1135,6 +1139,179 @@ def collect_disclosures(session: Session) -> JobResult:
     )
 
 
+# ---------- 16:00 execute_paper_orders (v0.14 Phase D) ----------
+
+
+def execute_paper_orders(session: Session) -> JobResult:
+    """Match pending paper orders against today's daily_prices close.
+
+    Behaviour:
+      * ``PAPER_TRADING_ENABLED=false`` (default) → SUCCESS, data_status=SKIPPED.
+        SimulationBroker is NOT instantiated. KIS / external HTTP 0 calls.
+      * Enabled → calls ``SimulationBroker.execute_pending_orders`` for every
+        active VirtualAccount and aggregates the per-account
+        ``ExecutePendingResult`` into a single summary.
+
+    Failures inside the broker (cash / position rejects) do NOT fail the job:
+    they're recorded as ``rejected_count`` so the operator can investigate
+    via the GET /api/paper/orders endpoint. Unexpected exceptions fail the
+    job (so ``run_job`` records FAILED in ``job_runs``).
+    """
+    settings = _resolve_settings(session)
+    if not settings.paper_trading_enabled:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.14-D",
+                "data_status": "SKIPPED",
+                "reason": "paper_trading_disabled",
+                "accounts_processed": 0,
+                "filled_count": 0,
+                "rejected_count": 0,
+                "skipped_no_price": 0,
+                "skipped_limit_unmet": 0,
+            },
+        )
+
+    # Lazy imports keep the (potentially heavy) paper / broker stacks out of
+    # the cold path when paper trading is disabled.
+    from app.broker.simulation_broker import SimulationBroker  # noqa: PLC0415
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db.models import VirtualAccount  # noqa: PLC0415
+
+    today = _today_in_default_timezone()
+    rows = list(
+        session.execute(
+            select(VirtualAccount).where(
+                VirtualAccount.paper_trading_enabled.is_(True)
+            )
+        ).scalars().all()
+    )
+
+    broker = SimulationBroker(settings=settings)
+    accounts_processed = 0
+    totals = {
+        "filled_count": 0,
+        "rejected_count": 0,
+        "skipped_no_price": 0,
+        "skipped_limit_unmet": 0,
+        "skipped_terminal": 0,
+    }
+    per_account: list[dict[str, Any]] = []
+    for account in rows:
+        result = broker.execute_pending_orders(
+            session, as_of_date=today, account_id=account.id
+        )
+        accounts_processed += 1
+        totals["filled_count"] += result.filled_count
+        totals["rejected_count"] += result.rejected_count
+        totals["skipped_no_price"] += result.skipped_no_price
+        totals["skipped_limit_unmet"] += result.skipped_limit_unmet
+        totals["skipped_terminal"] += result.skipped_terminal
+        per_account.append(
+            {
+                "account_id": account.id,
+                "filled": result.filled_count,
+                "rejected": result.rejected_count,
+                "skipped_no_price": result.skipped_no_price,
+                "skipped_limit_unmet": result.skipped_limit_unmet,
+                "skipped_terminal": result.skipped_terminal,
+            }
+        )
+
+    return JobResult(
+        status=JOB_STATUS_SUCCESS,
+        summary={
+            "phase": "v0.14-D",
+            "data_status": "SUCCESS",
+            "as_of_date": today.isoformat(),
+            "accounts_processed": accounts_processed,
+            **totals,
+            "per_account": per_account,
+        },
+    )
+
+
+# ---------- 16:30 create_paper_pnl_snapshot (v0.14 Phase D) ----------
+
+
+def create_paper_pnl_snapshot(session: Session) -> JobResult:
+    """Materialize one ``virtual_pnl_snapshots`` row per active account.
+
+    Same enable-gate as :func:`execute_paper_orders`. Idempotent: rerunning
+    on the same day replaces the existing snapshot in-place
+    (``VirtualPnLSnapshotRepository.create_or_replace_snapshot``).
+    """
+    settings = _resolve_settings(session)
+    if not settings.paper_trading_enabled:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.14-D",
+                "data_status": "SKIPPED",
+                "reason": "paper_trading_disabled",
+                "accounts_processed": 0,
+                "snapshots_written": 0,
+            },
+        )
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db.models import VirtualAccount  # noqa: PLC0415
+    from app.paper.pnl_tracker import PnLTracker  # noqa: PLC0415
+
+    today = _today_in_default_timezone()
+    rows = list(
+        session.execute(
+            select(VirtualAccount).where(
+                VirtualAccount.paper_trading_enabled.is_(True)
+            )
+        ).scalars().all()
+    )
+
+    tracker = PnLTracker()
+    accounts_processed = 0
+    failures: list[dict[str, Any]] = []
+    for account in rows:
+        try:
+            tracker.create_daily_pnl_snapshot(
+                session, account_id=account.id, snapshot_date=today
+            )
+            accounts_processed += 1
+        except Exception as exc:  # noqa: BLE001 - isolate per-account failures
+            failures.append(
+                {
+                    "account_id": account.id,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:256],
+                }
+            )
+
+    if failures and accounts_processed == 0:
+        status = JOB_STATUS_FAILED
+        error_message = f"{len(failures)} accounts failed snapshot"
+    elif failures:
+        status = JOB_STATUS_PARTIAL
+        error_message = f"{len(failures)} accounts failed snapshot"
+    else:
+        status = JOB_STATUS_SUCCESS
+        error_message = None
+
+    return JobResult(
+        status=status,
+        summary={
+            "phase": "v0.14-D",
+            "data_status": "SUCCESS" if not failures else "PARTIAL",
+            "snapshot_date": today.isoformat(),
+            "accounts_processed": accounts_processed,
+            "snapshots_written": accounts_processed,
+            "failures": failures,
+        },
+        error_message=error_message,
+    )
+
+
 # ---------- registry for the scheduler module ----------
 
 JOB_FUNCTIONS: dict[str, JobFn] = {
@@ -1147,4 +1324,6 @@ JOB_FUNCTIONS: dict[str, JobFn] = {
     JOB_NAME_UPDATE_REPORT_CONSENSUS: update_report_consensus_snapshots,
     JOB_NAME_COLLECT_NEWS: collect_news,
     JOB_NAME_COLLECT_DISCLOSURES: collect_disclosures,
+    JOB_NAME_EXECUTE_PAPER_ORDERS: execute_paper_orders,
+    JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT: create_paper_pnl_snapshot,
 }

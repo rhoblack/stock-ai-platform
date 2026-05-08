@@ -1508,3 +1508,109 @@ curl http://localhost:8000/api/backtest/runs/1/comparison | python -m json.tool
 - 응답에 `source_file_path` / `raw_text` / `본문` / `api_key` / `token` / `secret` / `order_id` / `quantity` / `broker` 0건
 - ScoringEngine weight (`technical 35% / news 25% / supply 15% / fundamental 15% / ai 10%`) 변경 0건
 - 신규 pip 의존성 0건
+
+
+## 22. Paper / Simulation Trading 운영 절차 (v0.14 Phase B/C/D)
+
+### 22.1 PAPER_TRADING_ENABLED 활성화 절차
+
+> **기본값**: `PAPER_TRADING_ENABLED=false` — 아무것도 변경하지 않는다.
+> SimulationBroker.submit_order 는 거부, mutation 라우터 (`POST/DELETE
+> /api/paper/orders`) 는 503, 스케줄러 잡 2건 (`execute_paper_orders` /
+> `create_paper_pnl_snapshot`) 은 SKIPPED. 외부 호출 0건. 실 KIS API
+> 호출 0건 (코드 경로 자체가 분리되어 있음).
+
+```dotenv
+# .env (운영자가 명시 설정 필요 — 기본 false)
+PAPER_TRADING_ENABLED=true
+# AUTH 가 켜져 있다면 mutation 호출 시 Bearer token 필요
+AUTH_ENABLED=true
+JWT_SECRET=<32-char-secret>
+SCHEDULER_ENABLED=true
+```
+
+활성화 후 Alembic 상태 확인:
+
+```powershell
+.venv\Scripts\python.exe -m alembic current
+# expected: 0006_virtual_positions (head)
+```
+
+### 22.2 VirtualAccount 1개 생성
+
+운영 환경에서는 SQL 또는 짧은 Python REPL 로 시드:
+
+```python
+from decimal import Decimal
+from app.db.session import SessionLocal
+from app.data.repositories.virtual_account import VirtualAccountRepository
+
+with SessionLocal() as s:
+    repo = VirtualAccountRepository(s)
+    acc = repo.create(name="default", initial_cash=Decimal("10000000"))
+    s.commit()
+    print(acc.id)
+```
+
+### 22.3 Paper Trading API smoke
+
+```powershell
+# AUTH_ENABLED=true 인 경우 Bearer token 먼저 획득
+$token = (curl -X POST http://localhost:8000/api/auth/login `
+    -H "Content-Type: application/json" `
+    -d '{"username":"admin","password":"..."}' | ConvertFrom-Json).access_token
+
+# read-only GET (PAPER_TRADING_ENABLED 무관)
+curl http://localhost:8000/api/paper/account -H "Authorization: Bearer $token" | python -m json.tool
+curl http://localhost:8000/api/paper/orders  -H "Authorization: Bearer $token" | python -m json.tool
+curl http://localhost:8000/api/paper/positions -H "Authorization: Bearer $token" | python -m json.tool
+curl http://localhost:8000/api/paper/pnl -H "Authorization: Bearer $token" | python -m json.tool
+
+# mutation (PAPER_TRADING_ENABLED=true + AUTH 필요)
+curl -X POST http://localhost:8000/api/paper/orders `
+    -H "Authorization: Bearer $token" -H "Content-Type: application/json" `
+    -d '{"symbol":"005930","side":"BUY","quantity":10,"idempotency_key":"manual-1"}'
+# expected: 201 + {"order": {...}, "deduplicated": false}
+
+# disabled 상태에서 mutation 호출 시 503
+curl -X POST http://localhost:8000/api/paper/orders -H "Authorization: Bearer $token" -d '...'
+# 503 Service Unavailable, detail "paper trading is disabled — set PAPER_TRADING_ENABLED=true ..."
+```
+
+### 22.4 스케줄러 잡 수동 트리거
+
+스케줄러를 안 켠 채 잡만 한 번 실행:
+
+```python
+from app.db.session import SessionLocal
+from app.scheduler.jobs import (
+    JOB_NAME_EXECUTE_PAPER_ORDERS,
+    execute_paper_orders,
+    run_job,
+)
+
+# session_factory 가 SessionLocal 일 경우
+outcome = run_job(
+    session_factory=SessionLocal,
+    job_name=JOB_NAME_EXECUTE_PAPER_ORDERS,
+    fn=execute_paper_orders,
+)
+print(outcome.status, outcome.result_summary)
+# PAPER_TRADING_ENABLED=false → SUCCESS + data_status=SKIPPED
+# enabled                     → SUCCESS + filled_count/rejected_count/skipped_*
+```
+
+### 22.5 v0.14 안전 가드
+
+- Alembic head = `0006_virtual_positions` (Phase D 신규 revision 0건; 0006 은 Phase C)
+- `compare_metadata` diff 0건 (CI 강제)
+- `paper_routes.py` AST 에 `requests / httpx / urllib / urllib3 / app.kis /
+  app.data.dart_provider / app.data.rss_provider / app.data.collectors.kis_client`
+  import 0건 (회귀 단언)
+- 응답에 `api_key / token / secret / source_file_path / broker_order_id /
+  kis_order_id / real_account / broker / account_number / raw_text / body /
+  full_text` 0건
+- mutation 라우터: `PAPER_TRADING_ENABLED=false` 시 503, AUTH 미통과 시 401
+- 스케줄러 잡: `PAPER_TRADING_ENABLED=false` 시 SKIPPED (외부 호출 / DB write 0건)
+- 실 KIS API / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 코드 0건 (v0.1 ~ v0.14 일관)
+- VirtualOrder 와 실 KIS 주문 코드 경로 물리적 분리 (별도 테이블 / 라우터 / 서비스)

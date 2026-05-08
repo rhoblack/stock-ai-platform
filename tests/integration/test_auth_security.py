@@ -299,7 +299,7 @@ def test_login_response_does_not_leak_sensitive_fields(session):
 
 
 def test_mutating_endpoint_count_unchanged(session):
-    """Verify POST/PUT/PATCH/DELETE count matches the known set for Phase C.
+    """Verify POST/PUT/PATCH/DELETE count matches the known set.
 
     v0.9 Phase C adds:
       PATCH  /api/watchlists/{id}              (rename / set_default)
@@ -308,7 +308,12 @@ def test_mutating_endpoint_count_unchanged(session):
       PATCH  /api/watchlists/{id}/items/{sym}  (memo update)
       PUT    /api/users/me/preferences         (replace preferences)
 
-    Total mutating: auth(2) + watchlist(2+3) + preferences(1) = 8.
+    v0.14 Phase D adds (paper / simulation trading only -- KIS / real
+    broker / autotrade still 0 routes):
+      POST   /api/paper/orders                 (SimulationBroker.submit_order)
+      DELETE /api/paper/orders/{id}            (SimulationBroker.cancel_order)
+
+    Total mutating: auth(2) + watchlist(6) + preferences(1) + paper(2) = 11.
     POST /api/auth/register is not present (single-user, no self-registration).
     """
     from app.main import app as _app
@@ -318,11 +323,9 @@ def test_mutating_endpoint_count_unchanged(session):
         for r in _app.routes
         if hasattr(r, "methods") and r.methods & {"POST", "PUT", "PATCH", "DELETE"}
     ]
-    # Phase C: 9 mutating endpoints total.
-    # auth(2: login+logout) + watchlist(6: POST×2 + DELETE×2 + PATCH×2) + preferences(1: PUT)
-    assert len(mutating) == 9, (
-        f"Expected 9 mutating endpoints (auth 2 + watchlist 6 + preferences 1), "
-        f"found {len(mutating)}: {mutating}"
+    assert len(mutating) == 11, (
+        f"Expected 11 mutating endpoints (auth 2 + watchlist 6 + preferences 1 "
+        f"+ paper 2), found {len(mutating)}: {mutating}"
     )
 
 
@@ -330,13 +333,28 @@ def test_mutating_endpoint_count_unchanged(session):
 
 
 def test_no_auto_trade_strings_in_routes(session):
+    """Reject KIS / real-broker / autotrade keywords in route paths.
+
+    v0.14 Phase D legitimately introduces ``/api/paper/orders`` for
+    in-process simulation. The guard is unchanged in spirit: it still
+    rejects ``broker / auto_trade / full_auto / approval / small_auto``
+    plus any ``order`` path that is NOT under ``/api/paper/`` (which is
+    explicitly the paper / simulation namespace).
+    """
     from app.main import app as _app
 
     forbidden_patterns = re.compile(
-        r"order|broker|auto_trade|full_auto|approval|small_auto", re.IGNORECASE
+        r"broker|auto_trade|full_auto|approval|small_auto", re.IGNORECASE
     )
+    order_pattern = re.compile(r"order", re.IGNORECASE)
     for route in _app.routes:
         path = getattr(route, "path", "")
         assert not forbidden_patterns.search(path), (
             f"Forbidden pattern found in route path: {path}"
         )
+        if order_pattern.search(path):
+            assert path.startswith("/api/paper/"), (
+                f"Route {path!r} contains 'order' but is NOT under "
+                f"/api/paper/. Real broker / KIS order endpoints are "
+                f"forbidden; only paper-trading simulation orders are allowed."
+            )

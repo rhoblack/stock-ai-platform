@@ -11,6 +11,7 @@ from app.api import (
     auth_router,
     health_router,
     metrics_router,
+    paper_router,
     preferences_router,
     router as api_router,
     validation_router,
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(validation_router)
+    app.include_router(paper_router)
     app.include_router(api_router)
 
     # v0.11 Phase C -- initialise Prometheus metrics bundle when the

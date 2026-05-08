@@ -1,5 +1,41 @@
 # API_SPEC.md
 
+> 본 문서는 **v0.14 Phase D 시점** 기준이다 (`v0.14-paper-api` 태그 예정).
+> v0.14 Phase D 가 **Paper / Simulation Trading API** 6 라우터 (read-only
+> GET 4건 + mutation 2건) 를 추가했다. 모든 mutation 은 `Settings.paper_trading_enabled=true`
+> + `require_auth` 필요. `PAPER_TRADING_ENABLED=false` (default) 시 mutation
+> 라우터는 **503 Service Unavailable** 응답. 실 KIS 주문 / 자동매매 / FULL_AUTO
+> 라우터 0건 그대로 유지.
+>
+> **v0.14 Phase D 신규 엔드포인트 (write 라우터 +2건, read-only GET +4건):**
+> - `GET /api/paper/account` — VirtualAccount 합산 (cash / market_value /
+>   total_value / realized_pnl / unrealized_pnl). 최신 VirtualPnLSnapshot
+>   기반 합산. `account_id` query 옵션.
+> - `GET /api/paper/orders?status=&symbol=&limit=` — 주문 이력. `id` desc 정렬.
+> - `GET /api/paper/positions?include_closed=` — 포지션 현황. open positions 만
+>   기본 노출, `last_close` / `market_value` / `unrealized_pnl` 는 daily_prices.close
+>   기반 lookback 14일 평가.
+> - `GET /api/paper/pnl?from_date=&to_date=&limit=` — VirtualPnLSnapshot 시계열.
+>   inverted date range → 422.
+> - `POST /api/paper/orders` — `SimulationBroker.submit_order` 호출. PAPER_TRADING_ENABLED=false
+>   시 503. AUTH 필요. body: `symbol / side / quantity / order_type / limit_price?
+>   / idempotency_key? / note? / account_id?`. idempotency_key 중복 시 기존 row
+>   반환 + `deduplicated=true`. 검증 실패 → 422.
+> - `DELETE /api/paper/orders/{id}?reason=` — `SimulationBroker.cancel_order`.
+>   CREATED/SUBMITTED → CANCELED. terminal/fill 상태 → 422. unknown id → 404.
+>   PAPER_TRADING_ENABLED=false 시 503. AUTH 필요.
+>
+> **forbidden 응답 필드 (회귀 단언):** `api_key` / `token` / `secret` /
+> `source_file_path` / `broker_order_id` / `kis_order_id` / `real_account` /
+> `broker` / `account_number` / `raw_text` / `body` / `full_text` 0건.
+>
+> **paper_routes.py forbidden import (AST 회귀 단언):** `requests / httpx /
+> urllib / urllib3 / app.kis / app.data.dart_provider / app.data.rss_provider /
+> app.data.collectors.kis_client` 0건.
+>
+> **mutation 라우터 변동:** v0.9 의 9건 → v0.14 Phase D 11건 (+2 paper). 실 KIS
+> / FULL_AUTO / SMALL_AUTO / APPROVAL 라우터는 여전히 0건.
+>
 > 본 문서는 **v0.13 마감 시점** 기준이다 (마감 태그 `v0.13-final`).
 > v0.5 §14 테마 + v0.6 §15 재무·실적 + v0.7 §16 백테스트 + v0.8 §17 인증 +
 > v0.8 §18 Watchlist + v0.9 §19 Watchlist 고도화 + v0.9 §20 UserPreference +

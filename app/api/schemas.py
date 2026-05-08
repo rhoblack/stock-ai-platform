@@ -808,3 +808,185 @@ class SettingsResponse(_BaseSchema):
     feature_paper_trading: bool
     feature_backtest: bool
     feature_custom_ai_training: bool
+
+
+# ---------------------------------------------------------------------------
+# v0.14 Phase D -- Paper / Simulation Trading API
+#
+# Forbidden response fields (NEVER expose, regression-tested):
+#   api_key, token, secret, source_file_path, broker_order_id, kis_order_id,
+#   real_account, broker, account_number, raw_text, body, full_text.
+#
+# These schemas are read-only views over VirtualAccount / VirtualOrder /
+# VirtualPosition / VirtualPnLSnapshot. The mutation API returns the same
+# PaperOrderSchema shape so clients see identical fields whether they
+# created an order or just listed it.
+# ---------------------------------------------------------------------------
+
+
+class PaperAccountSchema(_BaseSchema):
+    """Aggregate snapshot of a VirtualAccount + latest PnL totals."""
+
+    id: int
+    name: str
+    currency: str
+    paper_trading_enabled: bool
+    initial_cash: Optional[str]
+    cash_balance: Optional[str]
+    market_value: Optional[str]
+    total_value: Optional[str]
+    realized_pnl: Optional[str]
+    unrealized_pnl: Optional[str]
+    snapshot_date: Optional[date_type] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaperOrderSchema(_BaseSchema):
+    id: int
+    account_id: int
+    symbol: str
+    side: str
+    quantity: int
+    order_type: str
+    limit_price: Optional[str] = None
+    status: str
+    idempotency_key: Optional[str] = None
+    reason: Optional[str] = None
+    note: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaperOrdersResponse(_BaseSchema):
+    orders: List[PaperOrderSchema]
+    total: int
+    limit: int
+
+
+class PaperPositionSchema(_BaseSchema):
+    """One open position. ``unrealized_pnl`` and ``last_close`` are derived
+    on read from the latest available daily_prices.close (within the
+    handler-configured lookback window)."""
+
+    id: int
+    account_id: int
+    symbol: str
+    quantity: int
+    avg_cost: Optional[str]
+    realized_pnl: Optional[str]
+    last_close: Optional[str] = None
+    market_value: Optional[str] = None
+    unrealized_pnl: Optional[str] = None
+    updated_at: datetime
+
+
+class PaperPositionsResponse(_BaseSchema):
+    positions: List[PaperPositionSchema]
+    total: int
+
+
+class PaperPnLSnapshotSchema(_BaseSchema):
+    snapshot_date: date_type
+    cash_balance: Optional[str]
+    market_value: Optional[str]
+    total_value: Optional[str]
+    realized_pnl: Optional[str]
+    unrealized_pnl: Optional[str]
+
+
+class PaperPnLResponse(_BaseSchema):
+    snapshots: List[PaperPnLSnapshotSchema]
+    total: int
+
+
+class CreatePaperOrderRequest(BaseModel):
+    """Request body for ``POST /api/paper/orders``.
+
+    The schema explicitly does NOT accept ``broker_order_id``,
+    ``kis_order_id``, ``real_account``, ``api_key``, ``token``, ``secret``,
+    ``account_number``, ``broker`` -- pydantic's default model config
+    silently drops unknown fields, but the test suite asserts the persisted
+    VirtualOrder row never carries any forbidden column or value.
+    """
+
+    symbol: str
+    side: str
+    quantity: int
+    order_type: str = "MARKET"
+    limit_price: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    note: Optional[str] = None
+    account_id: Optional[int] = None  # if omitted, defaults to first account
+
+    @validator("symbol")
+    def _symbol_not_empty(cls, value: str) -> str:  # noqa: N805
+        cleaned = (value or "").strip().upper()
+        if not cleaned:
+            raise ValueError("symbol must not be empty")
+        if len(cleaned) > 32:
+            raise ValueError("symbol must be at most 32 chars")
+        return cleaned
+
+    @validator("side")
+    def _side_valid(cls, value: str) -> str:  # noqa: N805
+        cleaned = (value or "").strip().upper()
+        if cleaned not in {"BUY", "SELL"}:
+            raise ValueError("side must be BUY or SELL")
+        return cleaned
+
+    @validator("order_type")
+    def _order_type_valid(cls, value: str) -> str:  # noqa: N805
+        cleaned = (value or "").strip().upper()
+        if cleaned not in {"MARKET", "LIMIT"}:
+            raise ValueError("order_type must be MARKET or LIMIT")
+        return cleaned
+
+    @validator("quantity")
+    def _quantity_positive(cls, value: int) -> int:  # noqa: N805
+        if value is None or value <= 0:
+            raise ValueError("quantity must be > 0")
+        return value
+
+    @validator("limit_price")
+    def _limit_price_valid(cls, value: Optional[str]) -> Optional[str]:  # noqa: N805
+        if value is None:
+            return None
+        try:
+            parsed = Decimal(str(value))
+        except (ValueError, ArithmeticError) as exc:
+            raise ValueError("limit_price must be a decimal number") from exc
+        if parsed <= 0:
+            raise ValueError("limit_price must be > 0")
+        return str(parsed)
+
+    @validator("idempotency_key")
+    def _idempotency_key_short(cls, value: Optional[str]) -> Optional[str]:  # noqa: N805
+        if value is None:
+            return None
+        if len(value) > 64:
+            raise ValueError("idempotency_key must be at most 64 chars")
+        return value
+
+    @validator("note")
+    def _note_short(cls, value: Optional[str]) -> Optional[str]:  # noqa: N805
+        if value is None:
+            return None
+        if len(value) > 256:
+            raise ValueError("note must be at most 256 chars")
+        return value
+
+
+class PaperOrderResponse(_BaseSchema):
+    """Response wrapper for POST /api/paper/orders so the client can tell
+    whether the request was deduplicated against an idempotency key."""
+
+    order: PaperOrderSchema
+    deduplicated: bool
+
+
+class PaperStatusResponse(BaseModel):
+    """Generic OK acknowledgement (DELETE /api/paper/orders/{id})."""
+
+    status: str = "ok"
+    order_id: int

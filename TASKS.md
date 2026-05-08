@@ -1363,22 +1363,26 @@ Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)*
 - [x] **게이트: pytest 1365 → 1405 passed (+40)** — 회귀 0건. KIS API / 외부 네트워크 / Paper Trading API 라우터 / 프런트 변경 0건. ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
 - [ ] `tag v0.14-pnl-tracker + push`
 
-### Phase D: Paper Trading API + 스케줄러 잡
+### Phase D: Paper Trading API + 스케줄러 잡 ✅
 
-- [ ] `app/api/paper_routes.py` 신규
-  - `GET /api/paper/account` — VirtualAccount 집계 (read-only)
-  - `GET /api/paper/orders` — 주문 이력 (read-only)
-  - `GET /api/paper/positions` — 포지션 현황 (read-only)
-  - `GET /api/paper/pnl` — PnL 이력 (read-only)
-  - `POST /api/paper/orders` — paper order 생성 (PAPER_TRADING_ENABLED=True + AUTH required, KIS API 0건)
-  - `DELETE /api/paper/orders/{id}` — paper order 취소
-- [ ] `app/api/schemas.py` — Paper Trading 스키마 8종 추가
-- [ ] `app/api/__init__.py` — `paper_router` export
-- [ ] `app/main.py` — `paper_router` 등록
-- [ ] `app/scheduler/jobs.py` — `execute_paper_orders` (16:00 KST) + `create_paper_pnl_snapshot` (16:30 KST) 잡 추가
-- [ ] `app/scheduler/scheduler.py` — 2 잡 등록 (PAPER_TRADING_ENABLED=False 시 SKIPPED)
-- [ ] `tests/integration/test_paper_api.py` 신규 (~26건) — GET read-only / POST paper order / KIS API 0건 단언 / 405 guard
-- [ ] `tag v0.14-paper-api + push` — **게이트: pytest ~1393 (+~26)**
+- [x] `app/api/paper_routes.py` 신규 — 6 엔드포인트
+  - `GET /api/paper/account` — VirtualAccount + latest PnL snapshot 합산 (cash / market_value / total_value / realized / unrealized)
+  - `GET /api/paper/orders?status=&symbol=&limit=` — 주문 이력 (id desc)
+  - `GET /api/paper/positions?include_closed=` — daily_prices.close 기반 last_close / market_value / unrealized_pnl 평가 (lookback 14일)
+  - `GET /api/paper/pnl?from_date=&to_date=&limit=` — VirtualPnLSnapshot 시계열 (inverted range → 422)
+  - `POST /api/paper/orders` — SimulationBroker.submit_order. AUTH + PAPER_TRADING_ENABLED 필요. idempotency_key 중복 시 기존 order + `deduplicated=true`
+  - `DELETE /api/paper/orders/{id}?reason=` — SimulationBroker.cancel_order. terminal → 422, unknown → 404. AUTH + PAPER_TRADING_ENABLED 필요
+- [x] `app/api/schemas.py` — `PaperAccountSchema` / `PaperOrderSchema` / `PaperOrdersResponse` / `PaperPositionSchema` / `PaperPositionsResponse` / `PaperPnLSnapshotSchema` / `PaperPnLResponse` / `CreatePaperOrderRequest` / `PaperOrderResponse` / `PaperStatusResponse` 10종 추가. CreatePaperOrderRequest 는 side / order_type / quantity / limit_price / idempotency_key / note 검증 (422)
+- [x] `app/api/__init__.py` — `paper_router` export
+- [x] `app/main.py` — `paper_router` 등록 (47번째 + 51번째 routes)
+- [x] `app/scheduler/jobs.py` — `execute_paper_orders` + `create_paper_pnl_snapshot` 신규 추가. `PAPER_TRADING_ENABLED=false` 기본 → SKIPPED, enabled → SimulationBroker.execute_pending_orders / PnLTracker.create_daily_pnl_snapshot 활성 계좌 전체 처리. 실패는 per-account isolation
+- [x] `app/scheduler/scheduler.py` — `DEFAULT_SCHEDULE` 에 `execute_paper_orders=(16,0)` + `create_paper_pnl_snapshot=(16,30)` 등록
+- [x] `tests/integration/test_paper_api.py` 신규 25건 — GET 4종 happy path + filter + paginate / POST disabled 503 + enabled 201 + idempotency + validation 422 / DELETE happy + terminal 422 + unknown 404 + disabled 503 / AUTH 가드 401 / forbidden 응답 필드 0건 / forbidden import AST 0건 / 405 guard parametrize
+- [x] `tests/integration/test_paper_scheduler_jobs.py` 신규 8건 — execute_paper_orders SKIPPED / FILLED / per-account 격리 / run_job 래퍼 SUCCESS row / create_paper_pnl_snapshot SKIPPED / 다중 계좌 snapshot / DEFAULT_SCHEDULE 등록 / 잡 함수 forbidden import 0건
+- [x] `tests/integration/test_scheduler_jobs.py` — registry sanity 9 → 11 jobs 갱신
+- [x] `tests/integration/test_auth_security.py` — mutating endpoint count 9 → 11, no_auto_trade_strings_in_routes 가드 갱신 (`order` 키워드는 `/api/paper/` prefix 만 허용)
+- [x] **게이트: pytest 1405 → 1438 passed (+33)** — 회귀 0건. KIS API / 외부 네트워크 호출 0건. 프런트 변경 0건. Alembic revision 0건
+- [ ] `tag v0.14-paper-api + push`
 
 ### Phase E: Frontend 13번째 화면 + 마감 문서
 

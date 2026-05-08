@@ -39,7 +39,7 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 | A | Backtest Export CLI + ProviderScorePolicy→Producer 통합 | `v0.14-export-policy` | **1277→1322 (+45) ✅** |
 | B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | **1322→1365 (+43) ✅** |
 | C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **1365→1405 (+40) ✅** |
-| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **~1405→~1431 (+~26)** |
+| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **1405→1438 (+33) ✅** |
 | E | Frontend 13번째 화면 `/paper` + `RELEASE_NOTES_v0.14.md` + 4 게이트 확인 | `v0.14-final` | vitest **175→~185 (+~10)** / e2e **21→22 (+1)** |
 
 ### v0.14 Phase A 완료 (2026-05-08)
@@ -77,6 +77,18 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 - `tests/unit/test_paper_cost_model.py` 신규 8건; `tests/integration/test_virtual_pnl_engine.py` 신규 27건 (repository / fill / snapshot / execute_pending / forbidden 컬럼 / Alembic / forbidden import AST)
 - `tests/integration/test_alembic_migration.py`: `HEAD_REVISION='0006_virtual_positions'`, `EXPECTED_TABLE_COUNT=37`, spot-check 3건 추가
 - **실제 게이트: pytest 1365 → 1405 passed (+40) / 회귀 0건 / Alembic head: 0006_virtual_positions / `compare_metadata` diff 0건 / KIS API 호출 0건 / 외부 네트워크 호출 0건 / Paper Trading API 라우터 0건 / 프런트 변경 0건 / 신규 pip 0건 / ScoringEngine·HoldingCheckEngine weight 변경 0건**
+
+### v0.14 Phase D 완료 (2026-05-08)
+
+- `app/api/paper_routes.py` 신규: 6 엔드포인트 (`/api/paper/account` / `/orders` / `/positions` / `/pnl` GET 4종 + `/orders` POST + `/orders/{id}` DELETE). mutation 은 PAPER_TRADING_ENABLED + AUTH 필요, disabled 시 503 응답
+- `app/api/schemas.py`: 10종 paper 스키마 추가 (`PaperAccountSchema` / `PaperOrderSchema` / `PaperOrdersResponse` / `PaperPositionSchema` / `PaperPositionsResponse` / `PaperPnLSnapshotSchema` / `PaperPnLResponse` / `CreatePaperOrderRequest` / `PaperOrderResponse` / `PaperStatusResponse`). forbidden 응답 필드 (api_key / token / secret / source_file_path / broker_order_id / kis_order_id / real_account / broker / account_number / raw_text / body / full_text) 0건
+- `app/api/__init__.py` + `app/main.py`: `paper_router` export + 등록
+- `app/scheduler/jobs.py`: `execute_paper_orders` (16:00 KST) + `create_paper_pnl_snapshot` (16:30 KST) 신규. PAPER_TRADING_ENABLED=false 기본 → SKIPPED. enabled 시 active VirtualAccount 전체 대상 SimulationBroker.execute_pending_orders / PnLTracker.create_daily_pnl_snapshot 호출, per-account isolation
+- `app/scheduler/scheduler.py`: DEFAULT_SCHEDULE 11 jobs 로 확장 (paper 2건 신규 등록)
+- `tests/integration/test_paper_api.py` 신규 25건; `tests/integration/test_paper_scheduler_jobs.py` 신규 8건
+- `tests/integration/test_auth_security.py`: mutating endpoint count 9 → 11 갱신, no_auto_trade_strings_in_routes 가드는 `order` 키워드를 `/api/paper/` prefix 만 허용하도록 정밀화
+- `tests/integration/test_scheduler_jobs.py`: registry sanity 9 → 11 jobs 갱신
+- **실제 게이트: pytest 1405 → 1438 passed (+33) / 회귀 0건 / Alembic revision 0건 (DB 모델 무변경) / KIS API 호출 0건 / 외부 네트워크 호출 0건 / 프런트 변경 0건 / 신규 pip 0건 / ScoringEngine·HoldingCheckEngine weight 변경 0건 / 실 KIS / FULL_AUTO / SMALL_AUTO / APPROVAL 라우터 여전히 0건**
 
 ### v0.14 핵심 정책
 

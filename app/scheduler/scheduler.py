@@ -23,6 +23,8 @@ from app.scheduler.jobs import (
     JOB_NAME_COLLECT_DISCLOSURES,
     JOB_NAME_COLLECT_MARKET_CLOSE,
     JOB_NAME_COLLECT_NEWS,
+    JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT,
+    JOB_NAME_EXECUTE_PAPER_ORDERS,
     JOB_NAME_POST_MARKET_HOLDING_CHECK,
     JOB_NAME_PRE_MARKET_HOLDING_CHECK,
     JOB_NAME_SEND_RECOMMENDATION_REPORT,
@@ -52,6 +54,11 @@ DEFAULT_SCHEDULE: dict[str, tuple[int, int]] = {
     JOB_NAME_PRE_MARKET_HOLDING_CHECK: (8, 30),
     JOB_NAME_POST_MARKET_HOLDING_CHECK: (16, 30),
     JOB_NAME_UPDATE_RECOMMENDATION_RESULTS: (17, 0),
+    # v0.14 Phase D — paper trading jobs.  Both default-OFF via
+    # PAPER_TRADING_ENABLED; the job functions short-circuit to SKIPPED so
+    # registering them here costs nothing in the disabled path.
+    JOB_NAME_EXECUTE_PAPER_ORDERS: (16, 0),
+    JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT: (16, 30),
 }
 
 

@@ -3,6 +3,7 @@
 from app.api.auth_routes import router as auth_router
 from app.api.health_routes import router as health_router
 from app.api.metrics_routes import router as metrics_router
+from app.api.paper_routes import router as paper_router
 from app.api.preferences_routes import router as preferences_router
 from app.api.routes import router
 from app.api.validation_routes import router as validation_router
@@ -12,6 +13,7 @@ __all__ = [
     "auth_router",
     "health_router",
     "metrics_router",
+    "paper_router",
     "preferences_router",
     "router",
     "validation_router",
