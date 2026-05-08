@@ -36,6 +36,14 @@ def test_settings_defaults():
     assert settings.max_daily_order_amount == 1_000_000
     assert settings.max_position_ratio == 0.20
     assert settings.max_daily_loss_amount == 500_000
+    # v0.16 Phase A — Real Order Integration Skeleton paranoid defaults.
+    # All three bool flags false/true so real trading is structurally blocked.
+    # Amount caps: per-order 100,000 / daily 1,000,000 (won).
+    assert settings.real_trading_enabled is False
+    assert settings.kis_order_enabled is False
+    assert settings.real_order_dry_run is True
+    assert settings.max_real_order_amount == 100_000
+    assert settings.max_real_daily_order_amount == 1_000_000
 
 
 def test_interfaces_importable():

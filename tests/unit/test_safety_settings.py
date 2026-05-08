@@ -34,6 +34,7 @@ import pytest
 from app.config.settings import (
     Settings,
     _as_strict_bool,
+    can_attempt_real_order_settings,
 )
 
 
@@ -329,3 +330,318 @@ def test_phase_c_pre_trade_risk_engine_module_exists() -> None:
     )
     assert (risk_dir / "__init__.py").exists()
     assert (risk_dir / "pre_trade_risk_engine.py").exists()
+
+
+# ---------------------------------------------------------------------------
+# 8. v0.16 Phase A — Real Order Integration Skeleton settings
+# ---------------------------------------------------------------------------
+
+
+def test_v016_real_trading_defaults_are_paranoid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All 5 v0.16 real-trading fields default to the documented paranoid
+    values when no env override is present."""
+    for var in (
+        "REAL_TRADING_ENABLED",
+        "KIS_ORDER_ENABLED",
+        "REAL_ORDER_DRY_RUN",
+        "MAX_REAL_ORDER_AMOUNT",
+        "MAX_REAL_DAILY_ORDER_AMOUNT",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    s = Settings()
+
+    assert s.real_trading_enabled is False
+    assert s.kis_order_enabled is False
+    assert s.real_order_dry_run is True
+    assert s.max_real_order_amount == 100_000
+    assert s.max_real_daily_order_amount == 1_000_000
+
+
+def test_real_trading_enabled_false_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("REAL_TRADING_ENABLED", raising=False)
+    assert Settings().real_trading_enabled is False
+
+
+def test_kis_order_enabled_false_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("KIS_ORDER_ENABLED", raising=False)
+    assert Settings().kis_order_enabled is False
+
+
+def test_real_order_dry_run_true_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("REAL_ORDER_DRY_RUN", raising=False)
+    assert Settings().real_order_dry_run is True
+
+
+@pytest.mark.parametrize(
+    "env_value,expected",
+    [
+        ("true", True),
+        ("True", True),
+        ("1", True),
+        ("on", True),
+        ("YES", True),
+        ("false", False),
+        ("False", False),
+        ("0", False),
+        ("off", False),
+        ("NO", False),
+    ],
+)
+def test_real_trading_enabled_env_override(
+    monkeypatch: pytest.MonkeyPatch, env_value: str, expected: bool
+) -> None:
+    monkeypatch.setenv("REAL_TRADING_ENABLED", env_value)
+    assert Settings().real_trading_enabled is expected
+
+
+@pytest.mark.parametrize(
+    "env_value,expected",
+    [
+        ("true", True),
+        ("false", False),
+        ("1", True),
+        ("0", False),
+        ("on", True),
+        ("off", False),
+    ],
+)
+def test_kis_order_enabled_env_override(
+    monkeypatch: pytest.MonkeyPatch, env_value: str, expected: bool
+) -> None:
+    monkeypatch.setenv("KIS_ORDER_ENABLED", env_value)
+    assert Settings().kis_order_enabled is expected
+
+
+@pytest.mark.parametrize(
+    "env_value,expected",
+    [
+        ("true", True),
+        ("false", False),
+        ("1", True),
+        ("0", False),
+    ],
+)
+def test_real_order_dry_run_env_override(
+    monkeypatch: pytest.MonkeyPatch, env_value: str, expected: bool
+) -> None:
+    monkeypatch.setenv("REAL_ORDER_DRY_RUN", env_value)
+    assert Settings().real_order_dry_run is expected
+
+
+def test_max_real_order_amount_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAX_REAL_ORDER_AMOUNT", "50000")
+    monkeypatch.setenv("MAX_REAL_DAILY_ORDER_AMOUNT", "500000")
+    s = Settings()
+    assert s.max_real_order_amount == 50_000
+    assert s.max_real_daily_order_amount == 500_000
+
+
+# ---------------------------------------------------------------------------
+# 9. v0.16 — strict-bool: typo in .env keeps paranoid defaults
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("typo", ["", "maybe", "garbage", "truthy", "0.0", "  "])
+def test_real_trading_enabled_typo_keeps_false(
+    monkeypatch: pytest.MonkeyPatch, typo: str
+) -> None:
+    """A garbage REAL_TRADING_ENABLED must NOT silently flip the switch on."""
+    monkeypatch.setenv("REAL_TRADING_ENABLED", typo)
+    assert Settings().real_trading_enabled is False
+
+
+@pytest.mark.parametrize("typo", ["", "maybe", "garbage"])
+def test_kis_order_enabled_typo_keeps_false(
+    monkeypatch: pytest.MonkeyPatch, typo: str
+) -> None:
+    monkeypatch.setenv("KIS_ORDER_ENABLED", typo)
+    assert Settings().kis_order_enabled is False
+
+
+@pytest.mark.parametrize("typo", ["", "maybe", "garbage"])
+def test_real_order_dry_run_typo_keeps_true(
+    monkeypatch: pytest.MonkeyPatch, typo: str
+) -> None:
+    """A garbage REAL_ORDER_DRY_RUN must NOT silently flip dry-run off."""
+    monkeypatch.setenv("REAL_ORDER_DRY_RUN", typo)
+    assert Settings().real_order_dry_run is True
+
+
+# ---------------------------------------------------------------------------
+# 10. v0.16 — boundary validation for real-order amount caps
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, -100_000])
+def test_max_real_order_amount_must_be_positive(bad_value: int) -> None:
+    with pytest.raises(ValueError, match="max_real_order_amount must be > 0"):
+        Settings(max_real_order_amount=bad_value)
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, -1_000_000])
+def test_max_real_daily_order_amount_must_be_positive(bad_value: int) -> None:
+    with pytest.raises(ValueError, match="max_real_daily_order_amount must be > 0"):
+        Settings(max_real_daily_order_amount=bad_value)
+
+
+def test_max_real_order_amount_cannot_exceed_daily() -> None:
+    """Single order cap must not exceed the daily cumulative cap."""
+    with pytest.raises(ValueError, match="max_real_order_amount.*must be.*<=.*max_real_daily"):
+        Settings(max_real_order_amount=500_000, max_real_daily_order_amount=100_000)
+
+
+def test_max_real_order_amount_equal_to_daily_is_allowed() -> None:
+    """Edge case: single order cap == daily cap is valid."""
+    s = Settings(max_real_order_amount=100_000, max_real_daily_order_amount=100_000)
+    assert s.max_real_order_amount == 100_000
+    assert s.max_real_daily_order_amount == 100_000
+
+
+# ---------------------------------------------------------------------------
+# 11. v0.16 — can_attempt_real_order_settings() helper
+# ---------------------------------------------------------------------------
+
+
+def test_can_attempt_real_order_settings_false_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With all paranoid defaults, real-order execution is structurally impossible."""
+    for var in (
+        "REAL_TRADING_ENABLED",
+        "KIS_ORDER_ENABLED",
+        "REAL_ORDER_DRY_RUN",
+        "TRADING_SAFETY_ENABLED",
+        "KILL_SWITCH_ENABLED",
+        "APPROVAL_REQUIRED",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    assert can_attempt_real_order_settings(Settings()) is False
+
+
+def test_can_attempt_real_order_settings_true_when_all_gates_open() -> None:
+    """Returns True only when every required gate is in the active state."""
+    s = Settings(
+        trading_safety_enabled=True,
+        kill_switch_enabled=False,
+        approval_required=True,
+        real_trading_enabled=True,
+        kis_order_enabled=True,
+        real_order_dry_run=False,
+    )
+    assert can_attempt_real_order_settings(s) is True
+
+
+@pytest.mark.parametrize(
+    "closed_gate,kwargs",
+    [
+        ("trading_safety_enabled=False",  {"trading_safety_enabled": False}),
+        ("kill_switch_enabled=True",      {"kill_switch_enabled": True}),
+        ("approval_required=False",       {"approval_required": False}),
+        ("real_trading_enabled=False",    {"real_trading_enabled": False}),
+        ("kis_order_enabled=False",       {"kis_order_enabled": False}),
+        ("real_order_dry_run=True",       {"real_order_dry_run": True}),
+    ],
+)
+def test_can_attempt_real_order_settings_one_closed_gate_blocks(
+    closed_gate: str, kwargs: dict
+) -> None:
+    """Closing any single gate must make the helper return False."""
+    base = dict(
+        trading_safety_enabled=True,
+        kill_switch_enabled=False,
+        approval_required=True,
+        real_trading_enabled=True,
+        kis_order_enabled=True,
+        real_order_dry_run=False,
+    )
+    base.update(kwargs)
+    assert can_attempt_real_order_settings(Settings(**base)) is False, (
+        f"Expected False when {closed_gate}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 12. v0.16 Phase A scope — Alembic / modules unchanged
+# ---------------------------------------------------------------------------
+
+
+def test_v016_phase_a_alembic_head_still_0008(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase A must NOT add any new Alembic revision.
+    Head remains 0008_approval_audit_logs."""
+    from pathlib import Path
+
+    versions_dir = (
+        Path(__file__).resolve().parents[2] / "alembic" / "versions"
+    )
+    revisions = sorted(p.name for p in versions_dir.glob("0*.py"))
+    assert revisions == [
+        "0001_baseline_v0_7.py",
+        "0002_auth_foundation.py",
+        "0003_watchlist.py",
+        "0004_user_preferences.py",
+        "0005_virtual_trading_core.py",
+        "0006_virtual_positions.py",
+        "0007_order_candidates.py",
+        "0008_approval_audit_logs.py",
+    ], f"Unexpected revisions: {revisions}"
+
+
+def test_v016_phase_a_real_order_orm_not_yet_created() -> None:
+    """Phase A must NOT create RealOrder / RealFill ORM modules.
+    Those are Phase C artefacts."""
+    from pathlib import Path
+
+    repo_dir = Path(__file__).resolve().parents[2] / "app" / "data" / "repositories"
+    assert not (repo_dir / "real_order.py").exists(), (
+        "real_order.py must not exist in Phase A — it is a Phase C artefact"
+    )
+    assert not (repo_dir / "real_fill.py").exists(), (
+        "real_fill.py must not exist in Phase A — it is a Phase C artefact"
+    )
+
+
+def test_v016_phase_a_kis_order_wrapper_not_yet_created() -> None:
+    """Phase A must NOT create kis_order_client.py — that is Phase B."""
+    from pathlib import Path
+
+    broker_dir = Path(__file__).resolve().parents[2] / "app" / "broker"
+    assert not (broker_dir / "kis_order_client.py").exists(), (
+        "kis_order_client.py must not exist in Phase A — it is a Phase B artefact"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 13. v0.16 regression — v0.15 safety defaults still intact
+# ---------------------------------------------------------------------------
+
+
+def test_v016_does_not_regress_v015_kill_switch_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("KILL_SWITCH_ENABLED", raising=False)
+    assert Settings().kill_switch_enabled is True
+
+
+def test_v016_does_not_regress_v015_trading_safety_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRADING_SAFETY_ENABLED", raising=False)
+    assert Settings().trading_safety_enabled is False
+
+
+def test_v016_does_not_regress_v014_paper_trading_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PAPER_TRADING_ENABLED", raising=False)
+    assert Settings().paper_trading_enabled is False

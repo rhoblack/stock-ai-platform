@@ -408,6 +408,49 @@ class Settings:
         ),
     )
 
+    # v0.16 Phase A -- Real Order Integration Skeleton settings.
+    #
+    # All defaults are PARANOID — real trading is structurally blocked until
+    # an operator explicitly flips all three bool gates AND the v0.15 safety
+    # layer simultaneously. In v0.16 this combination is never reached by
+    # design (every execution path stays in dry-run). See PLAN-0016 Phase D
+    # for the full 7-gate executor flow.
+    #
+    # ``_as_strict_bool`` is used (same as kill_switch_enabled) so a .env
+    # typo (e.g. REAL_TRADING_ENABLED=maybe) keeps the paranoid default
+    # instead of silently enabling a dangerous execution path.
+    #
+    # Real-order execution requires ALL of the following simultaneously:
+    #   v0.15 layer : trading_safety_enabled=True + kill_switch_enabled=False
+    #                 + approval_required=True
+    #   v0.16 layer : real_trading_enabled=True + kis_order_enabled=True
+    #                 + real_order_dry_run=False
+    #                 + amount within max_real_order_amount / max_real_daily_order_amount
+    # In v0.16, dry-run=True (default) makes the real path unreachable.
+    real_trading_enabled: bool = field(
+        default_factory=lambda: _as_strict_bool(
+            os.getenv("REAL_TRADING_ENABLED"), False
+        ),
+    )
+    kis_order_enabled: bool = field(
+        default_factory=lambda: _as_strict_bool(
+            os.getenv("KIS_ORDER_ENABLED"), False
+        ),
+    )
+    real_order_dry_run: bool = field(
+        default_factory=lambda: _as_strict_bool(
+            os.getenv("REAL_ORDER_DRY_RUN"), True
+        ),
+    )
+    max_real_order_amount: int = field(
+        default_factory=lambda: _as_int(os.getenv("MAX_REAL_ORDER_AMOUNT"), 100_000),
+    )
+    max_real_daily_order_amount: int = field(
+        default_factory=lambda: _as_int(
+            os.getenv("MAX_REAL_DAILY_ORDER_AMOUNT"), 1_000_000
+        ),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )
@@ -450,6 +493,22 @@ class Settings:
                 f"max_daily_loss_amount must be >= 0 "
                 f"(got {self.max_daily_loss_amount})"
             )
+        # v0.16 Phase A -- validate Real Order Integration caps.
+        if self.max_real_order_amount <= 0:
+            raise ValueError(
+                f"max_real_order_amount must be > 0 "
+                f"(got {self.max_real_order_amount})"
+            )
+        if self.max_real_daily_order_amount <= 0:
+            raise ValueError(
+                f"max_real_daily_order_amount must be > 0 "
+                f"(got {self.max_real_daily_order_amount})"
+            )
+        if self.max_real_order_amount > self.max_real_daily_order_amount:
+            raise ValueError(
+                f"max_real_order_amount ({self.max_real_order_amount}) must be "
+                f"<= max_real_daily_order_amount ({self.max_real_daily_order_amount})"
+            )
 
     @property
     def effective_database_url(self) -> str:
@@ -463,3 +522,28 @@ class Settings:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
+
+def can_attempt_real_order_settings(settings: Settings) -> bool:
+    """Pure predicate: True only when ALL six settings gates allow real-order execution.
+
+    Required conditions (AND — all must hold):
+      1. trading_safety_enabled is True   (v0.15 Approval layer active)
+      2. kill_switch_enabled is False     (v0.15 master block off)
+      3. approval_required is True        (approval always required)
+      4. real_trading_enabled is True     (v0.16 real-trading master switch)
+      5. kis_order_enabled is True        (v0.16 KIS order API gate)
+      6. real_order_dry_run is False      (v0.16 dry-run mode off)
+
+    This function is read-only: zero external calls, zero I/O, zero side-effects.
+    In v0.16 this always returns False because real_order_dry_run defaults to
+    True and KIS_ORDER_ENABLED / REAL_TRADING_ENABLED default to False.
+    """
+    return (
+        settings.trading_safety_enabled
+        and not settings.kill_switch_enabled
+        and settings.approval_required
+        and settings.real_trading_enabled
+        and settings.kis_order_enabled
+        and not settings.real_order_dry_run
+    )

@@ -19,6 +19,7 @@ mock + 15 번째 화면 `/real-orders` (read-only dry-run 결과 표시)** 5 Pha
 - 시작 일자: **2026-05-08 (Asia/Seoul)**
 - 기준 태그: `v0.15-final`
 - 기준 게이트: pytest **1693 passed** / vitest **201 passed** / e2e **23 passed** / build 그린
+- Phase A 완료 게이트: pytest **1753 passed** (+60) / 회귀 0건 / Alembic 0건 / DB 0건 / API 0건
 - Alembic head: `0008_approval_audit_logs` (39 테이블) → 목표: `0010_real_fills` (41 테이블)
 - 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0016`
 
@@ -37,7 +38,7 @@ mock + 15 번째 화면 `/real-orders` (read-only dry-run 결과 표시)** 5 Pha
 
 | Phase | 내용 | 예상 태그 |
 |---|---|---|
-| A | RealTradingSettings 5 종 (`REAL_TRADING_ENABLED=false` / `KIS_ORDER_ENABLED=false` / `REAL_ORDER_DRY_RUN=true` / `MAX_REAL_ORDER_AMOUNT` / `MAX_REAL_DAILY_ORDER_AMOUNT`) + safety defaults + 단위 테스트 ~20 건 | `v0.16-real-trading-settings` |
+| A | RealTradingSettings 5 종 (`REAL_TRADING_ENABLED=false` / `KIS_ORDER_ENABLED=false` / `REAL_ORDER_DRY_RUN=true` / `MAX_REAL_ORDER_AMOUNT=100k` / `MAX_REAL_DAILY_ORDER_AMOUNT=1M`) + `can_attempt_real_order_settings()` helper + 단위 테스트 **+60** 건 | `v0.16-real-trading-settings` ✅ |
 | B | KIS Order Wrapper Skeleton + `KisOrderClientInterface` ABC + `FakeKisOrderTransport` + AST 가드 + 마스킹 단언 ~15 건 | `v0.16-kis-order-wrapper` |
 | C | `RealOrder` ORM (40 번째) + `RealFill` ORM (41 번째) + Alembic `0009_real_orders` + `0010_real_fills` + Repository 2종 + 통합 테스트 ~40 건 | `v0.16-real-order-orm` |
 | D | `RealOrderExecutor` (dry-run 전용, 7 단계 게이트) + `FillSyncService` skeleton (mock) + 단위 ~30 + 통합 ~10 건 | `v0.16-real-order-executor` |
