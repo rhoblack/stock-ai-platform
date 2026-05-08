@@ -409,14 +409,9 @@ def test_cancel_order_rejects_terminal_or_fill_progressed_states(
 
 
 # ---------------------------------------------------------------------------
-# execute_pending_orders -- Phase C placeholder
+# execute_pending_orders -- Phase C — exercised in tests/unit/test_pnl_tracker
+# and tests/integration/test_virtual_pnl_engine.
 # ---------------------------------------------------------------------------
-
-
-def test_execute_pending_orders_is_phase_c_placeholder():
-    broker = SimulationBroker(settings=_settings(enabled=True))
-    with pytest.raises(NotImplementedError, match="Phase C"):
-        broker.execute_pending_orders()
 
 
 # ---------------------------------------------------------------------------

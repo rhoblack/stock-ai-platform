@@ -16,7 +16,7 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 - 시작 일자: **2026-05-08 (Asia/Seoul)**
 - 기준 게이트: pytest **1277 passed** / vitest **175 passed** / e2e **21 passed** / build 그린
 - 기준 태그: `v0.13-final` → 예상 마감 태그: `v0.14-final`
-- Alembic head: `0004_user_preferences` → **`0005_virtual_trading_core` (Phase B 완료)** → 0006 (Phase C 예정)
+- Alembic head: `0004_user_preferences` → `0005_virtual_trading_core` (Phase B) → **`0006_virtual_positions` (Phase C 완료)**
   (`0005_virtual_trading_core`: VirtualAccount + VirtualOrder /
    `0006_virtual_positions`: VirtualPosition + VirtualFill + VirtualPnLSnapshot)
 - 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0014`
@@ -38,8 +38,8 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 |---|---|---|---|
 | A | Backtest Export CLI + ProviderScorePolicy→Producer 통합 | `v0.14-export-policy` | **1277→1322 (+45) ✅** |
 | B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | **1322→1365 (+43) ✅** |
-| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **~1365→~1395 (+~30)** |
-| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **~1395→~1421 (+~26)** |
+| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **1365→1405 (+40) ✅** |
+| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **~1405→~1431 (+~26)** |
 | E | Frontend 13번째 화면 `/paper` + `RELEASE_NOTES_v0.14.md` + 4 게이트 확인 | `v0.14-final` | vitest **175→~185 (+~10)** / e2e **21→22 (+1)** |
 
 ### v0.14 Phase A 완료 (2026-05-08)
@@ -63,6 +63,20 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 - `tests/integration/test_virtual_trading_core.py` 신규 16건: repository CRUD, unique 제약 IntegrityError, cascade delete, broker end-to-end, forbidden 컬럼 0건, alembic upgrade head / downgrade 검증
 - `tests/integration/test_alembic_migration.py`: `HEAD_REVISION='0005_virtual_trading_core'`, `EXPECTED_TABLE_COUNT=34`, spot-check 2종 추가
 - **실제 게이트: pytest 1322 → 1365 passed (+43) / 회귀 0건 / Alembic head: 0005_virtual_trading_core / `compare_metadata` diff 0건 / KIS API 호출 0건 / 외부 네트워크 호출 0건 / Paper Trading API 라우터 0건 / 프런트 변경 0건 / 신규 pip 0건**
+
+### v0.14 Phase C 완료 (2026-05-08)
+
+- `app/db/models.py`: `VirtualPosition` (35) + `VirtualFill` (36) + `VirtualPnLSnapshot` (37) ORM 추가. forbidden 컬럼 0건 (broker_order_id / kis_order_id / real_account / api_key / token / secret)
+- `alembic/versions/0006_virtual_positions.py` 신규: 3 테이블 + 11 인덱스 + unique 2건 (`uq_virtual_positions_account_symbol`, `uq_virtual_pnl_snapshots_account_date`) + downgrade 역순 drop
+- `app/data/repositories/virtual_position.py` 신규: `apply_buy` (cost basis blend, 수수료/슬리피지 포함) + `apply_sell` (realized PnL 누적, 0 도달 시 avg_cost 리셋, `InsufficientPositionError` 로 숏셀링 차단)
+- `app/data/repositories/virtual_fill.py` 신규: 체결 메타데이터 immutable 기록 (fee/stamp_tax/slippage/gross/net 분리 저장)
+- `app/data/repositories/virtual_pnl_snapshot.py` 신규: `create_or_replace_snapshot` idempotent upsert
+- `app/paper/__init__.py` + `app/paper/pnl_tracker.py` 신규: `PnLTracker.apply_fill` (BUY: cash↓ position↑ avg_cost rebase; SELL: cash↑ realized_pnl) + `create_daily_pnl_snapshot` (open positions × daily_prices.close, 가격 없는 종목은 0 graceful) + `InsufficientCashError`
+- `app/backtest/cost_model.py`: `PaperTradingCostModel` (paper-v1) 추가 — buy_fee/sell_fee 0.015% / sell_tax 0.18% (매도 only) / slippage 0.05%. **기존 CostModel 상수 변경 0건** (BacktestEngine 회귀 0건)
+- `app/broker/simulation_broker.py`: `execute_pending_orders(session, *, as_of_date, account_id?, pnl_tracker?, price_lookback_days=0)` 본 구현. MARKET 즉시 체결 / LIMIT BUY close ≤ limit / LIMIT SELL close ≥ limit / no price → skip / terminal status → skip / cash·position 부족 → REJECTED. `ExecutePendingResult` 구조화 결과
+- `tests/unit/test_paper_cost_model.py` 신규 8건; `tests/integration/test_virtual_pnl_engine.py` 신규 27건 (repository / fill / snapshot / execute_pending / forbidden 컬럼 / Alembic / forbidden import AST)
+- `tests/integration/test_alembic_migration.py`: `HEAD_REVISION='0006_virtual_positions'`, `EXPECTED_TABLE_COUNT=37`, spot-check 3건 추가
+- **실제 게이트: pytest 1365 → 1405 passed (+40) / 회귀 0건 / Alembic head: 0006_virtual_positions / `compare_metadata` diff 0건 / KIS API 호출 0건 / 외부 네트워크 호출 0건 / Paper Trading API 라우터 0건 / 프런트 변경 0건 / 신규 pip 0건 / ScoringEngine·HoldingCheckEngine weight 변경 0건**
 
 ### v0.14 핵심 정책
 

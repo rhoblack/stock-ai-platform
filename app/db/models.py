@@ -1122,3 +1122,140 @@ class VirtualOrder(TimestampMixin, Base):
         ),
         Index("ix_virtual_orders_account_status", "account_id", "status"),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.14 Phase C -- Virtual Trading PnL & Fill Engine
+#
+# Three additional tables that complete the in-process paper trading core:
+#
+#   * ``virtual_positions`` (35th) -- per-(account, symbol) holding state.
+#     ``upsert`` semantics: BUY raises quantity and recomputes ``avg_cost``
+#     using a cost-basis blended with the new fill (fees included).
+#     SELL lowers quantity and accumulates ``realized_pnl``.
+#   * ``virtual_fills`` (36th) -- one row per actual fill performed by
+#     ``SimulationBroker.execute_pending_orders()``. Records gross / net
+#     amounts plus the three cost components separately so reports can
+#     reconstruct the cost breakdown.
+#   * ``virtual_pnl_snapshots`` (37th) -- daily account-level PnL summary.
+#     ``UNIQUE(account_id, snapshot_date)`` so a re-run of the snapshot job
+#     replaces the existing row (see PnLTracker.create_daily_pnl_snapshot).
+#
+# Forbidden columns (regression-tested in
+# tests/integration/test_virtual_pnl_engine.py): ``broker_order_id``,
+# ``kis_order_id``, ``real_account``, ``api_key``, ``token``, ``secret``.
+# ---------------------------------------------------------------------------
+
+
+class VirtualPosition(TimestampMixin, Base):
+    __tablename__ = "virtual_positions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("virtual_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # Cumulative net long position. SELL of held qty zeroes this out and
+    # leaves ``avg_cost`` reset to 0; the row itself is preserved so
+    # ``realized_pnl`` history is not lost.
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_cost: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+    # Lifetime realized P&L on this (account, symbol) pair. Only SELL fills
+    # update this; BUY fills only mutate quantity / avg_cost.
+    realized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "symbol",
+            name="uq_virtual_positions_account_symbol",
+        ),
+    )
+
+
+class VirtualFill(Base):
+    __tablename__ = "virtual_fills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("virtual_orders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("virtual_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    fill_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    # Cost components stored separately so reports can reproduce the math.
+    fee: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+    stamp_tax: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+    slippage: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+    # gross_amount = fill_price * quantity (always positive)
+    gross_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False
+    )
+    # net_amount: cash flow direction is encoded by ``side``. For BUY this is
+    # cash spent (gross + fee + slippage); for SELL this is cash received
+    # (gross - fee - stamp_tax - slippage). Always stored as a positive value
+    # representing the magnitude.
+    net_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False
+    )
+    filled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+        index=True,
+    )
+
+    __table_args__ = (
+        Index("ix_virtual_fills_account_symbol", "account_id", "symbol"),
+    )
+
+
+class VirtualPnLSnapshot(TimestampMixin, Base):
+    __tablename__ = "virtual_pnl_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("virtual_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    cash_balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    market_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    # total_value = cash_balance + market_value
+    total_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    realized_pnl: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    unrealized_pnl: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "snapshot_date",
+            name="uq_virtual_pnl_snapshots_account_date",
+        ),
+        Index(
+            "ix_virtual_pnl_snapshots_account_date",
+            "account_id",
+            "snapshot_date",
+        ),
+    )

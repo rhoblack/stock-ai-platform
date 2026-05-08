@@ -1345,19 +1345,23 @@ Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)*
 - [x] **게이트: pytest 1322 → 1365 passed (+43)** — 회귀 0건. KIS API / 외부 네트워크 / Paper Trading API 라우터 / 프런트 변경 0건
 - [ ] `tag v0.14-sim-broker + push`
 
-### Phase C: VirtualPosition + PnL 추적 + CostModel 확장
+### Phase C: VirtualPosition + PnL 추적 + CostModel 확장 ✅
 
-- [ ] `app/db/models.py` — `VirtualPosition` (35번째) + `VirtualFill` (36번째) + `VirtualPnLSnapshot` (37번째) ORM 추가
-- [ ] `alembic/versions/0006_virtual_positions.py` 신규 — 3 테이블 migration
-- [ ] `app/data/repositories/virtual_position.py` 신규
-- [ ] `app/data/repositories/virtual_pnl_snapshot.py` 신규
-- [ ] `app/paper/pnl_tracker.py` 신규 — PnL 계산 + daily snapshot 생성
-- [ ] `app/backtest/cost_model.py` — fee 0.015% + stamp_tax 0.18%(매도 only) + slippage 0.05% 확장
-- [ ] `app/broker/simulation_broker.py` — `execute_pending_orders()` 구현 (daily_prices 기준 체결)
-- [ ] `tests/unit/test_pnl_tracker.py` 신규 (~15건)
-- [ ] `tests/integration/test_virtual_positions.py` 신규 (~15건)
-- [ ] `compare_metadata` 0건 가드 확인
-- [ ] `tag v0.14-pnl-tracker + push` — **게이트: pytest ~1367 (+~30)**
+- [x] `app/db/models.py` — `VirtualPosition` (35번째) + `VirtualFill` (36번째) + `VirtualPnLSnapshot` (37번째) ORM 추가. forbidden 컬럼 0건
+- [x] `alembic/versions/0006_virtual_positions.py` 신규 — 3 테이블 + 11 인덱스 + 2 unique 제약 + downgrade
+- [x] `app/data/repositories/virtual_position.py` 신규 — `get_by_account_symbol / list_by_account / list_open_by_account / get_or_create / upsert_position / update_realized_pnl / apply_buy / apply_sell`. `InsufficientPositionError` (숏셀링 거부)
+- [x] `app/data/repositories/virtual_fill.py` 신규 — `create / list_by_order / list_by_account` (validation: side ∈ {BUY,SELL} / qty>0 / price>0 / cost ≥0)
+- [x] `app/data/repositories/virtual_pnl_snapshot.py` 신규 — `create_or_replace_snapshot (idempotent upsert) / list_by_account (date range) / get_by_account_date`
+- [x] `app/paper/__init__.py` + `app/paper/pnl_tracker.py` 신규 — `PnLTracker.apply_fill` (BUY: cash↓ position↑ avg_cost rebase; SELL: cash↑ realized_pnl 누적 + zero-out 시 avg_cost 리셋) + `create_daily_pnl_snapshot` (open positions × daily_prices.close, missing price = 0 graceful) + `InsufficientCashError`
+- [x] `app/backtest/cost_model.py` — `PaperTradingCostModel` (paper-v1) 추가: buy_fee 0.015% / sell_fee 0.015% / sell_tax 0.18% (매도 only) / slippage 0.05%. **기존 CostModel 상수 변경 0건** (BacktestEngine 회귀 0건)
+- [x] `app/broker/simulation_broker.py` — `execute_pending_orders(session, *, as_of_date, account_id?, pnl_tracker?, price_lookback_days=0)` 구현. MARKET = close 즉시 체결 / LIMIT BUY = close ≤ limit / LIMIT SELL = close ≥ limit / no price → skip / terminal status → skip / InsufficientCashError → REJECTED / InsufficientPositionError → REJECTED. `ExecutePendingResult` (filled / rejected / skipped_no_price / skipped_limit_unmet / skipped_terminal)
+- [x] `tests/unit/test_paper_cost_model.py` 신규 8건 — 기본 rate / 기존 CostModel 회귀 / BUY·SELL 계산 / 잘못된 입력 거부 / frozen
+- [x] `tests/integration/test_virtual_pnl_engine.py` 신규 27건 — repository CRUD / unique constraint / apply_buy/sell / insufficient cash / insufficient position / daily snapshot / missing price graceful / execute_pending MARKET·LIMIT·no-price·terminal·reject·account-filter / forbidden 컬럼 / Alembic upgrade·downgrade / forbidden imports AST
+- [x] `tests/integration/test_alembic_migration.py` — `HEAD_REVISION='0006_virtual_positions'`, `EXPECTED_TABLE_COUNT=37`, spot-check / parametrize 에 3 테이블 추가
+- [x] `tests/unit/test_simulation_broker.py` — Phase B placeholder 단언 제거 (이제 본 구현 존재; 통합 테스트가 행동 검증)
+- [x] `compare_metadata` 0건 가드 통과
+- [x] **게이트: pytest 1365 → 1405 passed (+40)** — 회귀 0건. KIS API / 외부 네트워크 / Paper Trading API 라우터 / 프런트 변경 0건. ScoringEngine / HoldingCheckEngine 본 weight 변경 0건
+- [ ] `tag v0.14-pnl-tracker + push`
 
 ### Phase D: Paper Trading API + 스케줄러 잡
 

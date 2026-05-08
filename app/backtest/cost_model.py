@@ -72,4 +72,101 @@ class CostModel:
         return raw_return - (self.total_cost * Decimal("100"))
 
 
-__all__ = ["COST_MODEL_VERSION", "CostModel"]
+PAPER_COST_MODEL_VERSION = "paper-v1"
+
+
+@dataclass(frozen=True)
+class PaperFillCosts:
+    """Per-fill cost decomposition for paper trading.
+
+    All four fields are positive Decimals representing the magnitude of
+    each cost component on this fill (in account currency, not percent).
+    ``net_amount`` is the absolute cash flow magnitude:
+
+      * For a BUY fill: cash_outflow = gross + fee + slippage  (no stamp tax)
+      * For a SELL fill: cash_inflow  = gross - fee - stamp_tax - slippage
+
+    The cash-flow direction is encoded by the caller's ``side`` argument;
+    this struct only carries magnitudes so callers can store and report
+    them without ambiguity.
+    """
+
+    gross_amount: Decimal
+    fee: Decimal
+    stamp_tax: Decimal
+    slippage: Decimal
+    net_amount: Decimal
+
+
+@dataclass(frozen=True)
+class PaperTradingCostModel:
+    """Per-fill paper trading cost model.
+
+    Distinct from :class:`CostModel` (which models a single aggregate
+    percent deduction for backtest summaries). This one is fee-by-fee and
+    reports the four cost components separately so they can be persisted
+    on each :class:`~app.db.models.VirtualFill`. The default rates follow
+    the v0.14 PLAN-0014 spec:
+
+    * ``buy_fee_rate``  = 0.015%
+    * ``sell_fee_rate`` = 0.015%
+    * ``sell_tax_rate`` = 0.18%   (KOSPI 증권거래세, 매도 only)
+    * ``slippage_rate`` = 0.05%   (양방향 모두 적용)
+
+    These are independent from :class:`CostModel`'s constants so changes
+    here never regress the backtest engine's cost-adjusted-return numbers.
+    """
+
+    buy_fee_rate: Decimal = Decimal("0.00015")
+    sell_fee_rate: Decimal = Decimal("0.00015")
+    sell_tax_rate: Decimal = Decimal("0.0018")
+    slippage_rate: Decimal = Decimal("0.0005")
+    version: str = PAPER_COST_MODEL_VERSION
+
+    def compute(
+        self,
+        *,
+        side: str,
+        fill_price: Decimal,
+        quantity: int,
+    ) -> PaperFillCosts:
+        if side not in {"BUY", "SELL"}:
+            raise ValueError("side must be BUY or SELL")
+        if fill_price <= Decimal("0"):
+            raise ValueError("fill_price must be > 0")
+        if quantity <= 0:
+            raise ValueError("quantity must be > 0")
+
+        gross = Decimal(fill_price) * Decimal(quantity)
+        if side == "BUY":
+            fee = gross * self.buy_fee_rate
+            stamp_tax = Decimal("0")
+            slippage = gross * self.slippage_rate
+            net = gross + fee + slippage
+        else:  # SELL
+            fee = gross * self.sell_fee_rate
+            stamp_tax = gross * self.sell_tax_rate
+            slippage = gross * self.slippage_rate
+            net = gross - fee - stamp_tax - slippage
+            if net < Decimal("0"):
+                # Pathological case (huge cost rates vs tiny gross). We
+                # clamp net to 0 rather than letting the cash flow flip
+                # sign — paper trading never owes the exchange money.
+                net = Decimal("0")
+
+        return PaperFillCosts(
+            gross_amount=gross,
+            fee=fee,
+            stamp_tax=stamp_tax,
+            slippage=slippage,
+            net_amount=net,
+        )
+
+
+__all__ = [
+    "COST_MODEL_VERSION",
+    "CostModel",
+    "PAPER_COST_MODEL_VERSION",
+    "PaperFillCosts",
+    "PaperTradingCostModel",
+]

@@ -1,5 +1,20 @@
 # Architecture
 
+> 본 문서는 **v0.14 Phase C 시점** 기준으로 갱신된다 (`v0.14-pnl-tracker`
+> 태그 예정). Phase B 의 SimulationBroker / VirtualAccount / VirtualOrder
+> 위에, **Phase C** 가 paper / simulation 트레이딩의 PnL & Fill 엔진을
+> 추가했다 — `app/db/models.py` `VirtualPosition` (35) + `VirtualFill` (36)
+> + `VirtualPnLSnapshot` (37), `alembic/versions/0006_virtual_positions.py`,
+> `app/data/repositories/virtual_position.py` + `virtual_fill.py` +
+> `virtual_pnl_snapshot.py`, `app/paper/pnl_tracker.py` (`PnLTracker`),
+> `app/backtest/cost_model.py` 의 `PaperTradingCostModel` (paper-v1, 기존
+> CostModel constant-v1 변경 0건), `app/broker/simulation_broker.py`
+> 의 `execute_pending_orders()` 본 구현 (daily_prices.close 기준 매칭,
+> MARKET 즉시 체결 / LIMIT crossing / no-price skip / cash·position 부족 →
+> REJECTED / terminal idempotent skip). Paper Trading API 라우터 / 프런트
+> 화면은 Phase D/E 책임. 실 KIS 주문 / 자동매매 / FULL_AUTO / SMALL_AUTO /
+> APPROVAL 코드 0건은 그대로 유지된다.
+>
 > 본 문서는 **v0.14 Phase B 시점** 기준으로 갱신된다 (`v0.14-sim-broker` 태그
 > 예정). v0.14 Phase A 의 Backtest Export CLI + ProviderScorePolicy producer
 > 통합 위에, **Phase B** 가 paper / simulation 트레이딩 코어를 도입했다 —
@@ -121,7 +136,8 @@ app/
 ├─ notification/            # ReportGenerator, TelegramNotifier (DRY_RUN), Dispatchers
 ├─ api/                     # FastAPI routers (23+ GET + 5 auth/watchlist POST/DELETE v0.8 + 6 watchlist/pref PATCH/PUT v0.9)
 ├─ scheduler/               # APScheduler + run_job wrapper + 9 jobs
-└─ broker/                  # v0.14 Phase B — SimulationBroker (BrokerInterface 첫 구현체, paper trading 전용 / KIS API 0건). 실 KIS / 자동매매 broker 는 여전히 placeholder
+├─ broker/                  # v0.14 Phase B — SimulationBroker (BrokerInterface 첫 구현체, paper trading 전용 / KIS API 0건). v0.14 Phase C 가 execute_pending_orders 본 구현 추가. 실 KIS / 자동매매 broker 는 여전히 placeholder
+└─ paper/                   # v0.14 Phase C — PnLTracker (paper trading 전용 PnL / fill 엔진, daily_prices.close 기준 가격, 외부 호출 0건)
 
 frontend/                   # v0.2 Vite/React/TS PC 대시보드 + v0.3~v0.9 누적
 ├─ src/
@@ -585,17 +601,44 @@ v0.4 는 `DummyScoreProducer` (neutral 50 + rule 기반 ±5 보정) 만 사용. 
 
 자동매매 / 가상매매 boundary. v0.14 Phase B 부터 첫 구현체가 도입된다.
 
-- **`SimulationBroker` (v0.14 Phase B)** — `app/broker/simulation_broker.py`.
-  paper / simulation 전용. **KIS / DART / RSS / requests / httpx import 0건**
-  (AST + grep 두 가지 방법으로 회귀 단언). `submit_order` 는
-  `Settings.paper_trading_enabled=False` (default) 상태에서 명확히 거부
-  (`PaperTradingDisabledError`). enable 시 `VirtualOrder(CREATED)` 행을 작성하고,
-  중복 idempotency_key 는 기존 행을 반환 (`SubmitResult.deduplicated=True`).
-  `cancel_order` 는 CREATED / SUBMITTED 상태만 CANCELED 로 이행. 체결 로직
-  (`execute_pending_orders`) 은 Phase C 책임 — 현재는 `NotImplementedError`
-  placeholder.
+- **`SimulationBroker` (v0.14 Phase B + Phase C)** —
+  `app/broker/simulation_broker.py`. paper / simulation 전용.
+  **KIS / DART / RSS / requests / httpx import 0건** (AST + grep 두 가지
+  방법으로 회귀 단언).
+  - `submit_order` (Phase B): `Settings.paper_trading_enabled=False`
+    (default) 또는 account.paper_trading_enabled=False 시
+    `PaperTradingDisabledError`. enable 시 `VirtualOrder(CREATED)` 행 작성,
+    중복 idempotency_key 는 기존 행 반환 (`SubmitResult.deduplicated=True`).
+  - `cancel_order` (Phase B): CREATED / SUBMITTED 만 CANCELED 로 이행, 그
+    외 상태 거부.
+  - `execute_pending_orders(session, *, as_of_date, account_id?,
+    pnl_tracker?, price_lookback_days=0)` (Phase C 본 구현): MARKET → close
+    즉시 체결, LIMIT BUY → close ≤ limit, LIMIT SELL → close ≥ limit.
+    daily_prices 행이 없으면 skip (재실행 가능). cash 부족 →
+    `InsufficientCashError` → REJECTED, position 부족 →
+    `InsufficientPositionError` → REJECTED. terminal/fill 상태는 절대
+    재실행되지 않는다 (이중 가드: SQL 필터 + defensive recheck).
+    `ExecutePendingResult` 에 filled / rejected / skipped 카운트 노출.
 - KisBroker (실거래) — v1.0+ 별도 보안·컴플라이언스 사이클 후 진입
 - MockBroker / ReplayBroker — 필요시 검토
+
+### PnLTracker (v0.14 Phase C)
+
+`app/paper/pnl_tracker.py`. SimulationBroker 의 fill 엔진이 호출하는
+bookkeeping 모듈.
+
+- `apply_fill(session, *, order_id, account_id, symbol, side, quantity,
+  fill_price)` — `PaperTradingCostModel` 로 fee / stamp_tax / slippage / net
+  을 계산. BUY 는 cash 감소 + position quantity 증가 + cost-basis blended
+  avg_cost 재계산, SELL 은 cash 증가 + realized_pnl 누적 + 0 도달 시
+  avg_cost 리셋. `VirtualFill` row 와 mutation 모두 단일 트랜잭션 안에서
+  실행되며 `FillResult` 로 반환.
+- `create_daily_pnl_snapshot(session, *, account_id, snapshot_date,
+  price_lookback_days=14)` — open positions 를 daily_prices.close 로 평가해
+  market_value / total_value / unrealized_pnl 을 계산하고
+  `virtual_pnl_snapshots` 에 idempotent upsert. 가격이 없는 종목은 0 기여
+  (graceful) — 스냅샷 잡이 가격 누락에 실패하지 않는다.
+- 외부 HTTP / KIS 호출 0건 (AST 회귀 단언).
 
 ### StrategyInterface
 

@@ -8,6 +8,7 @@ SCOPE for the entire package.
 """
 
 from app.broker.simulation_broker import (
+    ExecutePendingResult,
     PaperTradingDisabledError,
     SimulationBroker,
     SimulationBrokerError,
@@ -16,6 +17,7 @@ from app.broker.simulation_broker import (
 
 
 __all__ = [
+    "ExecutePendingResult",
     "PaperTradingDisabledError",
     "SimulationBroker",
     "SimulationBrokerError",
