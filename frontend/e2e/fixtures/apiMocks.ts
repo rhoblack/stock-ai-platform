@@ -925,6 +925,10 @@ const APPROVAL_DISABLED_503 = {
     'trading safety is disabled — set TRADING_SAFETY_ENABLED=true in operator-private .env to opt in',
 }
 
+// v0.16 Phase E — Real Orders read-only e2e fixture.
+// GETs return empty; no POST/mutation handlers (read-only API).
+const REAL_ORDERS_EMPTY = { items: [], total: 0, limit: 100, offset: 0 }
+
 const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; method?: string }> = [
   { pattern: /\/health$/, payload: HEALTH },
   // v0.8 Phase D — auth + watchlist
@@ -985,6 +989,9 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; meth
   { pattern: /\/api\/approvals\/\d+\/approve$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
   { pattern: /\/api\/approvals\/\d+\/reject$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
   { pattern: /\/api\/approvals\/\d+\/expire$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
+  // v0.16 Phase E — Real Orders (read-only; no POST/mutation handlers).
+  { pattern: /\/api\/real-orders\/\d+$/, payload: { detail: 'not found' }, status: 404 },
+  { pattern: /\/api\/real-orders(\?|$)/, payload: REAL_ORDERS_EMPTY },
 ]
 
 export async function installApiMocks(page: Page): Promise<void> {

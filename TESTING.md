@@ -1,9 +1,9 @@
 # TESTING.md
 
-> 본 문서는 **v0.15 마감 시점** 기준으로 갱신되었다 (마감 태그 `v0.15-final`).
-> 누적 cycle 의 게이트 baseline 과 v0.4–v0.15 신규 테스트 카테고리를 반영한다.
+> 본 문서는 **v0.16 마감 시점** 기준으로 갱신되었다 (마감 태그 `v0.16-final`).
+> 누적 cycle 의 게이트 baseline 과 v0.4–v0.16 신규 테스트 카테고리를 반영한다.
 
-## 1. 현재 회귀 게이트 (v0.15-final, 2026-05-08)
+## 1. 현재 회귀 게이트 (v0.16-final, 2026-05-08)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
@@ -11,10 +11,10 @@ provider transport injection 3중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `python -m pytest -q` | **1905 passed** (v0.16 Phase D: 1858 → 1905, +47 — RealOrderExecutor 8-gate + FillSyncService mock) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **201 passed** (v0.15 Phase E: 186 → 201, +15 — `Approvals.test.tsx` 신규 15건) |
+| backend pytest | `python -m pytest -q` | **1905 passed** (v0.16 Phase A~D: 1693 → 1905, +212 — RealTradingSettings +60 / KIS Order Wrapper +34 / RealOrder ORM +71 / RealOrderExecutor+FillSync +47) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **214 passed** (v0.16 Phase E: 201 → 214, +13 — `RealOrders.test.tsx` 신규 13건) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
-| Playwright e2e | `cd frontend && npm run e2e` | **23 passed** (v0.15 Phase E: 22 → 23, +1 — `/approvals` 14번째 화면 happy-path + forbidden 검사) |
+| Playwright e2e | `cd frontend && npm run e2e` | **24 passed** (v0.16 Phase E: 23 → 24, +1 — `/real-orders` 15번째 화면 safety banner + empty state + forbidden field 검사) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).

@@ -60,6 +60,10 @@ const PaperTradingPage = lazy(() =>
 const ApprovalsPage = lazy(() =>
   import('./pages/Approvals').then(m => ({ default: m.ApprovalsPage })),
 )
+// v0.16 Phase E — Real Orders read-only dashboard.
+const RealOrdersPage = lazy(() =>
+  import('./pages/RealOrders').then(m => ({ default: m.RealOrdersPage })),
+)
 
 export function AppRoutes() {
   return (
@@ -85,6 +89,7 @@ export function AppRoutes() {
         <Route path="validation" element={<ValidationPage />} />
         <Route path="paper" element={<PaperTradingPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
+        <Route path="real-orders" element={<RealOrdersPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:jobId" element={<JobsPage />} />
         <Route path="settings" element={<SettingsPage />} />

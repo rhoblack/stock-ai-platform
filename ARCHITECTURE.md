@@ -1,13 +1,29 @@
 # Architecture
 
-> 본 문서는 **v0.15 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.15-final`).
-> v0.15 5 Phase 모두 마감 — Phase A (SafetySettings 7종 + KillSwitch paranoid
-> default) → Phase B (`OrderCandidate` 38번째 + 8-state 머신 + Alembic 0007) →
-> Phase C (`PreTradeRiskEngine` 7 HARD 룰) → Phase D (`ApprovalService` +
-> `ApprovalAuditLog` 39번째 + Approval API 7종 + Alembic 0008 + expire 잡) →
-> **Phase E (14번째 프런트 화면 `/approvals` + 4 게이트 최종 확인)**.
-> 누적 게이트: backend pytest **1693** / frontend vitest **201** / Playwright
-> e2e **23** / build 그린.
+> 본 문서는 **v0.16 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.16-final`).
+> v0.16 5 Phase 모두 마감 — Phase A (RealTradingSettings 5종 + can_attempt_real_order_settings) →
+> Phase B (`KisOrderClientInterface` ABC + `FakeKisOrderTransport` + AST 가드) →
+> Phase C (`RealOrder` 40번째 + `RealFill` 41번째 + Alembic 0009/0010) →
+> Phase D (`RealOrderExecutor` 8-gate + `FillSyncService` mock) →
+> **Phase E (15번째 프런트 화면 `/real-orders` + GET API 2종 + 4 게이트 최종 확인)**.
+> 누적 게이트: backend pytest **1905** / frontend vitest **214** / Playwright
+> e2e **24** / build 그린. Alembic head: `0010_real_fills` (41 테이블).
+>
+> **v0.16 Real Order Skeleton 흐름 (dry-run 전용):**
+>
+> `OrderCandidate (APPROVED)` → `RealOrderExecutor.execute(candidate_id)` →
+> **8 안전 게이트** (①APPROVED 상태 ②중복 가드 ③kill_switch=False
+> ④real_trading_enabled=True ⑤kis_order_enabled=True ⑥단건 한도 ⑦KST 일일 누적
+> ⑧PreTradeRiskEngine 재검사) → `dry_run=True` → `FakeKisOrderTransport.place_order()`
+> → `RealOrder(status=DRY_RUN, dry_run=True)` DB 저장 →
+> `FillSyncService.sync(real_order)` → `FakeKisOrderTransport.query_fill_status()`
+> (항상 FILLED) → `RealFill(fill_status=FULL)` DB 저장 →
+> `GET /api/real-orders` → 15번째 화면 `/real-orders` read-only 표시.
+>
+> **실 KIS HTTP 호출 0건** — `FakeKisOrderTransport` 단독 사용.
+> `KisHttpOrderTransport` 미구현 (v0.17+ scope, 컴플라이언스/보안 검토 선행 필수).
+> `broker_order_no_hash` = SHA-256 hex 만 저장 (KIS 주문번호 평문 저장 0건).
+> httpx / requests / urllib import 0건 (AST 가드, executor + fill sync + real_order_routes 모두).
 >
 > **v0.15 Phase E** 가 추가한 프런트엔드:
 > `frontend/src/api/approval.ts` (7 fetch) → `frontend/src/hooks/useApprovals.ts`

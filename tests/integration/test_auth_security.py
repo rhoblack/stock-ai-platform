@@ -345,10 +345,13 @@ def test_no_auto_trade_strings_in_routes(session):
     v0.14 Phase D legitimately introduces ``/api/paper/orders`` for
     in-process simulation. v0.15 Phase D introduces ``/api/approvals/...``
     for the safety / approval workflow whose mutations forward only to
-    ``SimulationBroker.submit_order`` (paper execution). The guard still
-    rejects ``broker / auto_trade / full_auto / small_auto`` outright,
-    plus any ``order`` path NOT under ``/api/paper/`` and any
-    ``approval`` path NOT under ``/api/approvals/``.
+    ``SimulationBroker.submit_order`` (paper execution). v0.16 Phase E
+    introduces ``/api/real-orders`` as a read-only (GET only) view of
+    DRY_RUN records — no real KIS calls; no mutations.
+    The guard still rejects ``broker / auto_trade / full_auto / small_auto``
+    outright, plus any ``order`` path NOT under ``/api/paper/`` or
+    ``/api/real-orders``, and any ``approval`` path NOT under
+    ``/api/approvals/``.
     """
     from app.main import app as _app
 
@@ -357,6 +360,8 @@ def test_no_auto_trade_strings_in_routes(session):
     )
     order_pattern = re.compile(r"order", re.IGNORECASE)
     approval_pattern = re.compile(r"approval", re.IGNORECASE)
+    # Allowlisted order paths: paper simulation + v0.16 dry-run read-only view.
+    _ALLOWED_ORDER_PREFIXES = ("/api/paper/", "/api/real-orders")
     for route in _app.routes:
         path = getattr(route, "path", "")
         assert not forbidden_patterns.search(path), (
@@ -370,8 +375,9 @@ def test_no_auto_trade_strings_in_routes(session):
                 f"Workflow is allowed."
             )
         if order_pattern.search(path):
-            assert path.startswith("/api/paper/"), (
-                f"Route {path!r} contains 'order' but is NOT under "
-                f"/api/paper/. Real broker / KIS order endpoints are "
-                f"forbidden; only paper-trading simulation orders are allowed."
+            assert any(path.startswith(p) for p in _ALLOWED_ORDER_PREFIXES), (
+                f"Route {path!r} contains 'order' but is NOT under an allowed "
+                f"prefix {_ALLOWED_ORDER_PREFIXES}. Real broker / KIS order "
+                f"endpoints are forbidden; only paper simulation or the v0.16 "
+                f"dry-run read-only endpoint is allowed."
             )

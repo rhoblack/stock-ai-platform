@@ -451,6 +451,17 @@ export const handlers = [
     ),
   ),
 
+  // v0.16 Phase E — Real Orders (read-only; GET defaults return empty)
+  http.get('*/api/real-orders', () =>
+    HttpResponse.json({ items: [], total: 0, limit: 50, offset: 0 }),
+  ),
+  http.get('*/api/real-orders/:orderId', ({ params }) =>
+    HttpResponse.json(
+      { detail: `real order ${params.orderId} not found` },
+      { status: 404 },
+    ),
+  ),
+
   http.put('*/api/users/me/preferences', async ({ request }) => {
     const body = await request.json() as Record<string, unknown>
     return HttpResponse.json({

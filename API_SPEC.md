@@ -1,5 +1,26 @@
 # API_SPEC.md
 
+> 본 문서는 **v0.16 마감 시점** 기준이다 (마감 태그 `v0.16-final`).
+> v0.16 Phase E 가 **Real Orders read-only API** 2 라우터 (GET 전용, POST/PUT/DELETE 0건) 를
+> 추가했고, 15번째 프런트 화면 `/real-orders` 에서 소비한다 (mutation 라우터 변경 0건 — 합계 15건 유지).
+>
+> **v0.16 Phase E 신규 엔드포인트:**
+>
+> - `GET /api/real-orders?status=&candidate_id=&limit=&offset=` — RealOrder 목록 조회
+>   (read-only). status / candidate_id 필터. 기본 limit=100, offset=0. 응답 타입:
+>   `RealOrdersResponse { items: RealOrder[], total, limit, offset }`.
+>   **금지 응답 필드 0건**: `broker_order_no_hash` / `api_key` / `app_secret` /
+>   `access_token` / `raw_response` / `account_number` / `real_account`.
+> - `GET /api/real-orders/{id}` — RealOrder 상세 + 연관 RealFill 전체.
+>   응답 타입: `RealOrderDetailResponse { order: RealOrder, fills: RealFill[] }`.
+>   금지 필드 동일. order not found → 404.
+>
+> **real_order_routes.py forbidden import (AST 회귀 단언):**
+> `httpx / requests / urllib / urllib3` 0건.
+>
+> **mutation 라우터 변동:** v0.15 의 15건 유지 (v0.16 신규 mutation 0건).
+> 실 KIS / FULL_AUTO / SMALL_AUTO 라우터는 여전히 0건.
+>
 > 본 문서는 **v0.15 마감 시점** 기준이다 (마감 태그 `v0.15-final`).
 > v0.15 Phase D 가 **Approval Trading Safety Layer API** 7 라우터
 > (read-only GET 3건 + mutation 4건) 를 추가했고, Phase E 는 14번째 프런트

@@ -32,7 +32,7 @@
 | v0.13 Provider Score Policy & Validation Report | ProviderScorePolicy 승수 엔진 (weight 변경 0건) + score_delta in evidence_json + Validation Report GET API (`/by-strategy` / `/by-regime` / `/by-sector`) + Validation Report UI 12번째 화면 (Backtest Export CLI 는 v0.14+ 이연) | ✅ 마감 | `v0.13-final` |
 | v0.14 Paper / Simulation Trading Foundation | Backtest Export CLI 선처리 + SimulationBroker (`BrokerInterface` 첫 구현체) + VirtualAccount / VirtualOrder / VirtualPosition / VirtualFill / VirtualPnLSnapshot (5 테이블, Alembic 2 revisions) + Paper Trading API 6종 + 스케줄러 잡 2건 + 13번째 프런트 화면 `/paper` | ✅ 마감 | `v0.14-final` |
 | v0.15 Approval Trading Safety Layer | OrderCandidate (38번째) + PreTradeRiskEngine (7 hard 룰) + SafetySettings (`KILL_SWITCH_ENABLED=true` paranoid 기본) + Approval Workflow API 7종 + ApprovalAuditLog (39번째, append-only) + 14번째 프런트 화면 `/approvals` (paper execution only) | ✅ 마감 | `v0.15-final` |
-| v0.16 Real Order Integration Skeleton | RealTradingSettings (5 신규, paranoid defaults) + KIS Order Wrapper Skeleton (FakeKisOrderTransport) + RealOrder/RealFill ORM (40·41번째, Alembic 2건) + RealOrderExecutor (dry-run 전용) + FillSync mock + 15번째 화면 `/real-orders` (read-only) | ⏳ 진행 중 | `v0.16-final` (예정) |
+| v0.16 Real Order Integration Skeleton | RealTradingSettings (5 신규, paranoid defaults) + KIS Order Wrapper Skeleton (FakeKisOrderTransport) + RealOrder/RealFill ORM (40·41번째, Alembic 2건) + RealOrderExecutor (dry-run 전용) + FillSync mock + 15번째 화면 `/real-orders` (read-only) | ✅ 마감 | `v0.16-final` |
 
 ---
 

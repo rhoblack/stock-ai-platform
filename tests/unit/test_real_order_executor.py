@@ -525,9 +525,10 @@ def test_real_order_executor_has_no_raw_response_method():
 # ---------------------------------------------------------------------------
 
 
-def test_phase_e_real_orders_frontend_not_yet_created():
+def test_phase_e_real_orders_frontend_exists():
+    """Phase E must have created the RealOrders frontend page."""
     frontend_dir = PROJECT_ROOT / "frontend" / "src" / "pages"
     real_orders_pages = list(frontend_dir.glob("*[Rr]eal*[Oo]rder*"))
-    assert real_orders_pages == [], (
-        f"RealOrders frontend page must not exist in Phase D: {real_orders_pages}"
+    assert real_orders_pages != [], (
+        "RealOrders frontend page must exist after Phase E"
     )

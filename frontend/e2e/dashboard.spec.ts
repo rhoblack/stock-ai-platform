@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', () => {
-  test('all 14 sidebar menus are reachable and render their main content', async ({
+  test('all 15 sidebar menus are reachable and render their main content', async ({
     page,
   }) => {
     await page.goto('/')
@@ -55,6 +55,10 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     // v0.15 Phase E — 승인 대기 (β)
     await nav.getByRole('link', { name: '승인 대기 (β)' }).click()
     await expect(page.getByTestId('approvals-page')).toBeVisible()
+
+    // v0.16 Phase E — 실주문 준비 (β)
+    await nav.getByRole('link', { name: '실주문 준비 (β)' }).click()
+    await expect(page.getByTestId('real-orders-page')).toBeVisible()
 
     await nav.getByRole('link', { name: '시스템 로그 / 잡' }).click()
     await expect(page.getByTestId('job-row-101')).toBeVisible()
@@ -711,6 +715,69 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
       'source_file_path',
       'raw_text',
       'full_text',
+    ]) {
+      expect(merged).not.toContain(forbidden)
+    }
+  })
+
+  // -------- v0.16 Phase E — Real Orders read-only --------
+
+  test('Real Orders page shows safety banner and empty state, never leaks KIS fields', async ({
+    page,
+  }) => {
+    await page.goto('/real-orders')
+    await expect(page.getByTestId('real-orders-page')).toBeVisible()
+    await expect(page.getByTestId('real-orders-safety-banner')).toBeVisible()
+    // Default e2e fixture returns empty → empty placeholder
+    await expect(page.getByTestId('real-orders-empty')).toBeVisible()
+
+    // Forbidden DOM tokens must NOT appear anywhere on the page.
+    for (const forbidden of [
+      'api_key',
+      'access_token',
+      'jwt_secret',
+      'kis_app_secret',
+      'kis_account_no',
+      'broker_order_no_hash',
+      'raw_response',
+      'source_file_path',
+      'real_account',
+      'account_number',
+      'raw_text',
+      'full_text',
+    ]) {
+      await expect(page.getByText(forbidden)).toHaveCount(0)
+    }
+
+    // Automation / autotrade copy must NOT appear in any actionable element.
+    for (const phrase of [
+      /자동매매\s*(시작|모드|활성)/,
+      /실거래\s*(시작|실행|모드)/,
+      /FULL_AUTO/,
+      /SMALL_AUTO/,
+      /place\s*real\s*order/i,
+      /실주문\s*실행/,
+      /주문\s*전송/,
+    ]) {
+      await expect(
+        page.locator('button, [role="button"], a').filter({ hasText: phrase }),
+      ).toHaveCount(0)
+    }
+
+    // Raw API payload guard.
+    const payload = await page.evaluate(async () => {
+      const orders = await fetch('/api/real-orders').then(r => r.json())
+      return { orders }
+    })
+    const merged = JSON.stringify(payload)
+    for (const forbidden of [
+      'api_key',
+      'access_token',
+      'broker_order_no_hash',
+      'raw_response',
+      'real_account',
+      'account_number',
+      'raw_text',
     ]) {
       expect(merged).not.toContain(forbidden)
     }

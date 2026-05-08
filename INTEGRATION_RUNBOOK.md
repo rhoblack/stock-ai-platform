@@ -1,6 +1,6 @@
 # INTEGRATION_RUNBOOK.md
 
-> 본 문서는 **v0.13 마감 시점** 기준이다 (마감 태그 `v0.13-final`).
+> 본 문서는 **v0.16 마감 시점** 기준이다 (마감 태그 `v0.16-final`).
 > v0.5 §10 (News) / §11 (Disclosure) / §12 (테마) +
 > v0.6 §13 (Fundamental CSV) / §14 (Earnings CSV) / §15 (read-only API) +
 > v0.7 §16 (백테스트 CLI + read-only API + 화면) +
@@ -8,9 +8,17 @@
 > v0.9 §18 (Security Middleware + 구조화 로깅 + Watchlist PATCH/DELETE + UserPreference) +
 > v0.10 (Provider Resilience Runtime + DART/RSS provider skeleton + `GET /api/health/providers`) +
 > v0.11 (DART/RSS HTTP transport + Provider Observability + Prometheus exporter optional + 24h aggregates) +
-> v0.13 §19 (ProviderScorePolicy enable 절차 + Validation Report read-only API/UI)
-> 모두 반영. Alembic 현재 head: `0004_user_preferences` (v0.13 신규 revision 0건 —
-> score_delta 는 기존 `evidence_json` JSON 컬럼 재활용).
+> v0.13 §19 (ProviderScorePolicy enable 절차 + Validation Report read-only API/UI) +
+> v0.16 §20 (Real Order dry-run 운영 절차 + `/api/real-orders` read-only 확인)
+> 모두 반영. Alembic 현재 head: `0010_real_fills` (41 테이블).
+>
+> **v0.16 신규 운영 절차** — `real_orders` / `real_fills` 테이블은 기본 dry-run 기록만
+> 저장된다 (`REAL_ORDER_DRY_RUN=True` 기본). `REAL_TRADING_ENABLED` / `KIS_ORDER_ENABLED`
+> 는 기본 `False` — 명시 활성화하지 않으면 RealOrderExecutor 가 즉시 반환한다.
+> `GET /api/real-orders` 로 dry-run 기록 조회 가능 (read-only, POST/PUT/DELETE 0건).
+> 15번째 화면 `/real-orders` 에서 `RealTradingSafetyBanner` ("현재 화면은 dry-run / 기록
+> 조회 전용입니다") 가 항상 표시된다. `KisHttpOrderTransport` 미구현 (v0.17+, 보안 검토
+> 선행 필수) — `FakeKisOrderTransport` 가 모든 주문 경로를 처리한다.
 >
 > **v0.13 신규 운영 절차** — ProviderScorePolicy 를 활성화하려면 운영자가 `.env` 에
 > `PROVIDER_SCORE_POLICY_ENABLED=true` 를 명시 설정해야 동작. 기본 OFF 유지.

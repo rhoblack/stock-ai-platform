@@ -985,6 +985,72 @@ class PaperOrderResponse(_BaseSchema):
     deduplicated: bool
 
 
+# ---------------------------------------------------------------------------
+# v0.16 Phase E -- Real Order Integration read-only API
+#
+# Forbidden response fields (NEVER expose, regression-tested):
+#   api_key / app_secret / access_token / token / secret /
+#   broker_order_no_hash / raw_response / account_number / real_account.
+#
+# error_message stored capped at 500 chars; validated by
+# RealOrderRepository.mark_failed() to exclude sensitive substrings.
+# ---------------------------------------------------------------------------
+
+
+class RealOrderSchema(_BaseSchema):
+    """Read-only view of one RealOrder row. broker_order_no_hash excluded."""
+
+    id: int
+    candidate_id: int
+    symbol: str
+    side: str
+    quantity: int
+    order_type: str
+    limit_price: Optional[str] = None
+    estimated_amount: Optional[str] = None
+    status: str
+    dry_run: bool
+    fake_order_no: Optional[str] = None
+    request_id: Optional[str] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RealFillSchema(_BaseSchema):
+    """Read-only view of one RealFill row."""
+
+    id: int
+    real_order_id: int
+    symbol: str
+    side: str
+    quantity: int
+    fill_price: Optional[str] = None
+    fee: Optional[str] = None
+    tax: Optional[str] = None
+    gross_amount: Optional[str] = None
+    net_amount: Optional[str] = None
+    fill_status: str
+    filled_at: datetime
+    created_at: datetime
+
+
+class RealOrderDetailResponse(_BaseSchema):
+    """RealOrder with its associated RealFill rows."""
+
+    order: RealOrderSchema
+    fills: List[RealFillSchema]
+
+
+class RealOrdersResponse(_BaseSchema):
+    items: List[RealOrderSchema]
+    total: int
+    limit: int
+    offset: int
+
+
 class PaperStatusResponse(BaseModel):
     """Generic OK acknowledgement (DELETE /api/paper/orders/{id})."""
 

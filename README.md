@@ -4,34 +4,32 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.15 Approval Trading Safety Layer — 마감 완료.**
-> 최종 마감 태그 `v0.15-final`. v0.15 는 v0.14 위에 **SafetySettings + KillSwitch +
-> OrderCandidate 8-state 머신 + PreTradeRiskEngine 7 hard 룰 + Approval Workflow
-> API 7종 + ApprovalAuditLog (append-only) + expire_pending_approvals 잡 +
-> 14번째 프런트 화면 `/approvals`** 5 Phase 를 완성한 사이클이다.
-> **Phase A** (`SafetySettings` 7 신규 필드 + `KILL_SWITCH_ENABLED` 기본 false) →
-> **Phase B** (`OrderCandidate` ORM 38번째 + Alembic 0007 + Repository + 8-state 전이 매트릭스) →
-> **Phase C** (`PreTradeRiskEngine` 7 hard 룰 — account_paper / kill_switch / per_symbol /
-> daily_total / position_ratio / daily_loss / duplicate_recent + `RiskCheckResult`) →
-> **Phase D** (Approval Workflow API 7종 + `ApprovalAuditLog` 39번째 + Alembic 0008 +
-> `ApprovalService` + `expire_pending_approvals` 5분 IntervalTrigger 잡) →
-> **Phase E** (`/approvals` 14번째 프런트 화면 + RELEASE_NOTES_v0.15 + 4 게이트 최종 확인,
-> vitest +15 / e2e +1).
-> **`TRADING_SAFETY_ENABLED=false` + `KILL_SWITCH_ENABLED=true` (paranoid) 기본** —
-> 모든 mutation 라우터는 TRADING_SAFETY=true + KILL_SWITCH=false + AUTH 3중
-> 게이트 통과 필요. 어느 하나라도 미달이면 503. 운영자가 `.env` 에서 명시적으로
-> `KILL_SWITCH_ENABLED=false` 로 끄지 않으면 모든 mutation 이 차단된다. **승인된 후보는 paper execution 으로만 종결** — `SimulationBroker.submit_order`
-> 만 호출하며 KIS / DART / RSS / requests / httpx import 0건 (`approval_service.py` /
-> `approval_routes.py` / `pre_trade_risk_engine.py` 모두 AST 회귀 단언). `ApprovalAuditLog`
-> 는 append-only — 수정 / 삭제 API 0건. 실 KIS 주문 / 실 Broker / 자동매매 / FULL_AUTO /
-> SMALL_AUTO 코드 0건은 그대로 (v0.1 ~ v0.15 일관). 모든 provider default OFF 유지 —
-> `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` / `PROMETHEUS_ENABLED=false` /
-> `PROVIDER_DATA_INGESTION_ENABLED=false` / `PROVIDER_SCORE_POLICY_ENABLED=false` /
-> `PAPER_TRADING_ENABLED=false` / `TRADING_SAFETY_ENABLED=false` 기본. ScoringEngine
-> weight 변경 0건.
+> **v0.16 Real Order Integration Skeleton — 마감 완료.**
+> 최종 마감 태그 `v0.16-final`. v0.16 은 v0.15 위에 **RealTradingSettings (5 신규 필드,
+> paranoid defaults) + KIS Order Wrapper Skeleton (FakeKisOrderTransport) +
+> RealOrder / RealFill ORM (40·41번째, Alembic 2 revisions) + RealOrderExecutor
+> (8-gate dry-run 전용) + FillSyncService (mock transport 주입형) +
+> 15번째 프런트 화면 `/real-orders` (read-only dry-run 결과 표시)** 5 Phase 를 완성한 사이클이다.
+> **Phase A** (`RealTradingSettings` 5 신규 필드 — `real_trading_enabled=False` /
+> `kis_order_enabled=False` / `real_order_dry_run=True` / `max_real_order_amount=5M` /
+> `max_real_daily_order_amount=50M` + `can_attempt_real_order_settings()` helper) →
+> **Phase B** (`KisOrderClientInterface` ABC + `KisOrderRequest` / `KisOrderResult` 불변 dataclass +
+> `FakeKisOrderTransport` + `mask_sensitive_order_payload()` + AST 가드) →
+> **Phase C** (`RealOrder` ORM 40번째 + `RealFill` ORM 41번째 + Alembic 0009/0010 +
+> `RealOrderRepository` / `RealFillRepository`) →
+> **Phase D** (`RealOrderExecutor` 8-gate 안전 검사 + `FillSyncService` mock + dry-run 전용 실행) →
+> **Phase E** (`/real-orders` 15번째 프런트 화면 + backend GET API 2종 +
+> `RealTradingSafetyBanner` 항상 표시 + RELEASE_NOTES_v0.16 + 4 게이트 최종 확인,
+> vitest +13 / e2e +1).
+> **실 KIS HTTP 호출 0건** — `FakeKisOrderTransport` 전용 (`httpx` / `requests` / `urllib`
+> import AST 가드). **KIS API key / secret / 계좌번호 평문 저장 0건** —
+> `mask_sensitive_order_payload` + `broker_order_no_hash` (SHA-256 hex 만). 실 KIS 주문 /
+> 자동매매 / FULL_AUTO / SMALL_AUTO 코드 0건은 그대로 (v0.1 ~ v0.16 일관). 모든 실거래
+> 게이트 기본값: `REAL_TRADING_ENABLED=false` / `KIS_ORDER_ENABLED=false` /
+> `REAL_ORDER_DRY_RUN=true`. 운영자가 명시적으로 활성화하지 않으면 아무 변화도 없다.
 >
-> 최신 통과 회귀 게이트 — **백엔드 pytest 1693 / frontend vitest 201 /
-> Playwright e2e 23 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO /
+> 최신 통과 회귀 게이트 — **백엔드 pytest 1905 / frontend vitest 214 /
+> Playwright e2e 24 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO /
 > SMALL_AUTO 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface` 의
 > 첫 구현체는 paper 전용 `SimulationBroker` 하나뿐 — KIS / 실거래 브로커는 여전히
 > placeholder). 인증 (`AUTH_ENABLED=false` 기본) 이므로 기존 read-only GET API 는
@@ -79,7 +77,9 @@
 > `v0.14-export-policy` → `v0.14-sim-broker` → `v0.14-pnl-tracker` →
 > `v0.14-paper-api` → `v0.14-final` →
 > `v0.15-safety-settings` → `v0.15-order-candidate` → `v0.15-pre-trade-risk` →
-> `v0.15-approval-api` → **`v0.15-final`**.
+> `v0.15-approval-api` → `v0.15-final` →
+> `v0.16-real-trading-settings` → `v0.16-kis-order-wrapper` → `v0.16-real-order-orm` →
+> `v0.16-real-order-executor` → **`v0.16-final`**.
 >
 > 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
@@ -106,7 +106,9 @@
 > [`RELEASE_NOTES_v0.14.md`](./RELEASE_NOTES_v0.14.md) (v0.14 Paper / Simulation
 > Trading Foundation, 1438 / 186 / 22) /
 > [`RELEASE_NOTES_v0.15.md`](./RELEASE_NOTES_v0.15.md) (v0.15 Approval Trading
-> Safety Layer, **1693 / 201 / 23**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.16 참조.
+> Safety Layer, 1693 / 201 / 23) /
+> [`RELEASE_NOTES_v0.16.md`](./RELEASE_NOTES_v0.16.md) (v0.16 Real Order Integration
+> Skeleton, **1905 / 214 / 24**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.17 참조.
 
 ## 1. 프로젝트 목표
 
@@ -114,7 +116,7 @@
 증권사 리포트·테마 인텔리전스 + News·공시 데이터 라인 + 재무·실적 인텔리전스 +
 Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 
-현재까지 마감된 사이클 (v0.1 ~ v0.15) 의 누적 기능:
+현재까지 마감된 사이클 (v0.1 ~ v0.16) 의 누적 기능:
 
 - 한국투자증권 API 기반 read-only 데이터 수집
 - 시가총액 TOP 500 종목 유니버스 관리
@@ -187,9 +189,16 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **PreTradeRiskEngine 7 HARD 룰 (v0.15)** — `app/risk/pre_trade_risk_engine.py`. `account_paper_enabled` / `kill_switch_off` / `per_symbol_limit` / `daily_total_limit` / `position_ratio_limit` / `daily_loss_limit` / `duplicate_recent` (5분 윈도). `RiskCheckResult` (`policy_version` / `passed` / `violations[]`) 구조화 결과. KIS / DART / RSS / requests / httpx import 0건 (AST 회귀 단언)
 - **Approval Workflow API 7종 + ApprovalAuditLog (v0.15)** — `GET /api/approvals/candidates` / `/candidates/{id}` / `/audit` (read-only) + `POST /api/approvals/candidates` / `/{id}/approve` / `/{id}/reject` / `/{id}/expire` (TRADING_SAFETY_ENABLED + KILL_SWITCH_ENABLED=false + AUTH 3중 게이트, disabled → 503). `ApprovalAuditLog` (39번째 ORM) + Alembic 0008 — append-only, 수정/삭제 API 0건. `ApprovalService.approve` 는 `SimulationBroker.submit_order` 만 호출 (KIS API 호출 0건 AST 단언). `expire_pending_approvals` IntervalTrigger 5분 잡
 - **승인 대기 14번째 프런트 화면 (v0.15)** — `/approvals` (`ApprovalsPage`: PolicyBanner + PendingCandidatesTable + CandidateDetailDrawer (CandidateSummary + RiskCheckPanel + AuditTimeline) + NewCandidateForm + HistoryTable). `ShieldCheck` sidebar 아이콘 "승인 대기 (β)". `useApprovals` TanStack Query hooks 7종 (read 3 + mutation 4, mutation 후 approval/paper 두 namespace invalidate). 버튼 라벨 "승인 (paper 실행)" / "거절" / "만료" / "후보 만들기 (Risk Check)" — "주문 실행" / "place real order" / "FULL_AUTO" / "SMALL_AUTO" / "자동매매" CTA 0건. 503 응답은 `approvals-disabled-banner` / `approvals-kill-switch-banner` 친절 안내
-- 테스트 가능한 구조 (backend pytest **1693**, vitest **201**, e2e **23**, build)
+- **RealTradingSettings (v0.16 Phase A)** — `app/config/settings.py` 5 신규 필드 (`real_trading_enabled=False` / `kis_order_enabled=False` / `real_order_dry_run=True` / `max_real_order_amount=5_000_000` / `max_real_daily_order_amount=50_000_000`). paranoid 기본 — 운영자가 명시하지 않으면 모든 실거래 경로 비활성. `can_attempt_real_order_settings()` 6-gate AND 판단 함수. `__post_init__` 검증 (max_real_order_amount ≤ max_real_daily_order_amount)
+- **KIS Order Wrapper Skeleton (v0.16 Phase B)** — `app/broker/kis_order_client.py`. `KisOrderClientInterface` ABC (`place_order` / `query_fill_status` / `cancel_order`) + `KisOrderRequest` (account_no 마스킹 불변 객체) + `KisOrderResult` / `KisFillStatusResult` / `KisCancelResult` 불변 dataclass + `FakeKisOrderTransport` (FAKE-xxxx 가짜 주문번호, 항상 FILLED) + `mask_sensitive_order_payload()` (api_key / secret / account_no 마스킹). httpx / requests / urllib import 0건 (AST 가드). `KisHttpOrderTransport` 미구현 (v0.17+ scope)
+- **RealOrder / RealFill ORM (v0.16 Phase C)** — `RealOrder` (40번째, `real_orders` 테이블, status 8종, `broker_order_no_hash` SHA-256 해시만) + `RealFill` (41번째, `real_fills` 테이블) + Alembic `0009_real_orders` + `0010_real_fills` + `RealOrderRepository` / `RealFillRepository`. 브로커 주문번호 평문 저장 0건
+- **RealOrderExecutor 8-gate (v0.16 Phase D)** — `app/broker/real_order_executor.py`. 8 안전 게이트 (candidate APPROVED / 중복 가드 / kill_switch=False / real_trading_enabled / kis_order_enabled / 단건 한도 / 일일 누적 KST / PreTradeRiskEngine 재검사). dry_run=True → `FakeKisOrderTransport` → DRY_RUN RealOrder 저장. dry_run=False → `REAL_ORDER_NOT_IMPLEMENTED` (v0.17 scope). httpx / requests / urllib import 0건 (AST 가드)
+- **FillSyncService mock (v0.16 Phase D)** — `app/broker/fill_sync_service.py`. `FILLED` → `RealFill(FULL)` + 주문 상태 갱신 / `PARTIALLY_FILLED` → `RealFill(PARTIAL)` / `DRY_RUN` 주문 상태 갱신 불가 (terminal). transport 주입 가능 (테스트용 stub)
+- **실주문 준비 15번째 프런트 화면 (v0.16 Phase E)** — `/real-orders` (`RealOrdersPage`: `RealTradingSafetyBanner` 항상 표시 ("현재 화면은 dry-run / 기록 조회 전용" + "실제 KIS 주문은 실행되지 않습니다") + `RealOrderSummaryCards` + `RealOrdersTable` + `RealOrderDetailPanel` + `RealFillsTable`). `TrendingUp` sidebar 아이콘 "실주문 준비 (β)". `useRealOrders` / `useRealOrderDetail` TanStack Query hooks (read-only, mutation hook 0건). 금지 필드 미렌더링 (broker_order_no_hash / api_key / raw_response / account_number / real_account). 실주문 실행 / 자동매매 / FULL_AUTO / SMALL_AUTO actionable CTA 0건
+- **Real Orders read-only API (v0.16 Phase E)** — `GET /api/real-orders` (status / candidate_id / limit / offset 필터) + `GET /api/real-orders/{id}` (주문 상세 + fills). POST / PUT / DELETE 0건. 금지 응답 필드 0건 (broker_order_no_hash / api_key / app_secret / access_token / raw_response / account_number / real_account)
+- 테스트 가능한 구조 (backend pytest **1905**, vitest **214**, e2e **24**, build)
 
-## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.15 일관 정책)
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.16 일관 정책)
 
 다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
 별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.

@@ -1147,3 +1147,69 @@ export interface ApprovalAuditResponse {
   total: number
   limit: number
 }
+
+// ---------------------------------------------------------------------------
+// v0.16 Phase E — Real Order read-only types
+//
+// Forbidden fields (NEVER reference in this file or in components):
+//   broker_order_no_hash / api_key / app_secret / access_token /
+//   token / secret / raw_response / account_number / real_account
+// ---------------------------------------------------------------------------
+
+export type RealOrderStatus =
+  | 'DRY_RUN'
+  | 'CREATED'
+  | 'SUBMITTED'
+  | 'PARTIALLY_FILLED'
+  | 'FILLED'
+  | 'CANCELED'
+  | 'REJECTED'
+  | 'FAILED'
+
+export interface RealOrder {
+  id: number
+  candidate_id: number
+  symbol: string
+  side: string
+  quantity: number
+  order_type: string
+  limit_price: string | null
+  estimated_amount: string | null
+  status: RealOrderStatus
+  dry_run: boolean
+  fake_order_no: string | null
+  request_id: string | null
+  error_code: string | null
+  error_message: string | null
+  submitted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RealFill {
+  id: number
+  real_order_id: number
+  symbol: string
+  side: string
+  quantity: number
+  fill_price: string | null
+  fee: string | null
+  tax: string | null
+  gross_amount: string | null
+  net_amount: string | null
+  fill_status: string
+  filled_at: string
+  created_at: string
+}
+
+export interface RealOrdersResponse {
+  items: RealOrder[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface RealOrderDetailResponse {
+  order: RealOrder
+  fills: RealFill[]
+}
