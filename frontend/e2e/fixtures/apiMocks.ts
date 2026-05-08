@@ -915,6 +915,16 @@ const PAPER_PNL = {
   total: 2,
 }
 
+// v0.15 Phase E — Approval Workflow e2e fixture.
+// GETs return empty defaults; POSTs return 503 to mirror the
+// TRADING_SAFETY_ENABLED=false guard at the broker boundary.
+const APPROVAL_CANDIDATES_EMPTY = { candidates: [], total: 0, limit: 50 }
+const APPROVAL_AUDIT_EMPTY = { items: [], total: 0, limit: 50 }
+const APPROVAL_DISABLED_503 = {
+  detail:
+    'trading safety is disabled — set TRADING_SAFETY_ENABLED=true in operator-private .env to opt in',
+}
+
 const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; method?: string }> = [
   { pattern: /\/health$/, payload: HEALTH },
   // v0.8 Phase D — auth + watchlist
@@ -967,6 +977,14 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; meth
   { pattern: /\/api\/paper\/orders(\?|$)/, payload: PAPER_ORDERS },
   { pattern: /\/api\/paper\/positions(\?|$)/, payload: PAPER_POSITIONS },
   { pattern: /\/api\/paper\/pnl(\?|$)/, payload: PAPER_PNL },
+  // v0.15 Phase E — Approval Workflow (GET defaults empty; POST returns 503).
+  { pattern: /\/api\/approvals\/audit(\?|$)/, payload: APPROVAL_AUDIT_EMPTY },
+  { pattern: /\/api\/approvals\/candidates\/\d+$/, payload: { detail: 'not found' }, status: 404 },
+  { pattern: /\/api\/approvals\/candidates$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
+  { pattern: /\/api\/approvals\/candidates(\?|$)/, payload: APPROVAL_CANDIDATES_EMPTY },
+  { pattern: /\/api\/approvals\/\d+\/approve$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
+  { pattern: /\/api\/approvals\/\d+\/reject$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
+  { pattern: /\/api\/approvals\/\d+\/expire$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
 ]
 
 export async function installApiMocks(page: Page): Promise<void> {

@@ -398,6 +398,59 @@ export const handlers = [
     ),
   ),
 
+  // v0.15 Phase E — Approval Workflow (read-only defaults).
+  // Empty defaults so the page renders empty placeholders naturally.
+  // POST endpoints default to 503 to mirror the forbidden-mutation guard
+  // at the MSW boundary; happy-path tests override via `server.use(...)`.
+  http.get('*/api/approvals/candidates', () =>
+    HttpResponse.json({ candidates: [], total: 0, limit: 50 }),
+  ),
+  http.get('*/api/approvals/candidates/:id', ({ params }) =>
+    HttpResponse.json(
+      { detail: `candidate ${params.id} not found` },
+      { status: 404 },
+    ),
+  ),
+  http.get('*/api/approvals/audit', () =>
+    HttpResponse.json({ items: [], total: 0, limit: 50 }),
+  ),
+  http.post('*/api/approvals/candidates', () =>
+    HttpResponse.json(
+      {
+        detail:
+          'trading safety is disabled — set TRADING_SAFETY_ENABLED=true in operator-private .env to opt in',
+      },
+      { status: 503 },
+    ),
+  ),
+  http.post('*/api/approvals/:id/approve', () =>
+    HttpResponse.json(
+      {
+        detail:
+          'trading safety is disabled — set TRADING_SAFETY_ENABLED=true in operator-private .env to opt in',
+      },
+      { status: 503 },
+    ),
+  ),
+  http.post('*/api/approvals/:id/reject', () =>
+    HttpResponse.json(
+      {
+        detail:
+          'trading safety is disabled — set TRADING_SAFETY_ENABLED=true in operator-private .env to opt in',
+      },
+      { status: 503 },
+    ),
+  ),
+  http.post('*/api/approvals/:id/expire', () =>
+    HttpResponse.json(
+      {
+        detail:
+          'trading safety is disabled — set TRADING_SAFETY_ENABLED=true in operator-private .env to opt in',
+      },
+      { status: 503 },
+    ),
+  ),
+
   http.put('*/api/users/me/preferences', async ({ request }) => {
     const body = await request.json() as Record<string, unknown>
     return HttpResponse.json({

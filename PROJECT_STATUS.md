@@ -7,18 +7,22 @@
 
 ---
 
-## 0. v0.15 시작 선언 — Approval Trading Safety Layer
+## 0. v0.15 마감 선언 — Approval Trading Safety Layer
 
-**v0.15 cycle 시작.** `v0.14-final` 위에 **OrderCandidate + PreTradeRiskEngine +
-SafetySettings (KillSwitch 포함) + Approval Workflow API + 14번째 프런트 화면
-`/approvals`** 5 Phase 진행 예정. 채택 시나리오: **Scenario X — Approval Trading
-Safety Layer (paper execution only)**.
+**v0.15 cycle 마감.** `v0.14-final` 위에 **OrderCandidate (38번째 ORM) +
+PreTradeRiskEngine (7 HARD 룰) + SafetySettings (KillSwitch 포함) +
+Approval Workflow API 7종 + ApprovalAuditLog (39번째 ORM, append-only) +
+expire_pending_approvals (12번째 잡) + 14번째 프런트 화면 `/approvals`**
+5 Phase 완료. 최종 마감 태그 `v0.15-final`. 채택 시나리오: **Scenario X —
+Approval Trading Safety Layer (paper execution only)**.
 
-- 시작 일자: **2026-05-08 (Asia/Seoul)**
-- 기준 게이트: pytest **1438 passed** / vitest **186 passed** / e2e **22 passed** / build 그린
-- 기준 태그: `v0.14-final` → 예상 마감 태그: `v0.15-final`
-- Alembic head: `0006_virtual_positions` → 예상 v0.15 신규 revision **2건** (`0007_order_candidates` Phase B, `0008_approval_audit_logs` Phase D, 누적 39 테이블)
+- 시작 일자: 2026-05-08 (Asia/Seoul)
+- 마감 일자: **2026-05-08 (Asia/Seoul)**
+- 기준 태그: `v0.14-final` → **마감 태그: `v0.15-final`**
+- 최종 게이트: pytest **1693 passed** / vitest **201 passed** / e2e **23 passed** / build 그린
+- Alembic head: **`0008_approval_audit_logs`** (Phase B `0007_order_candidates` + Phase D `0008_approval_audit_logs`, 누적 39 테이블)
 - 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0015`
+- 릴리스 노트: [`RELEASE_NOTES_v0.15.md`](./RELEASE_NOTES_v0.15.md)
 
 ### v0.15 채택 결론 (시나리오 비교 요약)
 
@@ -176,6 +180,44 @@ Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `Simul
   (auth 2 + watchlist 6 + preferences 1 + paper 2 + approval 4 = 15 mutating) /
   프런트 변경 0건 / 신규 pip 0건 / KIS API / 외부 네트워크 호출 0건 / 실 KIS /
   자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건**
+
+### v0.15 Phase E 완료 (2026-05-08)
+
+- `frontend/src/api/types.ts`: Approval 타입 13종 추가 (`OrderCandidateStatus` /
+  `ApprovalEventType` / `OrderCandidate` / `OrderCandidatesResponse` /
+  `RiskViolation` / `RiskCheckResult` / `OrderCandidateDetailResponse` /
+  `CreateOrderCandidateRequest` / `CreateOrderCandidateResponse` /
+  `ApproveCandidateResponse` / `ApprovalCandidateStatusResponse` /
+  `ApprovalAuditLogItem` / `ApprovalAuditResponse`). forbidden 필드 0건
+- `frontend/src/api/approval.ts` 신규: 7 fetch 함수, `/api/approvals/*` 만 호출
+- `frontend/src/hooks/useApprovals.ts` 신규: TanStack Query 7 hooks
+  (read 3 + mutation 4). mutation 후 approval/paper 두 namespace invalidate
+  (EXECUTED_PAPER 가 VirtualOrder 를 생성하므로)
+- `frontend/src/pages/Approvals/index.tsx` 신규 (14번째 화면, ~600 lines):
+  `ApprovalsPage` / `PolicyBanner` / `PendingCandidatesTable` /
+  `CandidateDetailDrawer` (`CandidateSummary` + `RiskCheckPanel` +
+  `AuditTimeline`) / `NewCandidateForm` / `HistoryTable`. 버튼 라벨은 모두 안전
+  어휘 ("승인 (paper 실행)" / "거절" / "만료" / "후보 만들기 (Risk Check)") —
+  자동매매 / "주문 실행" / "place real order" / FULL_AUTO / SMALL_AUTO 0건
+- `frontend/src/router.tsx` + `frontend/src/components/layout/Sidebar.tsx`:
+  14번째 메뉴 `/approvals` (`ShieldCheck` 아이콘, "승인 대기 (β)"). footer 도
+  "v0.15 dashboard" / "v0.15 Approval Trading Safety Layer" 갱신
+- `frontend/src/tests/Approvals.test.tsx` 신규 vitest 15건 — page render /
+  empty placeholders / pending table 액션 / 503 disabled banner / kill switch
+  banner / approve happy path / reject prompt-driven reason / expire 호출 /
+  detail drawer / risk violation rendering / history table / new candidate
+  disabled banner / new candidate success / forbidden DOM 토큰 0건 / 자동매매
+  CTA 0건
+- `frontend/src/tests/mswServer.ts`: approval 7 mock 추가 (POST 기본 503)
+- `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts`: sidebar 13→14 +
+  `/approvals` happy-path navigation + raw payload forbidden 검사 +
+  disabled banner 시나리오 + automation CTA 0건 단언
+- `RELEASE_NOTES_v0.15.md` 신규 + `README.md` / `PROJECT_STATUS.md` /
+  `ROADMAP.md` / `TASKS.md` / `ARCHITECTURE.md` / `TESTING.md` / `API_SPEC.md`
+  / `INTEGRATION_RUNBOOK.md` v0.15 마감 갱신
+- **실제 게이트: pytest 1693 passed (Phase D 그대로) / vitest 186 → 201 (+15) /
+  e2e 22 → 23 (+1) / build 그린 / 회귀 0건 / Alembic head 그대로 /
+  실 KIS / 자동매매 / FULL_AUTO / SMALL_AUTO 코드 0건**
 
 ### v0.15 핵심 정책
 

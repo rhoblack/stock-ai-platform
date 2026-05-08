@@ -1,5 +1,30 @@
 # Architecture
 
+> 본 문서는 **v0.15 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.15-final`).
+> v0.15 5 Phase 모두 마감 — Phase A (SafetySettings 7종 + KillSwitch paranoid
+> default) → Phase B (`OrderCandidate` 38번째 + 8-state 머신 + Alembic 0007) →
+> Phase C (`PreTradeRiskEngine` 7 HARD 룰) → Phase D (`ApprovalService` +
+> `ApprovalAuditLog` 39번째 + Approval API 7종 + Alembic 0008 + expire 잡) →
+> **Phase E (14번째 프런트 화면 `/approvals` + 4 게이트 최종 확인)**.
+> 누적 게이트: backend pytest **1693** / frontend vitest **201** / Playwright
+> e2e **23** / build 그린.
+>
+> **v0.15 Phase E** 가 추가한 프런트엔드:
+> `frontend/src/api/approval.ts` (7 fetch) → `frontend/src/hooks/useApprovals.ts`
+> (3 read + 4 mutation TanStack Query, mutation 후 approval/paper 두 namespace
+> invalidate) → `frontend/src/pages/Approvals/index.tsx` (14번째 화면,
+> `ApprovalsPage` / `PolicyBanner` / `PendingCandidatesTable` /
+> `CandidateDetailDrawer` (`CandidateSummary` / `RiskCheckPanel` /
+> `AuditTimeline`) / `NewCandidateForm` / `HistoryTable`) →
+> `frontend/src/components/layout/Sidebar.tsx` 14번째 메뉴 (`ShieldCheck`,
+> "승인 대기 (β)") → `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts`
+> 23번째 e2e 시나리오 (raw payload forbidden 검사 + 503 disabled banner +
+> automation CTA 0건 단언). 버튼 라벨은 "승인 (paper 실행)" / "거절" / "만료" /
+> "후보 만들기 (Risk Check)" — "주문 실행" / "place real order" / FULL_AUTO /
+> SMALL_AUTO / "자동매매" actionable CTA 0건. 503 응답은
+> `approvals-disabled-banner` (general) / `approvals-kill-switch-banner`
+> (`detail` 에 "kill switch" 포함 시) 친절 안내.
+>
 > 본 문서는 **v0.15 Phase D 시점** 기준으로 갱신된다 (`v0.15-approval-api`
 > 태그 예정). v0.15 Approval Trading Safety Layer 가 Phase A → D 까지
 > 진행되어, **OrderCandidate** (Phase B) → **PreTradeRiskEngine** (Phase C)

@@ -56,6 +56,10 @@ const ValidationPage = lazy(() =>
 const PaperTradingPage = lazy(() =>
   import('./pages/PaperTrading').then(m => ({ default: m.PaperTradingPage })),
 )
+// v0.15 Phase E — Approval Workflow dashboard.
+const ApprovalsPage = lazy(() =>
+  import('./pages/Approvals').then(m => ({ default: m.ApprovalsPage })),
+)
 
 export function AppRoutes() {
   return (
@@ -80,6 +84,7 @@ export function AppRoutes() {
         <Route path="watchlist" element={<WatchlistPage />} />
         <Route path="validation" element={<ValidationPage />} />
         <Route path="paper" element={<PaperTradingPage />} />
+        <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:jobId" element={<JobsPage />} />
         <Route path="settings" element={<SettingsPage />} />

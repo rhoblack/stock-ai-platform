@@ -1405,7 +1405,7 @@ Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)*
 
 ---
 
-## v0.15 — Approval Trading Safety Layer (시작 선언)
+## v0.15 — Approval Trading Safety Layer ✅ 마감 (2026-05-08)
 
 기준선: `v0.14-final`. 회귀 게이트: pytest **1438** / vitest **186** / e2e **22** / build 그린.
 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0015`. 채택 시나리오: **Scenario X —
@@ -1606,45 +1606,48 @@ Approval Trading Safety Layer (paper execution only)**.
       호출 0건. 프런트 변경 0건. Alembic head `0008_approval_audit_logs`
 - [ ] `tag v0.15-approval-api + push`
 
-### Phase E: Approval UI 14번째 화면 + 마감 문서
+### Phase E: Approval UI 14번째 화면 + 마감 문서 ✅
 
-- [ ] `frontend/src/api/approval.ts` 신규 — 7 fetch 함수 (`fetchApprovalCandidates`
+- [x] `frontend/src/api/approval.ts` 신규 — 7 fetch 함수 (`fetchApprovalCandidates`
       / `fetchApprovalCandidate` / `submitApprovalCandidate` / `approveCandidate` /
       `rejectCandidate` / `expireCandidate` / `fetchApprovalAudit`)
-- [ ] `frontend/src/hooks/useApprovals.ts` 신규 — read 4 + mutation 3 hooks. mutation 후
+- [x] `frontend/src/hooks/useApprovals.ts` 신규 — read 3 + mutation 4 hooks. mutation 후
       approval namespace + paper namespace invalidate
-- [ ] `frontend/src/pages/Approvals/index.tsx` 신규 (14번째 화면 `/approvals`):
-      - `KillSwitchBanner` (ON 시 빨강 / OFF 시 회색, 항상 노출)
-      - `TradingSafetyBanner` (TRADING_SAFETY_ENABLED=false 안내)
-      - `PendingCandidatesTable` (PENDING_APPROVAL 행 + 승인 / 거절 버튼 + risk preview)
-      - `CandidateDetailDrawer` (risk_check_result_json + audit log timeline)
+- [x] `frontend/src/pages/Approvals/index.tsx` 신규 (14번째 화면 `/approvals`):
+      - `PolicyBanner` (TRADING_SAFETY + KILL_SWITCH 정책 항상 노출)
+      - `PendingCandidatesTable` (PENDING_APPROVAL 행 + 승인 / 거절 / 만료 버튼)
+      - `CandidateDetailDrawer` (`CandidateSummary` + `RiskCheckPanel` + `AuditTimeline`)
+      - `NewCandidateForm` (수동 후보 생성, paper)
       - `HistoryTable` (EXECUTED_PAPER / REJECTED / EXPIRED / RISK_REJECTED)
-      - 버튼 라벨: "승인 (paper 실행)" / "거절" / "만료". "주문 실행" / "place real order" 0건
-- [ ] `frontend/src/router.tsx` — ApprovalsPage lazy + `/approvals` route
-- [ ] `frontend/src/components/layout/Sidebar.tsx` — `ShieldCheck` 아이콘 + "승인 대기 (β)"
-      (14번째 메뉴) + footer 라벨 v0.15 갱신
-- [ ] `frontend/src/api/types.ts` — `OrderCandidate` / `RiskCheckResult` /
-      `RiskViolation` / `ApprovalAuditLog` / 응답 wrapper 타입 추가
-- [ ] `frontend/src/tests/Approvals.test.tsx` 신규 vitest ~14건 — page render /
-      kill switch banner ON·OFF / safety banner / pending happy / approve mutation /
-      reject mutation / risk drawer / forbidden DOM 토큰 0건 / 자동매매 CTA 0건
-- [ ] `frontend/src/tests/mswServer.ts` — approval 7 mock 추가 (POST 기본 503)
-- [ ] `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts` — sidebar 13 → 14 +
-      `/approvals` happy-path navigation + KillSwitchBanner ON 시뮬레이션 + 자동매매
-      CTA 0건 단언
-- [ ] `RELEASE_NOTES_v0.15.md` 신규 — Phase A~E 산출물 + 최종 게이트 + 안전 정책 +
+      - 버튼 라벨: "승인 (paper 실행)" / "거절" / "만료" / "후보 만들기 (Risk Check)" — "주문 실행" / "place real order" 0건
+      - 503 응답: `approvals-disabled-banner` (general) + `approvals-kill-switch-banner` (detail에 "kill switch" 포함 시)
+- [x] `frontend/src/router.tsx` — `ApprovalsPage` lazy + `/approvals` route
+- [x] `frontend/src/components/layout/Sidebar.tsx` — `ShieldCheck` 아이콘 +
+      "승인 대기 (β)" (14번째 메뉴) + footer "v0.15 dashboard" / "v0.15 Approval
+      Trading Safety Layer" 갱신
+- [x] `frontend/src/api/types.ts` — Approval 타입 13종 추가 (`OrderCandidateStatus` /
+      `ApprovalEventType` / `OrderCandidate` / `OrderCandidatesResponse` /
+      `RiskViolation` / `RiskCheckResult` / `OrderCandidateDetailResponse` /
+      `CreateOrderCandidateRequest` / `CreateOrderCandidateResponse` /
+      `ApproveCandidateResponse` / `ApprovalCandidateStatusResponse` /
+      `ApprovalAuditLogItem` / `ApprovalAuditResponse`)
+- [x] `frontend/src/tests/Approvals.test.tsx` 신규 vitest 15건 — page render /
+      empty placeholders / pending table 액션 / 503 disabled banner / kill switch
+      banner / approve happy path / reject prompt-driven reason / expire 호출 /
+      detail drawer (summary + risk + audit) / risk violation rendering / history
+      table / new candidate disabled banner / new candidate success / forbidden
+      DOM 토큰 0건 / 자동매매 CTA 0건
+- [x] `frontend/src/tests/mswServer.ts` — approval 7 mock 추가 (POST 기본 503)
+- [x] `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts` — sidebar 13 → 14 +
+      `/approvals` happy-path navigation + 503 disabled banner 시뮬레이션 + 자동매매
+      CTA 0건 단언 + raw payload forbidden 검사
+- [x] `RELEASE_NOTES_v0.15.md` 신규 — Phase A~E 산출물 + 최종 게이트 + 안전 정책 +
       알려진 한계 + v0.16 후보
-- [ ] `README.md` v0.15-final 배너 / 기능 목록 / 누적 사이클 표 / 회귀 기준선 갱신
-- [ ] `PROJECT_STATUS.md` §0 v0.15 마감 선언 (현재 §0 → §0-1 강등)
-- [ ] `ROADMAP.md` v0.15 행 ✅ 마감
-- [ ] `TASKS.md` Phase E 체크박스 전체 완료
-- [ ] `ARCHITECTURE.md` Approval workflow / risk engine / kill switch 흐름 반영
-- [ ] `TESTING.md` v0.15 최종 게이트 갱신
-- [ ] `API_SPEC.md` Approval API 7종 추가
-- [ ] `INTEGRATION_RUNBOOK.md` §23 Approval 운영 절차 추가 (TRADING_SAFETY_ENABLED /
-      KILL_SWITCH_ENABLED 활성화 절차 + 후보 시드 + workflow smoke)
-- [ ] `DB_SCHEMA.md` 38, 39번째 테이블 추가
-- [ ] 최종 4 게이트 확인 (pytest ~1590 / vitest ~200 / e2e 23 / build)
+- [x] `README.md` v0.15-final 배너 / 기능 목록 / 누적 사이클 표 / 회귀 기준선 갱신
+- [x] `PROJECT_STATUS.md` §0 v0.15 마감 선언 (이전 §0 → §0-1 강등)
+- [x] `ROADMAP.md` v0.15 행 ✅ 마감
+- [x] `TASKS.md` Phase E 체크박스 전체 완료
+- [x] 최종 4 게이트 확인 — **pytest 1693 / vitest 201 / e2e 23 / build 그린**
 - [ ] `tag v0.15-final + push`
 
 ---

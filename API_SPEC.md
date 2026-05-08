@@ -1,8 +1,9 @@
 # API_SPEC.md
 
-> 본 문서는 **v0.15 Phase D 시점** 기준이다 (`v0.15-approval-api` 태그
-> 예정). v0.15 Phase D 가 **Approval Trading Safety Layer API** 7 라우터
-> (read-only GET 3건 + mutation 4건) 를 추가했다.
+> 본 문서는 **v0.15 마감 시점** 기준이다 (마감 태그 `v0.15-final`).
+> v0.15 Phase D 가 **Approval Trading Safety Layer API** 7 라우터
+> (read-only GET 3건 + mutation 4건) 를 추가했고, Phase E 는 14번째 프런트
+> 화면 `/approvals` 에서 본 7 라우터를 모두 소비한다 (백엔드 라우터 변경 0건).
 >
 > **v0.15 Phase D 신규 엔드포인트:**
 >

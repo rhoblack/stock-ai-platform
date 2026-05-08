@@ -1616,7 +1616,7 @@ print(outcome.status, outcome.result_summary)
 - VirtualOrder 와 실 KIS 주문 코드 경로 물리적 분리 (별도 테이블 / 라우터 / 서비스)
 
 
-## 23. Approval Workflow 운영 절차 (v0.15 Phase B/C/D)
+## 23. Approval Workflow 운영 절차 (v0.15 Phase B/C/D/E)
 
 ### 23.1 안전 게이트 활성화 절차
 
@@ -1738,9 +1738,27 @@ print(outcome.status, outcome.result_summary)
 - mutation 3중 게이트: `TRADING_SAFETY_ENABLED=true` + `KILL_SWITCH_ENABLED=false`
   + `require_auth`. expire 라우터만 kill_switch 무관 (TTL 만료 보장)
 - 승인된 후보는 `SimulationBroker.submit_order` 만 호출 — 실 KIS / 실 broker
-  / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건 (v0.1 ~ v0.15
-  일관)
+  / 자동매매 / FULL_AUTO / SMALL_AUTO 실거래 코드 0건 (v0.1 ~ v0.15 일관)
 - `expire_pending_approvals` 잡: `TRADING_SAFETY_ENABLED=false` 또는
   `KILL_SWITCH_ENABLED=true` 시 SKIPPED (외부 호출 / DB 변경 0건)
 - mutation 라우터 누적: auth 2 + watchlist 6 + preferences 1 + paper 2 +
   approval 4 = 15. 실 KIS / FULL_AUTO 라우터 0건
+
+### 23.5 v0.15 Phase E — `/approvals` 14번째 프런트 화면 운영
+
+운영자는 14번째 메뉴 `/approvals` (`ShieldCheck` 아이콘, "승인 대기 (β)") 에서:
+
+- `PolicyBanner` — TRADING_SAFETY + KILL_SWITCH 정책 항상 노출
+- `PendingCandidatesTable` — 승인 대기 후보 목록 + "승인 (paper 실행)" /
+  "거절" / "만료" 버튼. 행 클릭 시 `CandidateDetailDrawer` (`CandidateSummary`
+  + `RiskCheckPanel` + `AuditTimeline`) 펼침
+- `NewCandidateForm` — 운영자가 직접 OrderCandidate 생성 (수량 / 종목 /
+  방향 / 유형 / 지정가 / 예상 금액 입력 → "후보 만들기 (Risk Check)" 버튼)
+- `HistoryTable` — 최근 종결 후보 (EXECUTED_PAPER / REJECTED / EXPIRED /
+  RISK_REJECTED)
+
+503 응답이 오면 `approvals-disabled-banner` 또는 `approvals-kill-switch-banner`
+가 자동 노출되어 어떤 게이트가 닫혀있는지 즉시 안내한다. 운영자는 `.env`
+재설정 후 재시도하면 된다. 모든 라벨이 "승인 (paper 실행)" / "거절" /
+"만료" / "후보 만들기" 로 paper 어휘 — "주문 실행" / "place real order" /
+FULL_AUTO / SMALL_AUTO actionable CTA 0건이며 e2e 가 강제 검사한다.

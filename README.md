@@ -4,33 +4,39 @@
 
 한국투자증권 API 기반 AI 주식 분석·추천·보유점검 플랫폼입니다.
 
-> **v0.14 Paper / Simulation Trading Foundation — 마감 완료.**
-> 최종 마감 태그 `v0.14-final`. v0.14 는 v0.13 위에 **SimulationBroker (BrokerInterface
-> 첫 구현체) + VirtualAccount / VirtualOrder / VirtualPosition / VirtualFill /
-> VirtualPnLSnapshot + PnLTracker + Paper Trading API 6 라우터 + 스케줄러 잡 2건 +
-> 13번째 프런트 화면 `/paper`** 5 Phase 를 완성한 사이클이다.
-> **Phase A** (Backtest Export CLI + ProviderScorePolicy → producer 통합, +45 pytest) →
-> **Phase B** (`app/broker/simulation_broker.py` `SimulationBroker` + Alembic 0005, +43 pytest) →
-> **Phase C** (`app/paper/pnl_tracker.py` `PnLTracker` + `PaperTradingCostModel` paper-v1 +
-> Alembic 0006 + execute_pending_orders 본 구현, +40 pytest) →
-> **Phase D** (`app/api/paper_routes.py` 6 엔드포인트 + 스케줄러 잡 2건, +33 pytest) →
-> **Phase E** (`/paper` 13번째 프런트 화면 + RELEASE_NOTES_v0.14 + 4 게이트 최종 확인,
-> vitest +11 / e2e +1).
-> **`PAPER_TRADING_ENABLED=false` 기본** — mutation 라우터는 503, 스케줄러 잡은 SKIPPED.
-> SimulationBroker 는 KIS / DART / RSS / requests / httpx import 0건 (AST 회귀 단언).
-> VirtualOrder 는 실 KIS 주문과 코드 경로 / 테이블 / 라우터 / 스키마가 완전히 분리.
-> 실 KIS 주문 / 실 Broker / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 코드 0건은
-> 그대로 (v0.1 ~ v0.14 일관). 모든 provider default OFF 유지 —
+> **v0.15 Approval Trading Safety Layer — 마감 완료.**
+> 최종 마감 태그 `v0.15-final`. v0.15 는 v0.14 위에 **SafetySettings + KillSwitch +
+> OrderCandidate 8-state 머신 + PreTradeRiskEngine 7 hard 룰 + Approval Workflow
+> API 7종 + ApprovalAuditLog (append-only) + expire_pending_approvals 잡 +
+> 14번째 프런트 화면 `/approvals`** 5 Phase 를 완성한 사이클이다.
+> **Phase A** (`SafetySettings` 7 신규 필드 + `KILL_SWITCH_ENABLED` 기본 false) →
+> **Phase B** (`OrderCandidate` ORM 38번째 + Alembic 0007 + Repository + 8-state 전이 매트릭스) →
+> **Phase C** (`PreTradeRiskEngine` 7 hard 룰 — account_paper / kill_switch / per_symbol /
+> daily_total / position_ratio / daily_loss / duplicate_recent + `RiskCheckResult`) →
+> **Phase D** (Approval Workflow API 7종 + `ApprovalAuditLog` 39번째 + Alembic 0008 +
+> `ApprovalService` + `expire_pending_approvals` 5분 IntervalTrigger 잡) →
+> **Phase E** (`/approvals` 14번째 프런트 화면 + RELEASE_NOTES_v0.15 + 4 게이트 최종 확인,
+> vitest +15 / e2e +1).
+> **`TRADING_SAFETY_ENABLED=false` + `KILL_SWITCH_ENABLED=true` (paranoid) 기본** —
+> 모든 mutation 라우터는 TRADING_SAFETY=true + KILL_SWITCH=false + AUTH 3중
+> 게이트 통과 필요. 어느 하나라도 미달이면 503. 운영자가 `.env` 에서 명시적으로
+> `KILL_SWITCH_ENABLED=false` 로 끄지 않으면 모든 mutation 이 차단된다. **승인된 후보는 paper execution 으로만 종결** — `SimulationBroker.submit_order`
+> 만 호출하며 KIS / DART / RSS / requests / httpx import 0건 (`approval_service.py` /
+> `approval_routes.py` / `pre_trade_risk_engine.py` 모두 AST 회귀 단언). `ApprovalAuditLog`
+> 는 append-only — 수정 / 삭제 API 0건. 실 KIS 주문 / 실 Broker / 자동매매 / FULL_AUTO /
+> SMALL_AUTO 코드 0건은 그대로 (v0.1 ~ v0.15 일관). 모든 provider default OFF 유지 —
 > `DART_ENABLED=false` / `RSS_NEWS_ENABLED=false` / `PROMETHEUS_ENABLED=false` /
 > `PROVIDER_DATA_INGESTION_ENABLED=false` / `PROVIDER_SCORE_POLICY_ENABLED=false` /
-> `PAPER_TRADING_ENABLED=false` 기본. ScoringEngine weight 변경 0건.
+> `PAPER_TRADING_ENABLED=false` / `TRADING_SAFETY_ENABLED=false` 기본. ScoringEngine
+> weight 변경 0건.
 >
-> 최신 통과 회귀 게이트 — **백엔드 pytest 1438 / frontend vitest 186 /
-> Playwright e2e 22 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO / APPROVAL /
+> 최신 통과 회귀 게이트 — **백엔드 pytest 1693 / frontend vitest 201 /
+> Playwright e2e 23 / build 통과**. 자동매매 / 실 주문 / FULL_AUTO /
 > SMALL_AUTO 는 모든 사이클에서 코드 일체 포함하지 않습니다 (`BrokerInterface` 의
 > 첫 구현체는 paper 전용 `SimulationBroker` 하나뿐 — KIS / 실거래 브로커는 여전히
 > placeholder). 인증 (`AUTH_ENABLED=false` 기본) 이므로 기존 read-only GET API 는
-> 그대로 OPEN; mutation 은 AUTH + PAPER_TRADING_ENABLED 양쪽 필요. 자세한 정책은
+> 그대로 OPEN; mutation 은 AUTH + (`PAPER_TRADING_ENABLED` 또는
+> `TRADING_SAFETY_ENABLED + KILL_SWITCH_ENABLED=false`) 양쪽 필요. 자세한 정책은
 > [`AGENTS.md`](./AGENTS.md) / [`ROADMAP.md`](./ROADMAP.md) 참조.
 >
 > **저작권 / 데이터 정책 (v0.4 ~ v0.12 누적)**: 리포트·뉴스·공시·재무·실적 원문 본문
@@ -71,7 +77,9 @@
 > `v0.13-provider-policy` → `v0.13-score-delta` → `v0.13-validation-api` →
 > `v0.13-validation-ui` → `v0.13-final` →
 > `v0.14-export-policy` → `v0.14-sim-broker` → `v0.14-pnl-tracker` →
-> `v0.14-paper-api` → **`v0.14-final`**.
+> `v0.14-paper-api` → `v0.14-final` →
+> `v0.15-safety-settings` → `v0.15-order-candidate` → `v0.15-pre-trade-risk` →
+> `v0.15-approval-api` → **`v0.15-final`**.
 >
 > 이전 사이클 마감 사유: [`RELEASE_NOTES_v0.1_BACKEND.md`](./RELEASE_NOTES_v0.1_BACKEND.md)
 > (백엔드, 296 passed) / [`RELEASE_NOTES_v0.2_FRONTEND.md`](./RELEASE_NOTES_v0.2_FRONTEND.md)
@@ -96,7 +104,9 @@
 > [`RELEASE_NOTES_v0.13.md`](./RELEASE_NOTES_v0.13.md) (v0.13 Provider Score Policy
 > & Validation Report, 1277 / 175 / 21) /
 > [`RELEASE_NOTES_v0.14.md`](./RELEASE_NOTES_v0.14.md) (v0.14 Paper / Simulation
-> Trading Foundation, **1438 / 186 / 22**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.15 참조.
+> Trading Foundation, 1438 / 186 / 22) /
+> [`RELEASE_NOTES_v0.15.md`](./RELEASE_NOTES_v0.15.md) (v0.15 Approval Trading
+> Safety Layer, **1693 / 201 / 23**). 다음 사이클 후보는 [`ROADMAP.md`](./ROADMAP.md) v0.16 참조.
 
 ## 1. 프로젝트 목표
 
@@ -104,7 +114,7 @@
 증권사 리포트·테마 인텔리전스 + News·공시 데이터 라인 + 재무·실적 인텔리전스 +
 Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 
-현재까지 마감된 사이클 (v0.1 ~ v0.14) 의 누적 기능:
+현재까지 마감된 사이클 (v0.1 ~ v0.15) 의 누적 기능:
 
 - 한국투자증권 API 기반 read-only 데이터 수집
 - 시가총액 TOP 500 종목 유니버스 관리
@@ -115,7 +125,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - 신규 추천 TOP 5 + 1/3/5/20일 후 성과 검증
 - 텔레그램 알림 (DRY_RUN 기본)
 - FastAPI **read-only** 대시보드 API (17+ GET, **POST 0건**)
-- **PC 대시보드 SPA** (13 화면, Vite + React + TypeScript) — v0.2 → v0.14
+- **PC 대시보드 SPA** (14 화면, Vite + React + TypeScript) — v0.2 → v0.15
 - **KRX 휴장일 정적 캘린더 + MarketStatusBanner** — v0.3
 - **StockDetail 일봉 라인 차트 (Recharts) + 30/60/120/250 days 선택자** — v0.3
 - **GitHub Actions CI** (3 잡: backend pytest / frontend vitest+build / Playwright e2e) — v0.3
@@ -172,9 +182,14 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 - **Paper Trading API 6 라우터 (v0.14)** — `GET /api/paper/account` / `/orders` / `/positions` / `/pnl` (read-only) + `POST /api/paper/orders` / `DELETE /api/paper/orders/{id}` (PAPER_TRADING_ENABLED + AUTH 필요, disabled → 503). 응답 forbidden 필드 12종 (api_key / token / secret / source_file_path / broker_order_id / kis_order_id / real_account / broker / account_number / raw_text / body / full_text) 0건
 - **Paper Trading 스케줄러 잡 2건 (v0.14)** — `execute_paper_orders` (16:00 KST) + `create_paper_pnl_snapshot` (16:30 KST). PAPER_TRADING_ENABLED=false 기본 → SKIPPED, enabled 시 active VirtualAccount 전체 처리 (per-account isolation)
 - **페이퍼 트레이딩 13번째 프런트 화면 (v0.14)** — `/paper` (`PaperTradingPage`: VirtualAccountCard + PaperOrderForm + VirtualPositionsTable + PnLTable + PaperOrdersTable + 정책 배너 + 503 disabled 안내). `LineChart` sidebar 아이콘 "페이퍼 트레이딩 (β)". `usePaperTrading` TanStack Query hooks 6종. 버튼 라벨 "페이퍼 주문 만들기" — "주문 실행" / "place order" CTA 0건
-- 테스트 가능한 구조 (backend pytest **1438**, vitest **186**, e2e **22**, build)
+- **SafetySettings + KillSwitch (v0.15)** — `app/config/settings.py` 7 신규 필드 (`trading_safety_enabled` / `kill_switch_enabled` / `approval_required` / `max_order_amount` / `max_daily_order_amount` / `max_position_ratio` / `max_daily_loss_amount`). paranoid default — `trading_safety_enabled=false` / **`kill_switch_enabled=true`** (master block ON 기본) / `approval_required=true` / `max_order_amount=100,000` / `max_daily_order_amount=1,000,000` / `max_position_ratio=0.20` / `max_daily_loss_amount=500,000`. `_as_strict_bool` helper (typo 시 default 유지). `__post_init__` 경계 검증 (위반 시 ValueError)
+- **OrderCandidate 8-state 머신 (v0.15)** — `OrderCandidate` (38번째 ORM) + Alembic 0007. 상태: `DRAFT → RISK_CHECKING → (RISK_REJECTED | PENDING_APPROVAL) → (APPROVED → EXECUTED_PAPER | REJECTED | EXPIRED)`. forbidden 컬럼 0건 (broker_order_id / kis_order_id / real_account / api_key / token / secret)
+- **PreTradeRiskEngine 7 HARD 룰 (v0.15)** — `app/risk/pre_trade_risk_engine.py`. `account_paper_enabled` / `kill_switch_off` / `per_symbol_limit` / `daily_total_limit` / `position_ratio_limit` / `daily_loss_limit` / `duplicate_recent` (5분 윈도). `RiskCheckResult` (`policy_version` / `passed` / `violations[]`) 구조화 결과. KIS / DART / RSS / requests / httpx import 0건 (AST 회귀 단언)
+- **Approval Workflow API 7종 + ApprovalAuditLog (v0.15)** — `GET /api/approvals/candidates` / `/candidates/{id}` / `/audit` (read-only) + `POST /api/approvals/candidates` / `/{id}/approve` / `/{id}/reject` / `/{id}/expire` (TRADING_SAFETY_ENABLED + KILL_SWITCH_ENABLED=false + AUTH 3중 게이트, disabled → 503). `ApprovalAuditLog` (39번째 ORM) + Alembic 0008 — append-only, 수정/삭제 API 0건. `ApprovalService.approve` 는 `SimulationBroker.submit_order` 만 호출 (KIS API 호출 0건 AST 단언). `expire_pending_approvals` IntervalTrigger 5분 잡
+- **승인 대기 14번째 프런트 화면 (v0.15)** — `/approvals` (`ApprovalsPage`: PolicyBanner + PendingCandidatesTable + CandidateDetailDrawer (CandidateSummary + RiskCheckPanel + AuditTimeline) + NewCandidateForm + HistoryTable). `ShieldCheck` sidebar 아이콘 "승인 대기 (β)". `useApprovals` TanStack Query hooks 7종 (read 3 + mutation 4, mutation 후 approval/paper 두 namespace invalidate). 버튼 라벨 "승인 (paper 실행)" / "거절" / "만료" / "후보 만들기 (Risk Check)" — "주문 실행" / "place real order" / "FULL_AUTO" / "SMALL_AUTO" / "자동매매" CTA 0건. 503 응답은 `approvals-disabled-banner` / `approvals-kill-switch-banner` 친절 안내
+- 테스트 가능한 구조 (backend pytest **1693**, vitest **201**, e2e **23**, build)
 
-## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.14 일관 정책)
+## 2. 전체 사이클 제외 범위 (v0.1 ~ v0.15 일관 정책)
 
 다음 기능은 **모든 사이클에서 코드 일체 포함하지 않습니다.** 자동매매 진입은
 별도 보안 / 컴플라이언스 사이클이 선행되어야 가능합니다.
@@ -289,7 +304,7 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 9. FastAPI 대시보드 API
 10. 테스트와 문서화
 
-## 6. 누적 사이클 상태 (v0.1 ~ v0.14)
+## 6. 누적 사이클 상태 (v0.1 ~ v0.15)
 
 | 사이클 | 상태 | 회귀 게이트 | 최종 태그 |
 |---|---|---|---|
@@ -339,6 +354,11 @@ Strategy & Backtest 검증 + 대시보드** 플랫폼입니다.
 | v0.14 Phase C — VirtualPosition/VirtualFill/VirtualPnLSnapshot + PnLTracker + execute_pending_orders + Alembic 0006 | ✅ 인수 | pytest 1405 (+40) | `v0.14-pnl-tracker` |
 | v0.14 Phase D — Paper Trading API 6 라우터 + 스케줄러 잡 2건 | ✅ 인수 | pytest 1438 (+33) | `v0.14-paper-api` |
 | v0.14 Phase E — 페이퍼 트레이딩 13번째 화면 `/paper` + 마감 문서 | ✅ 문서 마감 | pytest 1438 / vitest 186 / e2e 22 / build | `v0.14-final` |
+| v0.15 Phase A — SafetySettings + KillSwitch + 안전 default 7건 | ✅ 인수 | pytest ~1465 | `v0.15-safety-settings` |
+| v0.15 Phase B — OrderCandidate ORM (38) + Repository + Alembic 0007 + 8-state 머신 | ✅ 인수 | pytest ~1505 | `v0.15-order-candidate` |
+| v0.15 Phase C — PreTradeRiskEngine 7 hard 룰 + RiskCheckResult | ✅ 인수 | pytest ~1545 | `v0.15-pre-trade-risk` |
+| v0.15 Phase D — Approval Workflow API 7종 + ApprovalAuditLog (39) + Alembic 0008 + ApprovalService + expire 잡 | ✅ 인수 | pytest 1693 | `v0.15-approval-api` |
+| v0.15 Phase E — 승인 대기 14번째 화면 `/approvals` + 마감 문서 | ✅ 문서 마감 | pytest 1693 / vitest 201 / e2e 23 / build | `v0.15-final` |
 
 ### 영역별 상태
 

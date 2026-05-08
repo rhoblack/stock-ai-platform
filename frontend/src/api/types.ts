@@ -1028,3 +1028,122 @@ export interface PaperStatusResponse {
   status: string
   order_id: number
 }
+
+// ----- v0.15 Phase E — Approval Trading Safety Layer -----
+//
+// Decimal-ish fields are serialised as strings (FastAPI Pydantic converts
+// Decimal -> str). The UI converts via Number(value) only at the rendering
+// edge. None of these shapes carry KIS / real-broker fields — the dashboard
+// never renders broker_order_id, kis_order_id, real_account, real_order_id,
+// account_number, api_key, token, or secret.
+
+export type OrderCandidateStatus =
+  | 'DRAFT'
+  | 'RISK_CHECKING'
+  | 'RISK_REJECTED'
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'EXECUTED_PAPER'
+  | 'REJECTED'
+  | 'EXPIRED'
+
+export type ApprovalEventType =
+  | 'CREATED'
+  | 'RISK_CHECKED'
+  | 'RISK_REJECTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'EXPIRED'
+  | 'EXECUTED_PAPER'
+  | 'KILL_SWITCH_BLOCKED'
+
+export interface OrderCandidate {
+  id: number
+  account_id: number
+  source: string
+  source_ref_id: number | null
+  symbol: string
+  side: string
+  quantity: number
+  order_type: string
+  limit_price: string | null
+  estimated_amount: string | null
+  status: OrderCandidateStatus
+  rejection_reason: string | null
+  expires_at: string | null
+  virtual_order_id: number | null
+  approver_user_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface OrderCandidatesResponse {
+  candidates: OrderCandidate[]
+  total: number
+  limit: number
+}
+
+export interface RiskViolation {
+  rule_id: string
+  severity: string
+  message: string
+  details?: Record<string, unknown> | null
+}
+
+export interface RiskCheckResult {
+  policy_version: string | null
+  passed: boolean | null
+  violations: RiskViolation[]
+  checked_at: string | null
+}
+
+export interface OrderCandidateDetailResponse {
+  candidate: OrderCandidate
+  risk_check_result: RiskCheckResult | null
+}
+
+export interface CreateOrderCandidateRequest {
+  symbol: string
+  side: 'BUY' | 'SELL'
+  quantity: number
+  order_type?: 'MARKET' | 'LIMIT'
+  limit_price?: string | null
+  estimated_amount?: string | null
+  source?: 'RECOMMENDATION' | 'STRATEGY' | 'PAPER' | 'MANUAL'
+  source_ref_id?: number | null
+  account_id?: number | null
+  ttl_minutes?: number | null
+}
+
+export interface CreateOrderCandidateResponse {
+  candidate: OrderCandidate
+  risk_check_result: RiskCheckResult
+  risk_passed: boolean
+}
+
+export interface ApproveCandidateResponse {
+  candidate: OrderCandidate
+  virtual_order_id: number
+}
+
+export interface ApprovalCandidateStatusResponse {
+  status: string
+  candidate_id: number
+  new_status: OrderCandidateStatus
+}
+
+export interface ApprovalAuditLogItem {
+  id: number
+  candidate_id: number
+  event_type: ApprovalEventType
+  user_id: number | null
+  reason: string | null
+  details?: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface ApprovalAuditResponse {
+  items: ApprovalAuditLogItem[]
+  total: number
+  limit: number
+}

@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', () => {
-  test('all 13 sidebar menus are reachable and render their main content', async ({
+  test('all 14 sidebar menus are reachable and render their main content', async ({
     page,
   }) => {
     await page.goto('/')
@@ -51,6 +51,10 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     // v0.14 Phase E — 페이퍼 트레이딩 (β)
     await nav.getByRole('link', { name: '페이퍼 트레이딩 (β)' }).click()
     await expect(page.getByTestId('paper-page')).toBeVisible()
+
+    // v0.15 Phase E — 승인 대기 (β)
+    await nav.getByRole('link', { name: '승인 대기 (β)' }).click()
+    await expect(page.getByTestId('approvals-page')).toBeVisible()
 
     await nav.getByRole('link', { name: '시스템 로그 / 잡' }).click()
     await expect(page.getByTestId('job-row-101')).toBeVisible()
@@ -619,6 +623,90 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
       'broker_order_id',
       'kis_order_id',
       'real_account',
+      'account_number',
+      'source_file_path',
+      'raw_text',
+      'full_text',
+    ]) {
+      expect(merged).not.toContain(forbidden)
+    }
+  })
+
+  // -------- v0.15 Phase E — Approval Workflow --------
+
+  test('Approvals page surfaces policy banner / pending table / new-candidate form, never leaks KIS fields', async ({
+    page,
+  }) => {
+    await page.goto('/approvals')
+    await expect(page.getByTestId('approvals-page')).toBeVisible()
+    await expect(page.getByTestId('approvals-policy-banner')).toBeVisible()
+    // GET /api/approvals/candidates returns empty in the e2e fixture →
+    // empty placeholder is the expected state.
+    await expect(page.getByTestId('approvals-pending-empty')).toBeVisible()
+    await expect(page.getByTestId('approvals-history-empty')).toBeVisible()
+    await expect(page.getByTestId('approvals-new-form')).toBeVisible()
+
+    // Submit button label is the safe approval wording.
+    await expect(page.getByTestId('approvals-new-submit')).toHaveText(
+      /후보 만들기 \(Risk Check\)/,
+    )
+
+    // Forbidden DOM tokens — must NOT appear anywhere on the page.
+    for (const forbidden of [
+      'api_key',
+      'access_token',
+      'jwt_secret',
+      'kis_app_secret',
+      'kis_account_no',
+      'source_file_path',
+      'broker_order_id',
+      'kis_order_id',
+      'real_account',
+      'real_order_id',
+      'account_number',
+      'raw_text',
+      'full_text',
+    ]) {
+      await expect(page.getByText(forbidden)).toHaveCount(0)
+    }
+
+    // Automation / autotrade copy must NOT appear in any actionable element.
+    for (const phrase of [
+      /자동매매\s*(시작|모드|활성)/,
+      /실거래\s*(시작|실행|모드)/,
+      /FULL_AUTO/,
+      /SMALL_AUTO/,
+      /place\s*real\s*order/i,
+      /실\s*KIS\s*(주문|실행)/,
+    ]) {
+      await expect(
+        page.locator('button, [role="button"], a').filter({ hasText: phrase }),
+      ).toHaveCount(0)
+    }
+
+    // 503 banner appears once a submit attempt happens (e2e fixture answers
+    // POST /api/approvals/candidates with 503).
+    await page.getByTestId('approvals-new-symbol-input').fill('005930')
+    await page.getByTestId('approvals-new-quantity-input').fill('10')
+    await page.getByTestId('approvals-new-submit').click()
+    await expect(page.getByTestId('approvals-new-disabled-banner')).toBeVisible()
+
+    // Raw API payload guard.
+    const payload = await page.evaluate(async () => {
+      const candidates = await fetch('/api/approvals/candidates').then(r => r.json())
+      const audit = await fetch('/api/approvals/audit').then(r => r.json())
+      return { candidates, audit }
+    })
+    const merged = JSON.stringify(payload)
+    for (const forbidden of [
+      'api_key',
+      'access_token',
+      'jwt_secret',
+      'kis_app_secret',
+      'broker_order_id',
+      'kis_order_id',
+      'real_account',
+      'real_order_id',
       'account_number',
       'source_file_path',
       'raw_text',

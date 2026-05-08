@@ -11,6 +11,7 @@ import {
   ScrollText,
   Search,
   Settings as SettingsIcon,
+  ShieldCheck,
   Star,
   Tags,
   type LucideIcon,
@@ -24,7 +25,7 @@ interface NavItem {
   matchPrefix?: string
 }
 
-// 13 dashboard menus (v0.14 Phase E adds 페이퍼 트레이딩).
+// 14 dashboard menus (v0.15 Phase E adds 승인 대기).
 const NAV_ITEMS: NavItem[] = [
   { to: '/today', label: '오늘의 리포트', Icon: LayoutDashboard },
   { to: '/recommendations', label: '추천 종목', Icon: BarChart3 },
@@ -37,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/watchlist', label: '관심종목', Icon: Star },
   { to: '/validation', label: '검증 리포트', Icon: ClipboardCheck },
   { to: '/paper', label: '페이퍼 트레이딩 (β)', Icon: LineChart },
+  { to: '/approvals', label: '승인 대기 (β)', Icon: ShieldCheck },
   { to: '/jobs', label: '시스템 로그 / 잡', Icon: ScrollText, matchPrefix: '/jobs' },
   { to: '/settings', label: '설정', Icon: SettingsIcon },
 ]
@@ -50,7 +52,7 @@ export function Sidebar() {
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold">Stock AI</span>
-          <span className="text-xs text-muted-foreground">v0.14 dashboard</span>
+          <span className="text-xs text-muted-foreground">v0.15 dashboard</span>
         </div>
       </div>
       <nav className="flex flex-col gap-1 px-3 pb-4 pt-2" aria-label="primary">
@@ -73,7 +75,7 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="mt-auto px-5 py-4 text-xs text-muted-foreground">
-        <p>v0.14 Paper / Simulation Trading</p>
+        <p>v0.15 Approval Trading Safety Layer</p>
         <p className="mt-1">실 KIS 주문 / 자동매매 미포함</p>
       </div>
     </aside>

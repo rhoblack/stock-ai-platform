@@ -1,14 +1,15 @@
 # Roadmap
 
-> 본 문서는 **v0.15 시작 시점** 기준으로 갱신되었다 (이전 마감 태그 `v0.14-final`).
+> 본 문서는 **v0.15 마감 시점** 기준으로 갱신되었다 (마감 태그 `v0.15-final`).
 > v0.15 채택 시나리오: **Scenario X — Approval Trading Safety Layer**.
-> OrderCandidate (`order_candidates` 38번째) + PreTradeRiskEngine (6 hard 룰) +
-> SafetySettings (`KILL_SWITCH_ENABLED=true` 기본) + Approval Workflow API 7종 +
-> ApprovalAuditLog (`approval_audit_logs` 39번째, append-only) + 14번째 프런트
-> 화면 `/approvals`. Alembic 2 revisions (`0007_order_candidates` Phase B +
-> `0008_approval_audit_logs` Phase D). **승인된 후보는 `SimulationBroker` 만
-> 호출 (paper execution only)** — 실 KIS 주문 / 실 broker / 자동매매 / FULL_AUTO /
-> SMALL_AUTO / APPROVAL 실거래는 여전히 **Future Backlog (v0.16+)**.
+> OrderCandidate (`order_candidates` 38번째) + PreTradeRiskEngine (7 hard 룰) +
+> SafetySettings (`KILL_SWITCH_ENABLED=true` paranoid 기본) + Approval Workflow
+> API 7종 + ApprovalAuditLog (`approval_audit_logs` 39번째, append-only) +
+> `expire_pending_approvals` 12번째 잡 + 14번째 프런트 화면 `/approvals`.
+> Alembic 2 revisions (`0007_order_candidates` Phase B + `0008_approval_audit_logs`
+> Phase D). **승인된 후보는 `SimulationBroker` 만 호출 (paper execution only)** —
+> 실 KIS 주문 / 실 broker / 자동매매 / FULL_AUTO / SMALL_AUTO 실거래는 여전히
+> **Future Backlog (v0.16+)**.
 > DART/RSS/Prometheus/Provider Data Ingestion/Score Policy/Paper Trading 모두
 > default OFF 유지.
 
@@ -30,7 +31,7 @@
 | v0.12 Provider Data Scoring & Backtest Validation | Provider 데이터 → DB ingestion (existing producer 자동 흡수, ScoringEngine weight 변경 0건) + walk-forward backtest engine + 다중 전략 비교 + read-only API/UI 확장 + recommendation evidence 에 `data_source` chip | ✅ 마감 | `v0.12-final` |
 | v0.13 Provider Score Policy & Validation Report | ProviderScorePolicy 승수 엔진 (weight 변경 0건) + score_delta in evidence_json + Validation Report GET API (`/by-strategy` / `/by-regime` / `/by-sector`) + Validation Report UI 12번째 화면 (Backtest Export CLI 는 v0.14+ 이연) | ✅ 마감 | `v0.13-final` |
 | v0.14 Paper / Simulation Trading Foundation | Backtest Export CLI 선처리 + SimulationBroker (`BrokerInterface` 첫 구현체) + VirtualAccount / VirtualOrder / VirtualPosition / VirtualFill / VirtualPnLSnapshot (5 테이블, Alembic 2 revisions) + Paper Trading API 6종 + 스케줄러 잡 2건 + 13번째 프런트 화면 `/paper` | ✅ 마감 | `v0.14-final` |
-| v0.15 Approval Trading Safety Layer | OrderCandidate (38번째) + PreTradeRiskEngine (6 hard 룰) + SafetySettings (`KILL_SWITCH_ENABLED=true` 기본) + Approval Workflow API 7종 + ApprovalAuditLog (39번째, append-only) + 14번째 프런트 화면 `/approvals` (paper execution only) | ⏳ 진행 중 | `v0.15-final` (예정) |
+| v0.15 Approval Trading Safety Layer | OrderCandidate (38번째) + PreTradeRiskEngine (7 hard 룰) + SafetySettings (`KILL_SWITCH_ENABLED=true` paranoid 기본) + Approval Workflow API 7종 + ApprovalAuditLog (39번째, append-only) + 14번째 프런트 화면 `/approvals` (paper execution only) | ✅ 마감 | `v0.15-final` |
 
 ---
 
@@ -508,13 +509,13 @@ read-only GET 4종은 항상 동작.
 
 ---
 
-## v0.15 — Approval Trading Safety Layer (⏳ 진행 중)
+## v0.15 — Approval Trading Safety Layer (✅ 마감)
 
-기준선: `v0.14-final` (1438 / 186 / 22 / build) → 예상 마감: `v0.15-final`
-(**~1590 / ~200 / 23 / build**, +152 pytest / +14 vitest / +1 e2e).
+기준선: `v0.14-final` (1438 / 186 / 22 / build) → 마감: `v0.15-final`
+(**1693 / 201 / 23 / build**, +255 pytest / +15 vitest / +1 e2e).
 **Alembic 신규 2건** — `0007_order_candidates` (OrderCandidate, Phase B) +
 `0008_approval_audit_logs` (ApprovalAuditLog, Phase D, append-only).
-**`KILL_SWITCH_ENABLED=true` / `TRADING_SAFETY_ENABLED=false` /
+**`KILL_SWITCH_ENABLED=true` (paranoid) / `TRADING_SAFETY_ENABLED=false` /
 `APPROVAL_REQUIRED=true` 모두 안전 default** — 운영자가 명시 false / true 로
 끄지 않으면 모든 mutation 503.
 
@@ -523,11 +524,11 @@ read-only GET 4종은 항상 동작.
 
 | Phase | 작업 | 상태 | 태그 |
 |---|---|---|---|
-| A | SafetySettings + KillSwitch + 7 신규 settings (안전 default) + 단위 테스트 ~20건 | ⏳ 대기 | `v0.15-safety-settings` |
-| B | OrderCandidate ORM (38번째) + Repository (8-state 머신) + Alembic 0007 + 통합 테스트 ~25건 | ⏳ 대기 | `v0.15-order-candidate` |
-| C | PreTradeRiskEngine (6 hard 룰: kill_switch / per_symbol / daily_total / position_ratio / daily_loss / duplicate_recent) + RiskCheckResult + 단위 ~30 + 통합 ~10 | ⏳ 대기 | `v0.15-pre-trade-risk` |
-| D | Approval Workflow API 7종 (POST candidates / approve / reject / expire / GET candidates / detail / audit) + ApprovalAuditLog (39번째, append-only) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) + 통합 ~30 + audit ~10 + scheduler ~5 | ⏳ 대기 | `v0.15-approval-api` |
-| E | 14번째 프런트 화면 `/approvals` (`ShieldCheck` 메뉴, KillSwitchBanner / TradingSafetyBanner / PendingCandidatesTable / CandidateDetailDrawer / HistoryTable) + RELEASE_NOTES_v0.15 + 4 게이트 최종 확인 | ⏳ 대기 | `v0.15-final` |
+| A | SafetySettings + KillSwitch + 7 신규 settings (안전 default) + 단위 테스트 60건 | ✅ 인수 | `v0.15-safety-settings` |
+| B | OrderCandidate ORM (38번째) + Repository (8-state 머신) + Alembic 0007 + 통합 테스트 73건 | ✅ 인수 | `v0.15-order-candidate` |
+| C | PreTradeRiskEngine (7 hard 룰: account_paper / kill_switch / per_symbol / daily_total / position_ratio / daily_loss / duplicate_recent) + RiskCheckResult + 단위 32 + 통합 8 | ✅ 인수 | `v0.15-pre-trade-risk` |
+| D | Approval Workflow API 7종 (POST candidates / approve / reject / expire / GET candidates / detail / audit) + ApprovalAuditLog (39번째, append-only) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) + 통합 29 + audit 17 + scheduler 6 | ✅ 인수 | `v0.15-approval-api` |
+| E | 14번째 프런트 화면 `/approvals` (`ShieldCheck` 메뉴, PolicyBanner / PendingCandidatesTable / CandidateDetailDrawer (Summary/Risk/Audit) / NewCandidateForm / HistoryTable) + RELEASE_NOTES_v0.15 + 4 게이트 최종 확인 | ✅ 문서 마감 | `v0.15-final` |
 
 **v0.15 핵심 정책 (cycle-wide)**:
 
@@ -537,7 +538,7 @@ read-only GET 4종은 항상 동작.
 - **`approval_required=True` 기본** — 자동 승인 / 자동 실행 0건
 - **ApprovalAuditLog append-only** — 수정 / 삭제 API 0건. immutable
 - **`TRADING_SAFETY_ENABLED=false` 기본** — Approval API 자체 503
-- **자동매매 / 실 KIS 주문 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건** — v0.1~v0.15 일관
+- **자동매매 / 실 KIS 주문 / FULL_AUTO / SMALL_AUTO 실거래 코드 0건** — v0.1~v0.15 일관
 - **Alembic 2 revisions** (`0007_order_candidates` + `0008_approval_audit_logs`)
 - **신규 pip 의존성 0건** — stdlib only
 - **DART/RSS/Prometheus/Provider Data Ingestion/Score Policy/Paper Trading default OFF 유지**
