@@ -20,6 +20,33 @@ def _as_int(value: str | None, default: int) -> int:
     return int(value)
 
 
+# v0.15 Phase A -- paranoid bool helper for SafetySettings.
+# Differs from ``_as_bool`` by treating any value that is NEITHER a known
+# truthy NOR a known falsy token as "fall back to the default". Used for
+# kill_switch_enabled / approval_required so a typo in .env (e.g.
+# ``KILL_SWITCH_ENABLED=maybe``) keeps the safety guard ON instead of
+# silently flipping it OFF.
+_TRUTHY_TOKENS: frozenset[str] = frozenset({"1", "true", "yes", "on"})
+_FALSY_TOKENS: frozenset[str] = frozenset({"0", "false", "no", "off"})
+
+
+def _as_strict_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    cleaned = value.strip().lower()
+    if cleaned in _TRUTHY_TOKENS:
+        return True
+    if cleaned in _FALSY_TOKENS:
+        return False
+    return default
+
+
+def _as_float(value: str | None, default: float) -> float:
+    if value is None:
+        return default
+    return float(value)
+
+
 @dataclass(frozen=True)
 class Settings:
     app_env: str = field(default_factory=lambda: os.getenv("APP_ENV", "local"))
@@ -327,6 +354,60 @@ class Settings:
         default_factory=lambda: _as_bool(os.getenv("PAPER_TRADING_ENABLED"), False),
     )
 
+    # v0.15 Phase A -- Approval Trading Safety Layer settings.
+    #
+    # All defaults are PARANOID:
+    #   * ``trading_safety_enabled=False`` (Approval API self-gate; OFF means
+    #     POST/DELETE on /api/approvals/* respond 503 in later phases).
+    #   * ``kill_switch_enabled=True`` (master block on candidate creation,
+    #     approval, and execution; OFF requires explicit operator opt-in via
+    #     KILL_SWITCH_ENABLED=false).
+    #   * ``approval_required=True`` (no auto-approve / auto-execute path).
+    #   * Per-order / daily / position / loss caps are conservative.
+    #
+    # The strict-bool helper (`_as_strict_bool`) means a typo in .env
+    # (e.g. ``KILL_SWITCH_ENABLED=maybe``) keeps the safety guard ON.
+    # The numeric caps are validated in ``__post_init__`` so an invalid
+    # combination cannot be constructed.
+    #
+    # These settings only control the v0.15 Approval Trading layer (Phases
+    # B~E). They do NOT alter v0.14 Paper Trading behavior, the v0.7
+    # backtest engine, or any earlier cycle. Real KIS orders / real broker
+    # / autotrade remain 0-line policy across v0.1 ~ v0.15.
+    trading_safety_enabled: bool = field(
+        default_factory=lambda: _as_strict_bool(
+            os.getenv("TRADING_SAFETY_ENABLED"), False
+        ),
+    )
+    kill_switch_enabled: bool = field(
+        default_factory=lambda: _as_strict_bool(
+            os.getenv("KILL_SWITCH_ENABLED"), True
+        ),
+    )
+    approval_required: bool = field(
+        default_factory=lambda: _as_strict_bool(
+            os.getenv("APPROVAL_REQUIRED"), True
+        ),
+    )
+    max_order_amount: int = field(
+        default_factory=lambda: _as_int(os.getenv("MAX_ORDER_AMOUNT"), 100_000),
+    )
+    max_daily_order_amount: int = field(
+        default_factory=lambda: _as_int(
+            os.getenv("MAX_DAILY_ORDER_AMOUNT"), 1_000_000
+        ),
+    )
+    max_position_ratio: float = field(
+        default_factory=lambda: _as_float(
+            os.getenv("MAX_POSITION_RATIO"), 0.20
+        ),
+    )
+    max_daily_loss_amount: int = field(
+        default_factory=lambda: _as_int(
+            os.getenv("MAX_DAILY_LOSS_AMOUNT"), 500_000
+        ),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )
@@ -342,6 +423,33 @@ class Settings:
     feature_custom_ai_training: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_CUSTOM_AI_TRAINING"), False),
     )
+
+    def __post_init__(self) -> None:
+        # v0.15 Phase A -- validate Approval Trading Safety Layer caps.
+        # Pre-existing fields (KIS / Telegram / paper trading switches) are
+        # validated at use-site by their respective consumers. We only
+        # tighten the new safety caps here so an invalid .env (negative cap,
+        # ratio > 1, etc.) fails fast at Settings construction time rather
+        # than silently allowing a bypass downstream.
+        if self.max_order_amount <= 0:
+            raise ValueError(
+                f"max_order_amount must be > 0 (got {self.max_order_amount})"
+            )
+        if self.max_daily_order_amount <= 0:
+            raise ValueError(
+                f"max_daily_order_amount must be > 0 "
+                f"(got {self.max_daily_order_amount})"
+            )
+        if not (0.0 < self.max_position_ratio <= 1.0):
+            raise ValueError(
+                f"max_position_ratio must be in (0, 1] "
+                f"(got {self.max_position_ratio})"
+            )
+        if self.max_daily_loss_amount < 0:
+            raise ValueError(
+                f"max_daily_loss_amount must be >= 0 "
+                f"(got {self.max_daily_loss_amount})"
+            )
 
     @property
     def effective_database_url(self) -> str:

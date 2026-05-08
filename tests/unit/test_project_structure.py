@@ -24,6 +24,18 @@ def test_settings_defaults():
     # PAPER_TRADING_ENABLED=true 명시 설정 시에만 SimulationBroker.submit_order
     # 가 VirtualOrder 행을 기록한다 (외부 호출 0건 정책 그대로 유지).
     assert settings.paper_trading_enabled is False
+    # v0.15 Phase A — Approval Trading Safety Layer paranoid defaults.
+    # trading_safety_enabled=False (Approval API self-gate),
+    # kill_switch_enabled=True (master block ON by default),
+    # approval_required=True (no auto-approve path).
+    # Numeric caps: per-order 100,000 / daily 1,000,000 / position 20% / loss 500,000.
+    assert settings.trading_safety_enabled is False
+    assert settings.kill_switch_enabled is True
+    assert settings.approval_required is True
+    assert settings.max_order_amount == 100_000
+    assert settings.max_daily_order_amount == 1_000_000
+    assert settings.max_position_ratio == 0.20
+    assert settings.max_daily_loss_amount == 500_000
 
 
 def test_interfaces_importable():

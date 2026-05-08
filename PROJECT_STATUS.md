@@ -35,13 +35,39 @@ Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `Simul
 
 ### v0.15 Phase 목표
 
-| Phase | 내용 | 예상 태그 | 예상 pytest |
+| Phase | 내용 | 예상 태그 | 실제 pytest |
 |---|---|---|---|
-| A | SafetySettings + KillSwitch + 7 신규 settings (안전 default) | `v0.15-safety-settings` | **~1465 (+~27)** |
-| B | OrderCandidate ORM (38번째) + Repository + Alembic 0007 + 8-state 머신 | `v0.15-order-candidate` | **~1505 (+~40)** |
-| C | PreTradeRiskEngine (6 hard 룰) + RiskCheckResult | `v0.15-pre-trade-risk` | **~1545 (+~40)** |
-| D | Approval Workflow API 7종 + ApprovalAuditLog (39번째) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) | `v0.15-approval-api` | **~1590 (+~45)** |
+| A | SafetySettings + KillSwitch + 7 신규 settings (안전 default) | `v0.15-safety-settings` | **1438→1498 (+60) ✅** |
+| B | OrderCandidate ORM (38번째) + Repository + Alembic 0007 + 8-state 머신 | `v0.15-order-candidate` | **~1498→~1538 (+~40)** |
+| C | PreTradeRiskEngine (6 hard 룰) + RiskCheckResult | `v0.15-pre-trade-risk` | **~1538→~1578 (+~40)** |
+| D | Approval Workflow API 7종 + ApprovalAuditLog (39번째) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) | `v0.15-approval-api` | **~1578→~1623 (+~45)** |
 | E | 14번째 프런트 화면 `/approvals` + `RELEASE_NOTES_v0.15.md` + 4 게이트 확인 | `v0.15-final` | vitest **186→~200 (+~14)** / e2e **22→23 (+1)** |
+
+### v0.15 Phase A 완료 (2026-05-08)
+
+- `app/config/settings.py`: 7 신규 safety 필드 + `_as_strict_bool` helper
+  (typo 시 default 유지, paranoid kill switch 보장) + `_as_float` helper +
+  `__post_init__` 경계 검증 (max_order_amount > 0, max_daily_order_amount > 0,
+  0 < max_position_ratio ≤ 1, max_daily_loss_amount ≥ 0; 위반 시 ValueError 로
+  Settings 생성 자체 차단)
+- 안전 default 정책 — `trading_safety_enabled=False` (Approval API self-gate)
+  / `kill_switch_enabled=True` (paranoid master block) / `approval_required=True`
+  (auto-approve 0건) / `max_order_amount=100,000` / `max_daily_order_amount=1,000,000`
+  / `max_position_ratio=0.20` / `max_daily_loss_amount=500,000`
+- env override 7종 (`TRADING_SAFETY_ENABLED` / `KILL_SWITCH_ENABLED` /
+  `APPROVAL_REQUIRED` / `MAX_ORDER_AMOUNT` / `MAX_DAILY_ORDER_AMOUNT` /
+  `MAX_POSITION_RATIO` / `MAX_DAILY_LOSS_AMOUNT`)
+- `tests/unit/test_safety_settings.py` 신규 60건 — paranoid defaults / env
+  override happy / strict-bool typo paranoid / boundary validation
+  (parametrize, 14 case) / range accepts / frozen mutation 거부 / 회귀 (v0.14
+  paper_trading + v0.1 feature_real_order_execution / feature_full_auto) /
+  Phase A 격리 단언 (Alembic 6 revisions 그대로 + `app/api/approval_routes.py`
+  미존재)
+- `tests/unit/test_project_structure.py`: 7 신규 default 단언 추가
+- **실제 게이트: pytest 1438 → 1498 passed (+60) / 회귀 0건 / DB 모델 변경 0건 /
+  Alembic revision 0건 (head 0006_virtual_positions 그대로) / API 라우터 변경
+  0건 / 프런트 변경 0건 / 신규 pip 0건 / 외부 네트워크 호출 0건 / KIS / 자동매매
+  / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건**
 
 ### v0.15 핵심 정책
 

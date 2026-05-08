@@ -1412,16 +1412,28 @@ Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)*
 Approval Trading Safety Layer (paper execution only)**.
 실 KIS 주문 / 실 broker / 자동매매 / FULL_AUTO 0건 (v0.1~v0.14 정책 승계).
 
-### Phase A: SafetySettings + KillSwitch
+### Phase A: SafetySettings + KillSwitch ✅
 
-- [ ] `app/config/settings.py` — 7 신규 필드 (`trading_safety_enabled` /
+- [x] `app/config/settings.py` — 7 신규 필드 (`trading_safety_enabled` /
       `kill_switch_enabled` / `approval_required` / `max_order_amount` /
       `max_daily_order_amount` / `max_position_ratio` / `max_daily_loss_amount`).
       모두 안전 default — kill_switch ON / approval_required True / 한도 보수적
-- [ ] `tests/unit/test_project_structure.py` — 7 신규 default 단언
-- [ ] `tests/unit/test_safety_settings.py` 신규 (~20건) — env override / 경계값 /
-      kill_switch ON 기본 / max_position_ratio in (0, 1] / 7 필드 frozen 단언
-- [ ] **게이트: pytest 1438 → ~1465 (+~27)** — DB / API / 프런트 변경 0건
+- [x] `_as_strict_bool` helper 추가 — `_TRUTHY_TOKENS` / `_FALSY_TOKENS` 명시 매칭,
+      typo / 미인식 토큰은 default 로 fallback (paranoid). `_as_float` helper 추가
+- [x] `__post_init__` 경계 검증 — `max_order_amount > 0` /
+      `max_daily_order_amount > 0` / `0 < max_position_ratio <= 1` /
+      `max_daily_loss_amount >= 0`. 위반 시 ValueError (Settings 생성 자체 차단)
+- [x] `tests/unit/test_project_structure.py` — 7 신규 default 단언 추가
+- [x] `tests/unit/test_safety_settings.py` 신규 60건 — paranoid defaults (4) /
+      env override happy (3 parametrize block) / 숫자 env override / 6 strict-bool
+      typo paranoid (kill_switch + approval_required) / `_as_strict_bool` 단위 (2) /
+      4 boundary validation (parametrize, 14 case 합) / max_position_ratio in-range
+      accepts (5) / max_daily_loss zero allowed / frozen mutation 거부 / v0.14
+      paper_trading_enabled 회귀 / v0.1 feature_real_order_execution 회귀 /
+      Phase A 격리 단언 2건 (Alembic 6 revisions 그대로, app/api/approval_routes.py
+      미존재)
+- [x] **게이트: pytest 1438 → 1498 passed (+60)** — 회귀 0건. DB / Alembic /
+      API / 프런트 변경 0건
 - [ ] `tag v0.15-safety-settings + push`
 
 ### Phase B: OrderCandidate ORM + Repository
