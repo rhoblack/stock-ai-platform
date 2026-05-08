@@ -7,7 +7,45 @@
 
 ---
 
-## 0. v0.15 마감 선언 — Approval Trading Safety Layer
+## 0. v0.16 시작 선언 — Real Order Integration Skeleton & Fill Sync Readiness
+
+**v0.16 cycle 시작.** `v0.15-final` 위에 **RealTradingSettings (5 신규 fields, paranoid
+defaults) + KIS Order Wrapper Skeleton (FakeKisOrderTransport) + RealOrder / RealFill
+ORM (40·41 번째, Alembic 2 revisions) + RealOrderExecutor (dry-run 전용) + Fill Sync
+mock + 15 번째 화면 `/real-orders` (read-only dry-run 결과 표시)** 5 Phase 계획.
+채택 시나리오: **Scenario X (핵심) + Scenario Y Phase 1 (RealOrder/RealFill ORM)**.
+실 KIS 주문 / FULL_AUTO / SMALL_AUTO / 자동매매 v0.16 에서도 0건 유지.
+
+- 시작 일자: **2026-05-08 (Asia/Seoul)**
+- 기준 태그: `v0.15-final`
+- 기준 게이트: pytest **1693 passed** / vitest **201 passed** / e2e **23 passed** / build 그린
+- Alembic head: `0008_approval_audit_logs` (39 테이블) → 목표: `0010_real_fills` (41 테이블)
+- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0016`
+
+### v0.16 시나리오 채택 결론
+
+`PLANS.md` `PLAN-0016` 4 시나리오 비교 후 채택: **Scenario X (핵심) + Scenario Y Phase 1**
+
+| 시나리오 | 내용 | 결정 |
+|---|---|---|
+| **X** | RealTradingSettings + KIS Order Wrapper Skeleton + dry-run RealOrderExecutor | ✅ **핵심 채택** |
+| **Y (Phase 1)** | RealOrder / RealFill ORM (Phase C 로 흡수) — 실 Fill Sync 는 v0.17 | ✅ **ORM 부분 채택** |
+| Z | 실제 KIS 주문 실행까지 포함하는 공격적 시나리오 | ❌ **기각** — 컴플라이언스 / 보안 사이클 미선행, 실주문 누설 위험 |
+| W | Reconciliation / 운영 안정화 중심 | ❌ **v0.17 이연** — 실거래 이력 축적 후 의미 있음 |
+
+### v0.16 Phase 목표
+
+| Phase | 내용 | 예상 태그 |
+|---|---|---|
+| A | RealTradingSettings 5 종 (`REAL_TRADING_ENABLED=false` / `KIS_ORDER_ENABLED=false` / `REAL_ORDER_DRY_RUN=true` / `MAX_REAL_ORDER_AMOUNT` / `MAX_REAL_DAILY_ORDER_AMOUNT`) + safety defaults + 단위 테스트 ~20 건 | `v0.16-real-trading-settings` |
+| B | KIS Order Wrapper Skeleton + `KisOrderClientInterface` ABC + `FakeKisOrderTransport` + AST 가드 + 마스킹 단언 ~15 건 | `v0.16-kis-order-wrapper` |
+| C | `RealOrder` ORM (40 번째) + `RealFill` ORM (41 번째) + Alembic `0009_real_orders` + `0010_real_fills` + Repository 2종 + 통합 테스트 ~40 건 | `v0.16-real-order-orm` |
+| D | `RealOrderExecutor` (dry-run 전용, 7 단계 게이트) + `FillSyncService` skeleton (mock) + 단위 ~30 + 통합 ~10 건 | `v0.16-real-order-executor` |
+| E | 15 번째 화면 `/real-orders` (read-only, `TrendingUp` 아이콘, SafetyBanner / DryRunAttemptsTable) + `RELEASE_NOTES_v0.16.md` + 4 게이트 확인 | `v0.16-final` |
+
+---
+
+## 0-1. v0.15 마감 선언 — Approval Trading Safety Layer
 
 **v0.15 cycle 마감.** `v0.14-final` 위에 **OrderCandidate (38번째 ORM) +
 PreTradeRiskEngine (7 HARD 룰) + SafetySettings (KillSwitch 포함) +

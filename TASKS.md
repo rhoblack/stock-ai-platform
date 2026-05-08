@@ -1652,23 +1652,135 @@ Approval Trading Safety Layer (paper execution only)**.
 
 ---
 
-## v0.16+ — Backlog
+## v0.16 — Real Order Integration Skeleton & Fill Sync Readiness
 
-자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) 참조. 한 줄 요약:
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0016`. 채택 시나리오: **Scenario X (핵심) +
+Scenario Y Phase 1 (RealOrder/RealFill ORM)**. 기준선 `v0.15-final` (pytest 1693 /
+vitest 201 / e2e 23 / build 그린). Alembic head: `0008_approval_audit_logs` → 목표
+`0010_real_fills`.
 
-- **Real Order Integration (v0.16+ 후보)** — KIS order wrapper + 실주문 audit + 컴플라이언스 검토. v0.15 OrderCandidate(status=APPROVED) 가 직접 입력. 별도 보안·컴플라이언스 사이클 선행 필수
-- **Approval Trading 준비** — ✅ v0.15 채택 (OrderCandidate + PreTradeRiskEngine + SafetySettings + Approval Workflow + UI; paper execution only)
+### Phase A — RealTradingSettings + safety defaults
+
+- [ ] `app/config/settings.py`: 5 종 신규 필드 추가
+      (`real_trading_enabled=False` / `kis_order_enabled=False` / `real_order_dry_run=True` /
+      `max_real_order_amount=100_000` / `max_real_daily_order_amount=1_000_000`)
+- [ ] env override 5 종: `REAL_TRADING_ENABLED` / `KIS_ORDER_ENABLED` / `REAL_ORDER_DRY_RUN` /
+      `MAX_REAL_ORDER_AMOUNT` / `MAX_REAL_DAILY_ORDER_AMOUNT`
+- [ ] `__post_init__` 검증: `max_real_order_amount > 0` / `max_real_daily_order_amount > 0` /
+      `max_real_order_amount ≤ max_real_daily_order_amount`
+- [ ] `tests/unit/test_safety_settings.py` v0.16 신규 단위 테스트 ~20 건
+      (paranoid defaults / env override / 경계 검증 / 상호 의존 / v0.15 회귀 유지)
+- [ ] `tests/unit/test_project_structure.py` 5 신규 default 단언 추가
+- [ ] pytest 회귀 0건 확인 / Alembic revision 0건 / DB 모델 변경 0건 / API 라우터 변경 0건
+- [ ] `tag v0.16-real-trading-settings + push`
+
+### Phase B — KIS Order Wrapper Skeleton + FakeKisOrderTransport
+
+- [ ] `app/broker/kis_order_client.py` (신규):
+      `KisOrderClientInterface` ABC (`place_order` / `query_fill_status` / `cancel_order`) +
+      `FakeKisOrderTransport` (항상 fake order_no 반환, 실 httpx 호출 0건)
+- [ ] `app/broker/__init__.py`: `KisOrderClientInterface` / `FakeKisOrderTransport` export 갱신
+- [ ] `tests/unit/test_kis_order_client.py` (신규) ~15 건:
+      FakeKisOrderTransport mock 동작 / AST 가드 (실 httpx 호출 0건 / `from app.providers.kis` 0건) /
+      API key · secret 마스킹 단언
+- [ ] pytest 회귀 0건 확인 / Alembic revision 0건 / DB 모델 변경 0건 / API 라우터 변경 0건
+- [ ] `tag v0.16-kis-order-wrapper + push`
+
+### Phase C — RealOrder / RealFill ORM + Alembic
+
+- [ ] `app/db/models.py`: `RealOrder` (40 번째 ORM) + `RealFill` (41 번째 ORM) 추가
+      (`is_dry_run=True` 기본 / `kis_order_no` nullable /
+      FORBIDDEN 컬럼: `api_key` / `secret` / `account_number` / `raw_response` / `kis_response_raw`)
+- [ ] `alembic/versions/0009_real_orders.py` (신규): 1 테이블 + 인덱스 + FK + downgrade
+- [ ] `alembic/versions/0010_real_fills.py` (신규): 1 테이블 + 인덱스 + FK + downgrade
+- [ ] `app/data/repositories/real_order.py` (신규): `RealOrderRepository`
+      (`create` / `get_by_id` / `list_by_candidate` / `update_status` / `attach_dry_run_result`)
+- [ ] `app/data/repositories/real_fill.py` (신규): `RealFillRepository`
+      (`create` / `list_by_real_order`)
+- [ ] `tests/integration/test_real_order_repository.py` (신규) ~40 건:
+      create validation / FORBIDDEN 컬럼 0건 / status 전이 / cascade delete /
+      Alembic upgrade head + downgrade / `compare_metadata` diff 0건
+- [ ] `tests/integration/test_alembic_migration.py`:
+      `HEAD_REVISION='0010_real_fills'` / `EXPECTED_TABLE_COUNT=41` / spot-check 갱신
+- [ ] pytest 회귀 0건 / Alembic head `0010_real_fills` / 누적 테이블 41 개 확인
+- [ ] `tag v0.16-real-order-orm + push`
+
+### Phase D — RealOrderExecutor dry-run + FillSyncMock
+
+- [ ] `app/broker/real_order_executor.py` (신규):
+      `RealOrderExecutor` + `ExecutorResult` dataclass (7 단계 게이트):
+      1. `candidate.status == APPROVED` 검사
+      2. `PreTradeRiskEngine.check()` 재검사
+      3. `kill_switch_enabled` 재검사
+      4. `real_trading_enabled` 검사 (false → 차단)
+      5. `kis_order_enabled` 검사 (false → 차단)
+      6. `price × quantity ≤ max_real_order_amount` 검사
+      7. `real_order_dry_run=True` → `FakeKisOrderTransport` → `RealOrder(is_dry_run=True)` 저장
+- [ ] `app/broker/fill_sync_service.py` (신규): `FillSyncService` skeleton
+      (`sync_fills(real_order_id)` → `List[RealFill]`, FakeTransport 기반, FULL/PARTIAL/NONE 분기)
+- [ ] `app/broker/__init__.py`: export 갱신
+- [ ] `tests/unit/test_real_order_executor.py` (신규) ~30 건:
+      dry-run 성공 경로 / `REAL_TRADING_DISABLED` 차단 / `KIS_ORDER_DISABLED` 차단 /
+      `KILL_SWITCH` 차단 / `NOT_APPROVED` 차단 / `AMOUNT_EXCEEDED` 차단 /
+      `RISK_FAILED` 차단 / FillSync FULL/PARTIAL/NONE / AST 실 KIS 호출 0건
+- [ ] `tests/integration/test_real_order_executor_integration.py` (신규) ~10 건:
+      DB 연동 dry-run 실행 + `RealOrder(is_dry_run=True)` 저장 확인
+- [ ] pytest 회귀 0건 / Alembic revision 0건 / API 라우터 변경 0건 / 프런트 변경 0건
+- [ ] `tag v0.16-real-order-executor + push`
+
+### Phase E — Real Trading UI (read-only) + 문서 마감
+
+백엔드 (read-only API):
+- [ ] `app/api/real_order_routes.py` (신규):
+      `GET /api/real-orders` + `GET /api/real-orders/{id}` (read-only, POST/PUT/DELETE 0건)
+- [ ] `app/api/schemas.py`: `RealOrderSchema` / `RealFillSchema` / `RealOrderDetailResponse` 추가
+      (FORBIDDEN 응답 필드: `api_key` / `secret` / `account_number` / `raw_response` / `kis_order_no` 선택적)
+- [ ] `app/api/__init__.py` + `app/main.py`: `real_order_router` 등록
+
+프런트엔드 (15 번째 화면 `/real-orders`):
+- [ ] `frontend/src/api/types.ts`: `RealOrder` / `RealFill` / `RealOrderDetailResponse` 타입 추가
+      (FORBIDDEN 필드 0건)
+- [ ] `frontend/src/api/realOrders.ts` (신규): 2 fetch 함수
+- [ ] `frontend/src/hooks/useRealOrders.ts` (신규): TanStack Query 2 hooks
+- [ ] `frontend/src/pages/RealOrders/index.tsx` (신규, 15 번째 화면):
+      `RealOrdersPage` / `SafetyBanner` (KILL_SWITCH / REAL_TRADING / KIS_ORDER / DRY_RUN 상태 표시) /
+      `DryRunAttemptsTable` / `RealOrderDetail`. "실주문 실행" 버튼 없음.
+      버튼 라벨: "dry-run 시도" 등 안전 어휘만
+- [ ] `frontend/src/router.tsx` + `frontend/src/components/layout/Sidebar.tsx`:
+      15 번째 메뉴 `/real-orders` (`TrendingUp` 아이콘, "실주문 현황 (β)"). footer "v0.16 dashboard" 갱신
+- [ ] `frontend/src/tests/RealOrders.test.tsx` (신규) ~10 건:
+      page render / SafetyBanner 상태 배지 / DryRunAttemptsTable / forbidden DOM 토큰 0건 / 자동매매 CTA 0건
+- [ ] `frontend/src/tests/mswServer.ts`: real-orders mock 2 종 추가
+- [ ] `frontend/e2e/dashboard.spec.ts`: sidebar 14→15 + `/real-orders` navigation +
+      forbidden DOM 토큰 ("실주문 실행" / "자동매매") 0건 단언
+
+문서:
+- [ ] `RELEASE_NOTES_v0.16.md` (신규) — Phase A~E 산출물 + 최종 게이트 + 안전 정책 + v0.17 후보
+- [ ] `README.md` v0.16-final 배너 / 기능 목록 / 누적 사이클 표 / 회귀 기준선 갱신
+- [ ] `PROJECT_STATUS.md` §0 v0.16 마감 선언 (시작 선언 → 마감 선언으로 갱신)
+- [ ] `ROADMAP.md` v0.16 행 ✅ 마감
+- [ ] `TASKS.md` / `ARCHITECTURE.md` / `TESTING.md` / `API_SPEC.md` / `INTEGRATION_RUNBOOK.md` 갱신
+- [ ] 최종 4 게이트 확인 — pytest / vitest / e2e / build 모두 그린
+- [ ] `tag v0.16-final + push`
+
+---
+
+## v0.17+ — Backlog
+
+자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) 참조.
+
+- **Fill Sync 실 연동 (v0.17 핵심 후보)** — KIS 체결 조회 실 transport + RealFill 실 저장. `KIS_ORDER_ENABLED=true` 시에만 동작
+- **Reconciliation (v0.17 후보)** — 내부 RealOrder 기록 vs KIS 계좌 실 포지션 비교. mismatch 감지 + 주문 차단 후보
+- **PreTradeRiskEngine 신규 룰 (v0.17 후보)** — 호가 jump 검사 / 시간외 차단 / 종목별 일일 한도 등
+- **v1.0 Small Approval Trading Release** — 실 KIS 주문 첫 실행 (소액, APPROVED 후보만). `KIS_ORDER_ENABLED=true` + `REAL_ORDER_DRY_RUN=false` 최초 활성화
 - **ScoringEngine 본 weight 보강** — v0.13/v0.14 validation report 결과 기반 (누적 데이터 6개월+ 필요)
-- **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위 시각화 layer (외부 인프라)
+- **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위 시각화 layer
 - **ProviderHealthMonitor 영속화** — DB / Redis 백업으로 재시작 후 history 유지
-- **인증 고도화** — refresh token / 다중 사용자 / OAuth / RBAC (단일 사용자 운영 검증 후)
-- **CSP / rate limit 튜닝** — 실 트래픽 수집 후 정책 수립
-- **LLM sentiment / 자동 요약** — 룰 기반 검증 후 (외부 LLM API 비용 / 보안 / 라이선스)
-- **WebSocket / SSE 실시간 갱신** — Provider Health / 백테스트 진행 (현재 polling)
-- **`/api/health/jobs` 분리 + Provider toggle GUI** — 인증 + 보안 검토 동반
+- **인증 고도화** — refresh token / 다중 사용자 / OAuth / RBAC
+- **LLM sentiment / 자동 요약** — 룰 기반 검증 후
+- **WebSocket / SSE 실시간 갱신** — Provider Health / 백테스트 진행
 - **모바일 / 태블릿 / lightweight-charts 마이그레이션** — UX 고도화
-- **Watchlist 가격 알림 / target return alert** — 알림 시스템 별도 cycle
-- **Future Backlog (자동매매)** — APPROVAL / SMALL_AUTO / FULL_AUTO 모두 별도 보안·컴플라이언스 사이클 선행 필수
+- **Future Backlog (자동매매)** — FULL_AUTO / SMALL_AUTO 모두 별도 보안·컴플라이언스 사이클 선행 필수
 
 ## 완료 기준
 
