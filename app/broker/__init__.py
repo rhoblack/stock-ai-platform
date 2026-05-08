@@ -10,6 +10,8 @@ Phase B (v0.16) introduces ``KisOrderClientInterface`` ABC and
 Real HTTP transport (``KisHttpOrderTransport``) is Phase D scope.
 """
 
+from app.broker.fill_sync_service import FillSyncResult, FillSyncService
+from app.broker.real_order_executor import ExecutorResult, RealOrderExecutor
 from app.broker.kis_order_client import (
     FakeKisOrderTransport,
     KisCancelResult,
@@ -29,6 +31,11 @@ from app.broker.simulation_broker import (
 
 
 __all__ = [
+    # v0.16 Phase D — Real order executor + fill sync (dry-run only)
+    "ExecutorResult",
+    "FillSyncResult",
+    "FillSyncService",
+    "RealOrderExecutor",
     # v0.16 Phase B — KIS order client skeleton
     "FakeKisOrderTransport",
     "KisCancelResult",

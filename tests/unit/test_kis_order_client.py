@@ -380,9 +380,9 @@ def test_v016_phase_c_real_order_orm_exists() -> None:
     )
 
 
-def test_v016_phase_b_real_order_executor_not_yet_created() -> None:
-    """Phase B must NOT create RealOrderExecutor (Phase D scope)."""
+def test_v016_phase_d_real_order_executor_exists() -> None:
+    """Phase D must have created RealOrderExecutor."""
     broker_dir = pathlib.Path(__file__).resolve().parents[2] / "app" / "broker"
-    assert not (broker_dir / "real_order_executor.py").exists(), (
-        "real_order_executor.py must not exist in Phase B — it is a Phase D artefact"
+    assert (broker_dir / "real_order_executor.py").exists(), (
+        "real_order_executor.py must exist after Phase D"
     )

@@ -528,8 +528,9 @@ def test_real_order_repository_has_no_raw_response_method():
 # ---------------------------------------------------------------------------
 
 
-def test_v016_phase_c_real_order_executor_not_yet_created():
+def test_v016_phase_d_real_order_executor_exists():
+    """Phase D must have created real_order_executor.py."""
     broker_dir = Path(__file__).resolve().parents[2] / "app" / "broker"
-    assert not (broker_dir / "real_order_executor.py").exists(), (
-        "real_order_executor.py must not exist in Phase C — it is a Phase D artefact"
+    assert (broker_dir / "real_order_executor.py").exists(), (
+        "real_order_executor.py must exist after Phase D"
     )

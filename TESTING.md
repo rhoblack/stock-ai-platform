@@ -11,7 +11,7 @@ provider transport injection 3중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `python -m pytest -q` | **1693 passed** (v0.15 Phase D: 1622 → 1693, +71 — Phase E 는 frontend only이므로 backend 변경 0건) |
+| backend pytest | `python -m pytest -q` | **1905 passed** (v0.16 Phase D: 1858 → 1905, +47 — RealOrderExecutor 8-gate + FillSyncService mock) |
 | frontend vitest | `cd frontend && npm run test -- --run` | **201 passed** (v0.15 Phase E: 186 → 201, +15 — `Approvals.test.tsx` 신규 15건) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
 | Playwright e2e | `cd frontend && npm run e2e` | **23 passed** (v0.15 Phase E: 22 → 23, +1 — `/approvals` 14번째 화면 happy-path + forbidden 검사) |
