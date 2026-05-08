@@ -314,16 +314,16 @@ def test_phase_b_does_not_add_approval_routes_module() -> None:
     )
 
 
-def test_phase_b_does_not_add_pre_trade_risk_engine_module() -> None:
-    """Phase B must not create the v0.15 Phase C risk engine module yet."""
+def test_phase_c_pre_trade_risk_engine_module_exists() -> None:
+    """v0.15 Phase C introduces ``app/risk/pre_trade_risk_engine.py``.
+
+    Phase D's ApprovalService will import :class:`PreTradeRiskEngine` and
+    its result dataclasses; this guard catches accidental deletion.
+    """
     from pathlib import Path
 
     risk_dir = (
         Path(__file__).resolve().parents[2] / "app" / "risk"
     )
-    assert not risk_dir.exists() or not (
-        risk_dir / "pre_trade_risk_engine.py"
-    ).exists(), (
-        "Phase B must not introduce app/risk/pre_trade_risk_engine.py — that "
-        "is Phase C scope."
-    )
+    assert (risk_dir / "__init__.py").exists()
+    assert (risk_dir / "pre_trade_risk_engine.py").exists()

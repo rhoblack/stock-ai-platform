@@ -1,18 +1,40 @@
 # Architecture
 
-> 본 문서는 **v0.15 Phase B 시점** 기준으로 갱신된다 (`v0.15-order-candidate`
+> 본 문서는 **v0.15 Phase C 시점** 기준으로 갱신된다 (`v0.15-pre-trade-risk`
 > 태그 예정). v0.14 paper 시뮬레이션 위에, v0.15 의 Approval Trading Safety
-> Layer 가 Phase A (SafetySettings 7종 + KillSwitch paranoid default) 와
-> Phase B (`OrderCandidate` 38번째 테이블 + 8-state 머신 + Alembic 0007) 까지
-> 진행되었다. **OrderCandidate** 는 추천 / 전략 / paper / 수동 입력으로부터의
-> 주문 후보를 staging 하며, `virtual_order_id` FK 가 paper 실행 결과에만 연결
-> 된다 (실 KIS / 실 broker / 실계좌 컬럼 0건). 8-state 머신
-> (`DRAFT → RISK_CHECKING → (RISK_REJECTED | PENDING_APPROVAL) → (APPROVED →
-> EXECUTED_PAPER | REJECTED | EXPIRED)`) 은 `OrderCandidateRepository.update_status`
-> 가 강제하며 terminal 4종은 outgoing edge 0건. PreTradeRiskEngine (Phase C),
-> ApprovalAuditLog + Approval API (Phase D), 14번째 프런트 화면 `/approvals`
-> (Phase E) 는 후속 phase 책임. 실 KIS 주문 / 자동매매 / FULL_AUTO / SMALL_AUTO /
-> APPROVAL 실거래 코드 0건은 v0.1 ~ v0.15 일관 정책으로 유지된다.
+> Layer 가 Phase A (SafetySettings 7종 + KillSwitch paranoid default) →
+> Phase B (`OrderCandidate` 38번째 테이블 + 8-state 머신 + Alembic 0007) →
+> Phase C (`PreTradeRiskEngine` 7 HARD 룰 + `RiskCheckResult` JSON-safe
+> dataclass) 까지 진행되었다.
+>
+> **PreTradeRiskEngine (`app/risk/pre_trade_risk_engine.py`)**: read-only —
+> DB write 0건. `evaluate(session, candidate, *, now=None)` 가 7 룰을
+> 단락 회피 없이 모두 누적해 `RiskCheckResult(policy_version="pre-trade-v1",
+> passed, violations, checked_at)` 를 돌려준다. 7 HARD 룰:
+> ① **account_paper_enabled** — VirtualAccount.paper_trading_enabled=True 강제,
+> ② **kill_switch_off** — `Settings.kill_switch_enabled=False` 명시 opt-out 필요,
+> ③ **per_symbol_limit** — (account, symbol) 활성 후보 합 + 신규 ≤
+> `max_order_amount`, ④ **daily_total_limit** — KST 오늘 활성 후보 합 + 신규 ≤
+> `max_daily_order_amount`, ⑤ **position_ratio_limit** — BUY 시 (기존 포지션
+> 시장가치 + estimated) / 총평가액 ≤ `max_position_ratio`, ⑥ **daily_loss_limit**
+> — 최신 `VirtualPnLSnapshot.realized_pnl` ≥ `-max_daily_loss_amount`,
+> ⑦ **duplicate_recent** — 최근 5분 내 동일 (account, symbol, side, quantity)
+> 활성 후보 부재. 활성 정의 `ACTIVE_CANDIDATE_STATUSES = {DRAFT, RISK_CHECKING,
+> PENDING_APPROVAL, APPROVED}` — terminal 4종 (RISK_REJECTED / REJECTED /
+> EXPIRED / EXECUTED_PAPER) 은 누적 / duplicate 에서 제외되어 historical reject 가
+> 신규 시도를 막지 않는다.
+>
+> **데이터 소스**: 모든 룰이 로컬 DB read 만 — `VirtualAccount` /
+> `VirtualPosition` × `daily_prices.close` 폴백 / `VirtualPnLSnapshot.total_value`
+> 우선 (snapshot 부재 시 cash_balance fallback) / `OrderCandidate` 활성 행. AST
+> 회귀 단언이 KIS / DART / RSS / requests / httpx / urllib import 0건을 강제.
+>
+> **Phase D / E 책임**: ApprovalService 가 `engine.evaluate(...).to_dict()` 의
+> 결과를 `OrderCandidateRepository.attach_risk_result(...)` 로 영속하고
+> RISK_REJECTED ↔ PENDING_APPROVAL 상태 전이를 결정한다. ApprovalAuditLog +
+> Approval API 7종 (Phase D) + 14번째 프런트 화면 `/approvals` (Phase E) 는 후속.
+> 실 KIS 주문 / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건은
+> v0.1 ~ v0.15 일관 정책으로 유지된다.
 >
 > 본 문서는 **v0.14 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.14-final`).
 > v0.14 5 Phase (Backtest Export CLI + ProviderScorePolicy 통합 → SimulationBroker +
@@ -185,7 +207,8 @@ app/
 ├─ api/                     # FastAPI routers (23+ GET + 5 auth/watchlist POST/DELETE v0.8 + 6 watchlist/pref PATCH/PUT v0.9)
 ├─ scheduler/               # APScheduler + run_job wrapper + 9 jobs
 ├─ broker/                  # v0.14 Phase B — SimulationBroker (BrokerInterface 첫 구현체, paper trading 전용 / KIS API 0건). v0.14 Phase C 가 execute_pending_orders 본 구현 추가. 실 KIS / 자동매매 broker 는 여전히 placeholder
-└─ paper/                   # v0.14 Phase C — PnLTracker (paper trading 전용 PnL / fill 엔진, daily_prices.close 기준 가격, 외부 호출 0건)
+├─ paper/                   # v0.14 Phase C — PnLTracker (paper trading 전용 PnL / fill 엔진, daily_prices.close 기준 가격, 외부 호출 0건)
+└─ risk/                    # v0.15 Phase C — PreTradeRiskEngine (7 HARD 룰, read-only DB read, RiskCheckResult JSON-safe). policy_version="pre-trade-v1". KIS / DART / RSS / requests / httpx import 0건
 
 frontend/                   # v0.2 Vite/React/TS PC 대시보드 + v0.3~v0.14 누적
 ├─ src/

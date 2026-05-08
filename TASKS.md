@@ -1478,22 +1478,53 @@ Approval Trading Safety Layer (paper execution only)**.
       Alembic head `0007_order_candidates`. KIS / 외부 네트워크 호출 0건
 - [ ] `tag v0.15-order-candidate + push`
 
-### Phase C: PreTradeRiskEngine
+### Phase C: PreTradeRiskEngine ✅
 
-- [ ] `app/risk/__init__.py` 신규 — `PreTradeRiskEngine` / `RiskCheckResult` /
-      `RiskViolation` export
-- [ ] `app/risk/pre_trade_risk_engine.py` 신규 — 6 hard 룰 (kill_switch_off /
-      per_symbol_limit / daily_total_limit / position_ratio_limit /
-      daily_loss_limit / duplicate_recent + account_paper_enabled).
-      `POLICY_VERSION="pre-trade-v1"`
-- [ ] `tests/unit/test_pre_trade_risk_engine.py` 신규 (~30건) — 룰별 happy /
-      boundary / off-by-one / kill_switch ON / max_position_ratio 0.2 정확 검증 /
-      duplicate window 4분59초 vs 5분0초 경계 / RiskCheckResult 직렬화
-- [ ] `tests/integration/test_pre_trade_risk_integration.py` 신규 (~10건) —
-      VirtualAccount / VirtualPosition 시드 후 BUY / SELL 시나리오 + 룰 조합
-- [ ] AST 단언 — `pre_trade_risk_engine.py` 가 KIS / DART / RSS / requests /
-      httpx import 0건
-- [ ] **게이트: pytest ~1505 → ~1545 (+~40)** — DB 모델 변경 0건. API / 프런트 변경 0건
+- [x] `app/risk/__init__.py` 신규 — `PreTradeRiskEngine` / `RiskCheckResult` /
+      `RiskViolation` / `ACTIVE_CANDIDATE_STATUSES` / `DUPLICATE_RECENT_WINDOW` /
+      `POLICY_VERSION` export
+- [x] `app/risk/pre_trade_risk_engine.py` 신규 — 7 HARD 룰 (account_paper_enabled
+      / kill_switch_off / per_symbol_limit / daily_total_limit /
+      position_ratio_limit / daily_loss_limit / duplicate_recent).
+      `POLICY_VERSION="pre-trade-v1"`. 룰들이 단락 회피 (short-circuit) 없이 모두
+      누적되어 `RiskCheckResult.violations` 에 들어감
+- [x] **결과 dataclass**: `RiskViolation` (rule_id / severity=HARD / message /
+      details dict) + `RiskCheckResult` (policy_version / passed / violations
+      tuple / checked_at). `to_dict()` / `as_dict()` 둘 다 JSON-safe — Decimal /
+      datetime / date 모두 문자열 변환
+- [x] **활성 후보 범위** (`ACTIVE_CANDIDATE_STATUSES`): DRAFT / RISK_CHECKING /
+      PENDING_APPROVAL / APPROVED. terminal 4종 (RISK_REJECTED / REJECTED /
+      EXPIRED / EXECUTED_PAPER) 제외 — 과거 거절이 신규 시도를 막지 않음
+- [x] **금액 / 비율 정책**: Decimal 기반. position_ratio 의 total_value 는 최신
+      `VirtualPnLSnapshot.total_value` 우선, snapshot 부재 시 cash_balance fallback.
+      포지션 시장가치는 `VirtualPosition` × `daily_prices.get_latest_by_symbol`
+      close, 가격 부재 시 avg_cost (보수적 fallback). SELL 은 비중 룰 면제
+- [x] **KST 일일 누적**: `_kst_date(now)` 으로 KST [00:00, 24:00) 변환 후
+      `(created_at >= kst_start) AND (created_at < kst_end)` SQL filter
+- [x] `tests/unit/test_pre_trade_risk_engine.py` 신규 32건 — `POLICY_VERSION` /
+      `ACTIVE_CANDIDATE_STATUSES` / `DUPLICATE_RECENT_WINDOW` 상수 단언 / JSON
+      round-trip / `as_dict` alias / RiskViolation Decimal 직렬화 / 룰 1~7
+      각각 happy + boundary + violation / per_symbol cap exact / per_symbol
+      cap+0.0001 over / per_symbol 활성 누적 / per_symbol terminal 미집계 /
+      daily_total cap exact + over / position_ratio 0.20 exact pass /
+      position_ratio 0.20+ε reject / position_ratio SELL 면제 / position_ratio
+      snapshot total_value 사용 / position_ratio 기존 포지션 시장가치 합산 /
+      daily_loss no-snapshot pass / daily_loss `-cap` floor pass /
+      daily_loss `-cap-1` reject / duplicate 4m59s reject / duplicate 5m exact
+      pass / duplicate terminal 미집계 / duplicate side 구분 / multi-violation
+      누적 / RiskCheckResult / RiskViolation frozen / AST forbidden import 0건
+- [x] `tests/integration/test_pre_trade_risk_integration.py` 신규 8건 — happy
+      path 7-rule pass / 엔진 무변경 (status / risk_check_result_json 미변경) /
+      `attach_risk_result(result.to_dict())` round-trip happy + with violations /
+      multi-rule fail 누적 (account+kill_switch+per_symbol+duplicate) /
+      position_ratio 가 `VirtualPosition` + `DailyPrice` + `VirtualPnLSnapshot`
+      모두 사용 / daily_loss 가 최신 snapshot 읽기 / duplicate account-scoped /
+      KST day boundary 어제 누적 미집계
+- [x] `tests/unit/test_safety_settings.py` — Phase B 가드 갱신 → Phase C 가드:
+      `app/risk/__init__.py` + `pre_trade_risk_engine.py` **존재** 단언으로 전환
+- [x] **게이트: pytest 1581 → 1622 passed (+41)** — 회귀 0건. DB 모델 변경 0건.
+      Alembic head `0007_order_candidates` 그대로. API / 프런트 변경 0건.
+      KIS / 외부 네트워크 호출 0건
 - [ ] `tag v0.15-pre-trade-risk + push`
 
 ### Phase D: Approval Workflow API + Audit Log + Service

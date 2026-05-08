@@ -39,7 +39,7 @@ Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `Simul
 |---|---|---|---|
 | A | SafetySettings + KillSwitch + 7 신규 settings (안전 default) | `v0.15-safety-settings` | **1438→1498 (+60) ✅** |
 | B | OrderCandidate ORM (38번째) + Repository + Alembic 0007 + 8-state 머신 | `v0.15-order-candidate` | **1498→1581 (+83) ✅** |
-| C | PreTradeRiskEngine (6 hard 룰) + RiskCheckResult | `v0.15-pre-trade-risk` | **~1538→~1578 (+~40)** |
+| C | PreTradeRiskEngine (6 hard 룰) + RiskCheckResult | `v0.15-pre-trade-risk` | **1581→1622 (+41) ✅** |
 | D | Approval Workflow API 7종 + ApprovalAuditLog (39번째) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) | `v0.15-approval-api` | **~1578→~1623 (+~45)** |
 | E | 14번째 프런트 화면 `/approvals` + `RELEASE_NOTES_v0.15.md` + 4 게이트 확인 | `v0.15-final` | vitest **186→~200 (+~14)** / e2e **22→23 (+1)** |
 
@@ -103,6 +103,35 @@ Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `Simul
   `0007_order_candidates` / `compare_metadata` diff 0건 / API 라우터 변경 0건 /
   프런트 변경 0건 / 신규 pip 0건 / KIS API / 외부 네트워크 호출 0건 / 실 KIS /
   자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건**
+
+### v0.15 Phase C 완료 (2026-05-08)
+
+- `app/risk/__init__.py` + `app/risk/pre_trade_risk_engine.py` 신규: PreTradeRiskEngine
+  + RiskCheckResult / RiskViolation dataclass + 7 HARD 룰 (account_paper_enabled
+  / kill_switch_off / per_symbol_limit / daily_total_limit / position_ratio_limit
+  / daily_loss_limit / duplicate_recent). `POLICY_VERSION="pre-trade-v1"`.
+  엔진은 read-only — DB write 0건, candidate 의 status / risk_check_result_json
+  미변경. 룰들은 short-circuit 없이 모두 누적되어 위반 사항 전체가 한 번에 응답
+- 데이터 소스: `VirtualAccount` (paper_trading_enabled / cash_balance) /
+  `VirtualPosition` × `daily_prices` close / `VirtualPnLSnapshot` (total_value 우선)
+  / `OrderCandidate` (활성 4종 누적). 활성 정의 `ACTIVE_CANDIDATE_STATUSES =
+  {DRAFT, RISK_CHECKING, PENDING_APPROVAL, APPROVED}` — terminal 4종은 누적/
+  duplicate에서 제외
+- KST 일일 누적: `_kst_date(now)` 으로 KST [00:00, 24:00) 변환 후 SQL filter
+- duplicate window: 정확히 5분, `created_at > now - 5min` 단순 비교 (5분 0초 경계는
+  통과)
+- `RiskCheckResult.to_dict()` / `as_dict()` 둘 다 JSON-safe — `OrderCandidateRepository
+  .attach_risk_result(result=...)` 에 그대로 입력 가능
+- `tests/unit/test_pre_trade_risk_engine.py` 신규 32건 + `tests/integration/test_pre_trade_risk_integration.py`
+  신규 8건 — 룰별 happy / boundary / violation / multi-violation 누적 / JSON 직렬화 /
+  attach_risk_result round-trip / 엔진 read-only 단언 / KST day boundary /
+  account-scoped duplicate / forbidden import AST 0건
+- `tests/unit/test_safety_settings.py` — Phase B 가드 (모듈 미존재 단언) → Phase C
+  가드 (모듈 존재 단언) 로 전환
+- **실제 게이트: pytest 1581 → 1622 passed (+41) / 회귀 0건 / DB 모델 변경 0건 /
+  Alembic head `0007_order_candidates` 그대로 (revision 0건) / API 라우터 변경
+  0건 / 프런트 변경 0건 / 신규 pip 0건 / KIS API / 외부 네트워크 호출 0건 / 실
+  KIS / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건**
 
 ### v0.15 핵심 정책
 
