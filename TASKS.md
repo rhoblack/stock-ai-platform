@@ -1384,24 +1384,23 @@ Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)*
 - [x] **게이트: pytest 1405 → 1438 passed (+33)** — 회귀 0건. KIS API / 외부 네트워크 호출 0건. 프런트 변경 0건. Alembic revision 0건
 - [ ] `tag v0.14-paper-api + push`
 
-### Phase E: Frontend 13번째 화면 + 마감 문서
+### Phase E: Frontend 13번째 화면 + 마감 문서 ✅
 
-- [ ] `frontend/src/api/types.ts` — Paper Trading 타입 추가
-- [ ] `frontend/src/api/paper.ts` 신규 — fetchPaperAccount / fetchPaperOrders / fetchPaperPositions / fetchPaperPnl / submitPaperOrder / cancelPaperOrder
-- [ ] `frontend/src/hooks/usePaperTrading.ts` 신규 — 6 TanStack Query hooks
-- [ ] `frontend/src/pages/PaperTrading/index.tsx` 신규 (13번째 화면 `/paper`) — VirtualAccountCard / PaperOrderForm / VirtualPositionsTable / PnLChart / PaperOrdersTable
-- [ ] `frontend/src/router.tsx` — PaperTradingPage lazy + `/paper` route
-- [ ] `frontend/src/components/layout/Sidebar.tsx` — `TrendingUp` 아이콘 + `페이퍼 트레이딩 (β)` 메뉴 (13번째)
-- [ ] `frontend/src/tests/mswServer.ts` — paper GET 핸들러 추가 (default empty)
-- [ ] `frontend/src/tests/PaperTrading.test.tsx` 신규 — vitest ~10건 (page wrapper / empty / happy / no-automation guard)
-- [ ] `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts` — sidebar 12→13 menus + `/paper` navigation
-- [ ] `RELEASE_NOTES_v0.14.md` 신규
-- [ ] `README.md` v0.14 갱신 (배너 / 기능 목록 / 누적 사이클 표 / 회귀 기준선)
-- [ ] `PROJECT_STATUS.md` §0 v0.14 마감 선언
-- [ ] `ROADMAP.md` v0.14 행 ✅ 마감
-- [ ] `TESTING.md` 기준선 갱신
-- [ ] `ARCHITECTURE.md` / `API_SPEC.md` / `INTEGRATION_RUNBOOK.md` / `DB_SCHEMA.md` v0.14 반영
-- [ ] 최종 4 게이트 확인 (pytest ~1393 / vitest ~185 / e2e 22 / build)
+- [x] `frontend/src/api/types.ts` — Paper Trading 타입 (`PaperAccount` / `PaperOrder` / `PaperPosition` / `PaperPnLSnapshot` / `CreatePaperOrderRequest` / `PaperOrderResponse` / `PaperStatusResponse`) 추가
+- [x] `frontend/src/api/paper.ts` 신규 — `fetchPaperAccount` / `fetchPaperOrders` / `fetchPaperPositions` / `fetchPaperPnl` / `submitPaperOrder` / `cancelPaperOrder`. 호출 URL `/api/paper/*` 6종만
+- [x] `frontend/src/hooks/usePaperTrading.ts` 신규 — `usePaperAccount` / `usePaperOrders` / `usePaperPositions` / `usePaperPnl` (read, retry: false) + `useSubmitPaperOrder` / `useCancelPaperOrder` (mutation, paper namespace 전체 invalidate)
+- [x] `frontend/src/pages/PaperTrading/index.tsx` 신규 (13번째 화면 `/paper`) — VirtualAccountCard / PaperOrderForm / VirtualPositionsTable / PnLTable / PaperOrdersTable + 정책 배너 + 503 disabled 안내. 버튼 라벨 "페이퍼 주문 만들기"
+- [x] `frontend/src/router.tsx` — PaperTradingPage lazy + `/paper` route
+- [x] `frontend/src/components/layout/Sidebar.tsx` — `LineChart` 아이콘 + `페이퍼 트레이딩 (β)` 메뉴 (13번째). footer 라벨 v0.14 갱신
+- [x] `frontend/src/tests/mswServer.ts` — paper 6 mock 추가 (POST/DELETE 기본 503)
+- [x] `frontend/src/tests/PaperTrading.test.tsx` 신규 — vitest 11건 (page wrapper / account happy / 404 empty / positions / pnl / orders / disabled 503 / submit success / cancel mutation / forbidden DOM 토큰 0건 / 자동매매 CTA 0건)
+- [x] `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts` — sidebar 12→13 menus + `/paper` happy-path navigation + raw payload forbidden 검사 + disabled banner 시나리오
+- [x] `RELEASE_NOTES_v0.14.md` 신규 — Phase A~E 산출물 + 최종 게이트 + 안전 정책 + 알려진 한계 + v0.15 후보
+- [x] `README.md` v0.14-final 배너 + 기능 목록 + 누적 사이클 표 + 13 화면 / 1438 / 186 / 22 갱신
+- [x] `PROJECT_STATUS.md` §0 v0.14 마감 선언 + Phase E 완료 블록 추가
+- [x] `ROADMAP.md` v0.14 행 ✅ 마감 + Phase 표 갱신
+- [x] `ARCHITECTURE.md` / `TESTING.md` v0.14 Phase E 반영
+- [x] 최종 4 게이트 확인 — backend pytest **1438** / frontend vitest **186** (+11) / Playwright e2e **22** (+1) / build 그린
 - [ ] `tag v0.14-final + push`
 
 ---

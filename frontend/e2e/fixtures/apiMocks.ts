@@ -819,6 +819,102 @@ const VALIDATION_REPORT_EMPTY = {
   },
 }
 
+// v0.14 Phase E — Paper / Simulation Trading e2e fixture.
+// VirtualAccount with one open position and a recent fill so the page
+// renders all of its sections (account / positions / pnl / orders).
+const PAPER_ACCOUNT = {
+  id: 1,
+  name: 'paper',
+  currency: 'KRW',
+  paper_trading_enabled: true,
+  initial_cash: '10000000',
+  cash_balance: '9899935',
+  market_value: '110000',
+  total_value: '10009935',
+  realized_pnl: '0',
+  unrealized_pnl: '9935',
+  snapshot_date: '2026-05-08',
+  created_at: '2026-05-08T00:00:00',
+  updated_at: '2026-05-08T16:30:00',
+}
+
+const PAPER_ORDERS = {
+  orders: [
+    {
+      id: 101,
+      account_id: 1,
+      symbol: '005930',
+      side: 'BUY',
+      quantity: 10,
+      order_type: 'MARKET',
+      limit_price: null,
+      status: 'FILLED',
+      idempotency_key: null,
+      reason: null,
+      note: null,
+      created_at: '2026-05-08T15:55:00',
+      updated_at: '2026-05-08T16:00:00',
+    },
+    {
+      id: 102,
+      account_id: 1,
+      symbol: '005930',
+      side: 'SELL',
+      quantity: 5,
+      order_type: 'LIMIT',
+      limit_price: '12000',
+      status: 'CREATED',
+      idempotency_key: 'manual-1',
+      reason: null,
+      note: null,
+      created_at: '2026-05-08T15:58:00',
+      updated_at: '2026-05-08T15:58:00',
+    },
+  ],
+  total: 2,
+  limit: 50,
+}
+
+const PAPER_POSITIONS = {
+  positions: [
+    {
+      id: 1,
+      account_id: 1,
+      symbol: '005930',
+      quantity: 10,
+      avg_cost: '10006.5',
+      realized_pnl: '0',
+      last_close: '11000',
+      market_value: '110000',
+      unrealized_pnl: '9935',
+      updated_at: '2026-05-08T16:00:00',
+    },
+  ],
+  total: 1,
+}
+
+const PAPER_PNL = {
+  snapshots: [
+    {
+      snapshot_date: '2026-05-07',
+      cash_balance: '10000000',
+      market_value: '0',
+      total_value: '10000000',
+      realized_pnl: '0',
+      unrealized_pnl: '0',
+    },
+    {
+      snapshot_date: '2026-05-08',
+      cash_balance: '9899935',
+      market_value: '110000',
+      total_value: '10009935',
+      realized_pnl: '0',
+      unrealized_pnl: '9935',
+    },
+  ],
+  total: 2,
+}
+
 const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; method?: string }> = [
   { pattern: /\/health$/, payload: HEALTH },
   // v0.8 Phase D — auth + watchlist
@@ -860,6 +956,17 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; meth
   { pattern: /\/api\/validation\/report\/by-regime(\?|$)/, payload: { count: 0, items: [] } },
   { pattern: /\/api\/validation\/report\/by-sector(\?|$)/, payload: { count: 0, items: [] } },
   { pattern: /\/api\/validation\/report(\?|$)/, payload: VALIDATION_REPORT_EMPTY },
+  // v0.14 Phase E — Paper / Simulation Trading (GET 4종).  POST/DELETE are
+  // intentionally NOT mocked: the e2e fixture treats PAPER_TRADING_ENABLED
+  // as false so the order form's mutation should land on the
+  // bottom-of-the-list 404 fallback (acting like a 503-ish disabled response
+  // for the dashboard) — preventing accidental "real order" code paths.
+  { pattern: /\/api\/paper\/account(\?|$)/, payload: PAPER_ACCOUNT },
+  { pattern: /\/api\/paper\/orders\/\d+$/, payload: { detail: 'paper trading disabled' }, status: 503, method: 'DELETE' },
+  { pattern: /\/api\/paper\/orders$/, payload: { detail: 'paper trading disabled' }, status: 503, method: 'POST' },
+  { pattern: /\/api\/paper\/orders(\?|$)/, payload: PAPER_ORDERS },
+  { pattern: /\/api\/paper\/positions(\?|$)/, payload: PAPER_POSITIONS },
+  { pattern: /\/api\/paper\/pnl(\?|$)/, payload: PAPER_PNL },
 ]
 
 export async function installApiMocks(page: Page): Promise<void> {

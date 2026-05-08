@@ -52,6 +52,10 @@ const LoginPage = lazy(() =>
 const ValidationPage = lazy(() =>
   import('./pages/Validation').then(m => ({ default: m.ValidationPage })),
 )
+// v0.14 Phase E — Paper / Simulation Trading dashboard.
+const PaperTradingPage = lazy(() =>
+  import('./pages/PaperTrading').then(m => ({ default: m.PaperTradingPage })),
+)
 
 export function AppRoutes() {
   return (
@@ -75,6 +79,7 @@ export function AppRoutes() {
         <Route path="backtest" element={<BacktestPage />} />
         <Route path="watchlist" element={<WatchlistPage />} />
         <Route path="validation" element={<ValidationPage />} />
+        <Route path="paper" element={<PaperTradingPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:jobId" element={<JobsPage />} />
         <Route path="settings" element={<SettingsPage />} />

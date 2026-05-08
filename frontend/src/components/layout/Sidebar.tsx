@@ -6,6 +6,7 @@ import {
   FlaskConical,
   History,
   LayoutDashboard,
+  LineChart,
   ListTree,
   ScrollText,
   Search,
@@ -23,7 +24,7 @@ interface NavItem {
   matchPrefix?: string
 }
 
-// 12 dashboard menus (v0.13 Phase D adds 검증 리포트).
+// 13 dashboard menus (v0.14 Phase E adds 페이퍼 트레이딩).
 const NAV_ITEMS: NavItem[] = [
   { to: '/today', label: '오늘의 리포트', Icon: LayoutDashboard },
   { to: '/recommendations', label: '추천 종목', Icon: BarChart3 },
@@ -35,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/backtest', label: '백테스트 (β)', Icon: FlaskConical },
   { to: '/watchlist', label: '관심종목', Icon: Star },
   { to: '/validation', label: '검증 리포트', Icon: ClipboardCheck },
+  { to: '/paper', label: '페이퍼 트레이딩 (β)', Icon: LineChart },
   { to: '/jobs', label: '시스템 로그 / 잡', Icon: ScrollText, matchPrefix: '/jobs' },
   { to: '/settings', label: '설정', Icon: SettingsIcon },
 ]
@@ -48,7 +50,7 @@ export function Sidebar() {
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold">Stock AI</span>
-          <span className="text-xs text-muted-foreground">v0.13 dashboard</span>
+          <span className="text-xs text-muted-foreground">v0.14 dashboard</span>
         </div>
       </div>
       <nav className="flex flex-col gap-1 px-3 pb-4 pt-2" aria-label="primary">
@@ -71,8 +73,8 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="mt-auto px-5 py-4 text-xs text-muted-foreground">
-        <p>v0.13 Validation Report</p>
-        <p className="mt-1">자동매매 / 실 주문 미포함</p>
+        <p>v0.14 Paper / Simulation Trading</p>
+        <p className="mt-1">실 KIS 주문 / 자동매매 미포함</p>
       </div>
     </aside>
   )

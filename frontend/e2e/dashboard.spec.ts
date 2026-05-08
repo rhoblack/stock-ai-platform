@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', () => {
-  test('all 12 sidebar menus are reachable and render their main content', async ({
+  test('all 13 sidebar menus are reachable and render their main content', async ({
     page,
   }) => {
     await page.goto('/')
@@ -47,6 +47,10 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     // v0.13 Phase D — 검증 리포트
     await nav.getByRole('link', { name: '검증 리포트' }).click()
     await expect(page.getByTestId('validation-page')).toBeVisible()
+
+    // v0.14 Phase E — 페이퍼 트레이딩 (β)
+    await nav.getByRole('link', { name: '페이퍼 트레이딩 (β)' }).click()
+    await expect(page.getByTestId('paper-page')).toBeVisible()
 
     await nav.getByRole('link', { name: '시스템 로그 / 잡' }).click()
     await expect(page.getByTestId('job-row-101')).toBeVisible()
@@ -529,6 +533,99 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     await expect(page.getByText(/order_price/)).toHaveCount(0)
     await expect(page.getByText(/quantity/i)).toHaveCount(0)
     await expect(page.getByText(/source_file_path/)).toHaveCount(0)
+  })
+
+  // -------- v0.14 Phase E — Paper / Simulation Trading --------
+
+  test('Paper Trading page surfaces account / positions / pnl / orders and never leaks KIS fields', async ({
+    page,
+  }) => {
+    await page.goto('/paper')
+    await expect(page.getByTestId('paper-page')).toBeVisible()
+    // Always-on policy banner.
+    await expect(page.getByTestId('paper-policy-banner')).toBeVisible()
+    // Mocked account fixture renders the totals.
+    await expect(page.getByTestId('paper-account-card')).toBeVisible()
+    await expect(page.getByTestId('paper-account-cash')).toContainText('9,899,935')
+    await expect(page.getByTestId('paper-account-total')).toContainText('10,009,935')
+    // Positions / PnL / orders tables all populated by the fixture.
+    await expect(page.getByTestId('paper-positions-table')).toBeVisible()
+    await expect(page.getByTestId('paper-position-row-005930')).toBeVisible()
+    await expect(page.getByTestId('paper-pnl-table')).toBeVisible()
+    await expect(page.getByTestId('paper-pnl-row-2026-05-08')).toBeVisible()
+    await expect(page.getByTestId('paper-orders-table')).toBeVisible()
+    await expect(page.getByTestId('paper-order-row-101')).toBeVisible()
+    await expect(page.getByTestId('paper-order-row-102')).toBeVisible()
+
+    // Forbidden DOM tokens — must NOT appear anywhere on the page.
+    for (const forbidden of [
+      'api_key',
+      'access_token',
+      'jwt_secret',
+      'kis_app_secret',
+      'kis_account_no',
+      'source_file_path',
+      'broker_order_id',
+      'kis_order_id',
+      'real_account',
+      'account_number',
+      'raw_text',
+      'full_text',
+      'broker_name',
+    ]) {
+      await expect(page.getByText(forbidden)).toHaveCount(0)
+    }
+
+    // Automation / autotrade copy must NOT appear in any actionable element.
+    for (const phrase of [
+      /자동매매\s*(시작|모드|활성)/,
+      /실거래\s*(시작|실행|모드)/,
+      /FULL_AUTO/,
+      /SMALL_AUTO/,
+      /APPROVAL/i,
+      /place\s*real\s*order/i,
+    ]) {
+      await expect(
+        page.locator('button, [role="button"], a').filter({ hasText: phrase }),
+      ).toHaveCount(0)
+    }
+
+    // Submit button label is the safe paper-only wording.
+    await expect(page.getByTestId('paper-order-submit')).toHaveText(
+      /페이퍼 주문 만들기/,
+    )
+
+    // Disabled banner appears once a 503 mutation attempt happens (e2e
+    // fixture answers POST /api/paper/orders with 503 by default).
+    await page.getByTestId('paper-order-symbol-input').fill('005930')
+    await page.getByTestId('paper-order-quantity-input').fill('10')
+    await page.getByTestId('paper-order-submit').click()
+    await expect(page.getByTestId('paper-order-disabled-banner')).toBeVisible()
+
+    // Raw API payload guard.
+    const payload = await page.evaluate(async () => {
+      const account = await fetch('/api/paper/account').then(r => r.json())
+      const orders = await fetch('/api/paper/orders').then(r => r.json())
+      const positions = await fetch('/api/paper/positions').then(r => r.json())
+      const pnl = await fetch('/api/paper/pnl').then(r => r.json())
+      return { account, orders, positions, pnl }
+    })
+    const merged = JSON.stringify(payload)
+    for (const forbidden of [
+      'api_key',
+      'access_token',
+      'jwt_secret',
+      'kis_app_secret',
+      'broker_order_id',
+      'kis_order_id',
+      'real_account',
+      'account_number',
+      'source_file_path',
+      'raw_text',
+      'full_text',
+    ]) {
+      expect(merged).not.toContain(forbidden)
+    }
   })
 
   test('no automation / order UI is exposed anywhere in v0.2 frontend', async ({

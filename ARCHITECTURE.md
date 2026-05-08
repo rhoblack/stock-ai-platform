@@ -1,5 +1,25 @@
 # Architecture
 
+> 본 문서는 **v0.14 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.14-final`).
+> v0.14 5 Phase (Backtest Export CLI + ProviderScorePolicy 통합 → SimulationBroker +
+> VirtualAccount/VirtualOrder + Alembic 0005 → VirtualPosition + VirtualFill +
+> VirtualPnLSnapshot + PnLTracker + execute_pending_orders + Alembic 0006 →
+> Paper Trading API 6 라우터 + 스케줄러 잡 2건 → 13번째 프런트 화면 `/paper`)
+> 모두 마감. 누적 게이트: backend pytest **1438** / frontend vitest **186** /
+> Playwright e2e **22** / build 그린.
+>
+> **v0.14 Phase E** 가 추가한 프런트엔드:
+> `frontend/src/api/paper.ts` (6 fetch) → `frontend/src/hooks/usePaperTrading.ts`
+> (4 read + 2 mutation TanStack Query) → `frontend/src/pages/PaperTrading/index.tsx`
+> (13번째 화면, 5 컴포넌트 + 정책 배너 + 503 disabled 안내) →
+> `frontend/src/components/layout/Sidebar.tsx` 13번째 메뉴 (`LineChart`,
+> "페이퍼 트레이딩 (β)") → `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts`
+> 22번째 e2e 시나리오 (raw payload forbidden 검사 + disabled banner). 버튼 라벨은
+> "페이퍼 주문 만들기" — "주문 실행" / "place order" 같은 actionable CTA 0건.
+> 응답 / DOM forbidden 필드 12종 (api_key / token / secret / source_file_path /
+> broker_order_id / kis_order_id / real_account / broker / account_number /
+> raw_text / body / full_text) 0건 단언.
+>
 > 본 문서는 **v0.14 Phase D 시점** 기준으로 갱신된다 (`v0.14-paper-api`
 > 태그 예정). Phase C 의 PnL & Fill 엔진 위에, **Phase D** 가 Paper Trading
 > API 6 라우터 (`/api/paper/account` / `/orders` / `/positions` / `/pnl`
@@ -153,9 +173,9 @@ app/
 ├─ broker/                  # v0.14 Phase B — SimulationBroker (BrokerInterface 첫 구현체, paper trading 전용 / KIS API 0건). v0.14 Phase C 가 execute_pending_orders 본 구현 추가. 실 KIS / 자동매매 broker 는 여전히 placeholder
 └─ paper/                   # v0.14 Phase C — PnLTracker (paper trading 전용 PnL / fill 엔진, daily_prices.close 기준 가격, 외부 호출 0건)
 
-frontend/                   # v0.2 Vite/React/TS PC 대시보드 + v0.3~v0.9 누적
+frontend/                   # v0.2 Vite/React/TS PC 대시보드 + v0.3~v0.14 누적
 ├─ src/
-│  ├─ pages/                # 11 화면 + Login (Today/Recommendations/History/Holdings/StockDetail/MarketCap/Jobs/Settings/Themes/Backtest/Watchlist + /login)
+│  ├─ pages/                # 13 화면 + Login (Today/Recommendations/History/Holdings/StockDetail/MarketCap/Jobs/Settings/Themes/Backtest/Watchlist/Validation/PaperTrading + /login)
 │  ├─ components/common/    # MarketStatusBanner, TrendLineChart, RiskBadge, GradePill, ErrorBoundary (v0.9), …
 │  ├─ data/                 # KRX 휴장일 정적 JSON (2025–2027)
 │  ├─ lib/                  # marketCalendar 등 read-only 유틸

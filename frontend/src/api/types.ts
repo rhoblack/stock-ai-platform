@@ -919,3 +919,112 @@ export interface ProviderHealthResponse {
   items: ProviderHealthItem[]
   count: number
 }
+
+// ----- v0.14 Phase D — Paper / Simulation Trading -----
+//
+// Decimal-ish fields are serialised as strings (FastAPI Pydantic converts
+// Decimal → str). The UI converts via `Number(value)` only at the last
+// rendering step. None of these shapes carry KIS / real-broker fields —
+// the dashboard never renders `broker_order_id`, `kis_order_id`,
+// `real_account`, `account_number`, `api_key`, `token`, or `secret`.
+
+export interface PaperAccount {
+  id: number
+  name: string
+  currency: string
+  paper_trading_enabled: boolean
+  initial_cash: string | null
+  cash_balance: string | null
+  market_value: string | null
+  total_value: string | null
+  realized_pnl: string | null
+  unrealized_pnl: string | null
+  snapshot_date: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PaperOrderSide = 'BUY' | 'SELL'
+export type PaperOrderType = 'MARKET' | 'LIMIT'
+export type PaperOrderStatus =
+  | 'CREATED'
+  | 'SUBMITTED'
+  | 'PARTIALLY_FILLED'
+  | 'FILLED'
+  | 'CANCELED'
+  | 'REJECTED'
+
+export interface PaperOrder {
+  id: number
+  account_id: number
+  symbol: string
+  side: PaperOrderSide
+  quantity: number
+  order_type: PaperOrderType
+  limit_price: string | null
+  status: PaperOrderStatus
+  idempotency_key: string | null
+  reason: string | null
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PaperOrdersResponse {
+  orders: PaperOrder[]
+  total: number
+  limit: number
+}
+
+export interface PaperPosition {
+  id: number
+  account_id: number
+  symbol: string
+  quantity: number
+  avg_cost: string | null
+  realized_pnl: string | null
+  last_close: string | null
+  market_value: string | null
+  unrealized_pnl: string | null
+  updated_at: string
+}
+
+export interface PaperPositionsResponse {
+  positions: PaperPosition[]
+  total: number
+}
+
+export interface PaperPnLSnapshot {
+  snapshot_date: string
+  cash_balance: string | null
+  market_value: string | null
+  total_value: string | null
+  realized_pnl: string | null
+  unrealized_pnl: string | null
+}
+
+export interface PaperPnLResponse {
+  snapshots: PaperPnLSnapshot[]
+  total: number
+}
+
+export interface CreatePaperOrderRequest {
+  symbol: string
+  side: PaperOrderSide
+  quantity: number
+  order_type?: PaperOrderType
+  limit_price?: string | null
+  idempotency_key?: string | null
+  note?: string | null
+  account_id?: number | null
+}
+
+export interface PaperOrderResponse {
+  order: PaperOrder
+  deduplicated: boolean
+}
+
+export interface PaperStatusResponse {
+  status: string
+  order_id: number
+}

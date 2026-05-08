@@ -1,6 +1,6 @@
 # API_SPEC.md
 
-> 본 문서는 **v0.14 Phase D 시점** 기준이다 (`v0.14-paper-api` 태그 예정).
+> 본 문서는 **v0.14 마감 시점** 기준이다 (마감 태그 `v0.14-final`).
 > v0.14 Phase D 가 **Paper / Simulation Trading API** 6 라우터 (read-only
 > GET 4건 + mutation 2건) 를 추가했다. 모든 mutation 은 `Settings.paper_trading_enabled=true`
 > + `require_auth` 필요. `PAPER_TRADING_ENABLED=false` (default) 시 mutation

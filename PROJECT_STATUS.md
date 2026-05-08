@@ -7,18 +7,23 @@
 
 ---
 
-## 0. v0.14 시작 선언 — Paper / Simulation Trading Foundation
+## 0. v0.14 마감 선언 — Paper / Simulation Trading Foundation
 
-**v0.14 cycle 시작.** `v0.13-final` 위에 **SimulationBroker (BrokerInterface 첫 구현체) +
-VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API + 13번째 화면 `/paper`**
-구현 예정. 채택 시나리오: **Scenario X — Paper Trading Full Stack**.
+**v0.14 cycle 마감.** `v0.13-final` 위에 **SimulationBroker (BrokerInterface 첫 구현체) +
+VirtualAccount / VirtualOrder / VirtualPosition / VirtualFill / VirtualPnLSnapshot +
+PnLTracker + Paper Trading API 6 라우터 + 스케줄러 잡 2건 + 13번째 프런트 화면 `/paper`**
+5 Phase 완료. 최종 마감 태그 `v0.14-final`.
 
 - 시작 일자: **2026-05-08 (Asia/Seoul)**
-- 기준 게이트: pytest **1277 passed** / vitest **175 passed** / e2e **21 passed** / build 그린
-- 기준 태그: `v0.13-final` → 예상 마감 태그: `v0.14-final`
-- Alembic head: `0004_user_preferences` → `0005_virtual_trading_core` (Phase B) → **`0006_virtual_positions` (Phase C 완료)**
-  (`0005_virtual_trading_core`: VirtualAccount + VirtualOrder /
-   `0006_virtual_positions`: VirtualPosition + VirtualFill + VirtualPnLSnapshot)
+- 마감 일자: **2026-05-08 (Asia/Seoul)**
+- 최종 게이트:
+  - backend pytest **1438 passed**
+  - frontend vitest **186 passed** (22 파일)
+  - frontend build **그린** (`tsc --noEmit && vite build`)
+  - Playwright e2e **22 passed** (chromium)
+- 기준 태그: `v0.13-final` → 마감 태그: `v0.14-final`
+- Alembic head: `0006_virtual_positions` (v0.14 신규 revision **2건**: `0005_virtual_trading_core` Phase B + `0006_virtual_positions` Phase C; Phase D/E 신규 revision 0건)
+- 세부 결과: [`RELEASE_NOTES_v0.14.md`](./RELEASE_NOTES_v0.14.md)
 - 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0014`
 
 ### v0.14 채택 결론 (시나리오 비교 요약)
@@ -40,7 +45,7 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 | B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | **1322→1365 (+43) ✅** |
 | C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **1365→1405 (+40) ✅** |
 | D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **1405→1438 (+33) ✅** |
-| E | Frontend 13번째 화면 `/paper` + `RELEASE_NOTES_v0.14.md` + 4 게이트 확인 | `v0.14-final` | vitest **175→~185 (+~10)** / e2e **21→22 (+1)** |
+| E | Frontend 13번째 화면 `/paper` + `RELEASE_NOTES_v0.14.md` + 4 게이트 확인 | `v0.14-final` | vitest **175→186 (+11) ✅** / e2e **21→22 (+1) ✅** |
 
 ### v0.14 Phase A 완료 (2026-05-08)
 
@@ -89,6 +94,20 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 - `tests/integration/test_auth_security.py`: mutating endpoint count 9 → 11 갱신, no_auto_trade_strings_in_routes 가드는 `order` 키워드를 `/api/paper/` prefix 만 허용하도록 정밀화
 - `tests/integration/test_scheduler_jobs.py`: registry sanity 9 → 11 jobs 갱신
 - **실제 게이트: pytest 1405 → 1438 passed (+33) / 회귀 0건 / Alembic revision 0건 (DB 모델 무변경) / KIS API 호출 0건 / 외부 네트워크 호출 0건 / 프런트 변경 0건 / 신규 pip 0건 / ScoringEngine·HoldingCheckEngine weight 변경 0건 / 실 KIS / FULL_AUTO / SMALL_AUTO / APPROVAL 라우터 여전히 0건**
+
+### v0.14 Phase E 완료 (2026-05-08)
+
+- `frontend/src/api/paper.ts` 신규 — 6 fetch 함수 (account / orders / positions / pnl / submit / cancel). 호출 URL `/api/paper/*` 6종만
+- `frontend/src/hooks/usePaperTrading.ts` 신규 — 4 read query + 2 mutation hooks. mutation 후 paper namespace 전체 invalidate, retry: false
+- `frontend/src/pages/PaperTrading/index.tsx` 신규 (13번째 화면) — 5 컴포넌트 (`VirtualAccountCard` / `PaperOrderForm` / `VirtualPositionsTable` / `PnLTable` / `PaperOrdersTable`) + 정책 배너 + 503 disabled 안내. 버튼 라벨 "페이퍼 주문 만들기"
+- `frontend/src/router.tsx` + `frontend/src/components/layout/Sidebar.tsx` — `/paper` route + 13번째 메뉴 (`LineChart` 아이콘, "페이퍼 트레이딩 (β)") + footer 라벨 v0.14 갱신
+- `frontend/src/api/types.ts` — `PaperAccount` / `PaperOrder` / `PaperPosition` / `PaperPnLSnapshot` / `CreatePaperOrderRequest` / 응답 wrapper 타입 추가
+- `frontend/src/tests/PaperTrading.test.tsx` 신규 vitest 11건 (page render / account happy / 404 empty / positions / pnl / orders / disabled 503 / submit success / cancel mutation / forbidden DOM 토큰 0건 / 자동매매 CTA 0건)
+- `frontend/src/tests/mswServer.ts`: paper 6 mock 추가 (POST/DELETE 기본 503)
+- `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts`: sidebar 12 → 13 menus, `/paper` happy-path navigation, raw payload forbidden 검사, disabled banner 시나리오 추가
+- `RELEASE_NOTES_v0.14.md` 신규 — Phase A~E 산출물 + 최종 게이트 + 안전 정책 + 알려진 한계 + v0.15 후보 + 누적 사이클 표
+- 마감 문서 갱신: README / PROJECT_STATUS / ROADMAP / TASKS / ARCHITECTURE / TESTING / API_SPEC / INTEGRATION_RUNBOOK
+- **실제 게이트: backend pytest 1438 passed (회귀 0건, Phase E 는 frontend only) / vitest 175 → 186 passed (+11) / build 그린 / e2e 21 → 22 passed (+1) / Alembic head 0006_virtual_positions 그대로 / `compare_metadata` diff 0건 / 신규 pip 0건 / DOM·응답 forbidden 필드 0건 / 자동매매 CTA 0건**
 
 ### v0.14 핵심 정책
 

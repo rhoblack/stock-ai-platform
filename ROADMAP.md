@@ -1,12 +1,13 @@
 # Roadmap
 
-> 본 문서는 **v0.14 시작 시점** 기준으로 갱신되었다 (이전 마감 태그 `v0.13-final`).
+> 본 문서는 **v0.14 마감 시점** 기준으로 갱신되었다 (마감 태그 `v0.14-final`).
 > v0.14 채택 시나리오: **Scenario X — Paper / Simulation Trading Foundation**.
 > SimulationBroker (`BrokerInterface` 첫 구현체) + VirtualAccount / VirtualOrder /
-> VirtualPosition / VirtualFill / VirtualPnLSnapshot (5 테이블, Alembic 2 revisions).
-> Backtest Export CLI (v0.13+ 이연) 를 Phase A 에서 선처리 후 Paper Trading 진입.
+> VirtualPosition / VirtualFill / VirtualPnLSnapshot (5 테이블, Alembic 2 revisions) +
+> Paper Trading API 6 라우터 + 스케줄러 잡 2건 + 13번째 프런트 화면 `/paper` 모두 완료.
+> Backtest Export CLI (v0.13+ 이연분) 도 Phase A 에서 선처리되었다.
 > 실 KIS 주문 / APPROVAL / FULL_AUTO 는 여전히 **Future Backlog**.
-> DART/RSS/Prometheus/Provider Data Ingestion 모두 default OFF 유지.
+> DART/RSS/Prometheus/Provider Data Ingestion/Paper Trading 모두 default OFF 유지.
 
 ## 진행 이력 요약
 
@@ -25,7 +26,7 @@
 | v0.11 Real Provider Transport & Observability | DART/RSS 실 httpx transport (default OFF 유지) + provider observability (failure history ring buffer + summary_24h + optional Prometheus `/metrics`) + `/api/health/providers` 24h aggregates + Settings 패널 보강 | ✅ 마감 | `v0.11-final` |
 | v0.12 Provider Data Scoring & Backtest Validation | Provider 데이터 → DB ingestion (existing producer 자동 흡수, ScoringEngine weight 변경 0건) + walk-forward backtest engine + 다중 전략 비교 + read-only API/UI 확장 + recommendation evidence 에 `data_source` chip | ✅ 마감 | `v0.12-final` |
 | v0.13 Provider Score Policy & Validation Report | ProviderScorePolicy 승수 엔진 (weight 변경 0건) + score_delta in evidence_json + Validation Report GET API (`/by-strategy` / `/by-regime` / `/by-sector`) + Validation Report UI 12번째 화면 (Backtest Export CLI 는 v0.14+ 이연) | ✅ 마감 | `v0.13-final` |
-| v0.14 Paper / Simulation Trading Foundation | Backtest Export CLI 선처리 + SimulationBroker (`BrokerInterface` 첫 구현체) + VirtualAccount / VirtualOrder / VirtualPosition / VirtualFill / VirtualPnLSnapshot (5 테이블, Alembic 2 revisions) + Paper Trading API / UI | ⏳ 진행 중 | `v0.14-final` (예정) |
+| v0.14 Paper / Simulation Trading Foundation | Backtest Export CLI 선처리 + SimulationBroker (`BrokerInterface` 첫 구현체) + VirtualAccount / VirtualOrder / VirtualPosition / VirtualFill / VirtualPnLSnapshot (5 테이블, Alembic 2 revisions) + Paper Trading API 6종 + 스케줄러 잡 2건 + 13번째 프런트 화면 `/paper` | ✅ 마감 | `v0.14-final` |
 
 ---
 
@@ -482,23 +483,24 @@ Report + Backtest Export CLI** (Backtest Export CLI 는 v0.14 Phase A 로 이연
 
 ---
 
-## v0.14 — Paper / Simulation Trading Foundation (⏳ 진행 중)
+## v0.14 — Paper / Simulation Trading Foundation (✅ 마감)
 
-기준선: `v0.13-final`. 회귀 게이트: pytest 1277 / vitest 175 / e2e 21 / build 그린.
-**Alembic 신규 2건** — `0005_virtual_trading_core` (VirtualAccount + VirtualOrder +
-VirtualFill) + `0006_virtual_positions` (VirtualPosition + VirtualPnLSnapshot).
-**`PAPER_TRADING_ENABLED=False` 기본** — OFF 시 전 케이스 기존 동작과 동일.
+기준선: `v0.13-final` (1277 / 175 / 21 / build) → 마감: `v0.14-final` (**1438 / 186 / 22 / build**).
+**Alembic 신규 2건** — `0005_virtual_trading_core` (VirtualAccount + VirtualOrder, Phase B)
++ `0006_virtual_positions` (VirtualPosition + VirtualFill + VirtualPnLSnapshot, Phase C).
+**`PAPER_TRADING_ENABLED=False` 기본** — OFF 시 mutation 라우터 503 / 스케줄러 잡 SKIPPED,
+read-only GET 4종은 항상 동작.
 
 채택 시나리오: **Scenario X — Paper Trading Full Stack**.
 (비교 후보: Y=Approval Trading 준비, Z=Backtest 고도화, W=KIS wrapper skeleton)
 
-| Phase | 작업 | 상태 | 예상 태그 |
+| Phase | 작업 | 상태 | 태그 |
 |---|---|---|---|
-| A | Backtest Export CLI 선처리 + Alembic revisions 2건 + VirtualAccount / VirtualOrder / VirtualFill / VirtualPosition / VirtualPnLSnapshot DB 모델 | ⏳ 대기 | `v0.14-virtual-db` |
-| B | SimulationBroker — `BrokerInterface` 첫 구현체 + `CostModel` 확장 (fee 0.015% + stamp_tax 0.18%(매도) + slippage 0.05%) + 주문 체결 시뮬레이션 + KIS API import 0건 단언 | ⏳ 대기 | `v0.14-simulation-broker` |
-| C | Paper Trading API — `GET /api/paper/account` + `/orders` + `/positions` + `/pnl/snapshots` + `POST /api/paper/orders` + `DELETE /api/paper/orders/{id}` (read-mostly, POST 1건) | ⏳ 대기 | `v0.14-paper-api` |
-| D | Paper Trading UI — 13번째 화면 `/paper` + Sidebar `가상매매` 메뉴 + 계좌 요약 / 주문 목록 / 포지션 표 / PnL 차트 (read-only 표시 + POST 폼 1개) | ⏳ 대기 | `v0.14-paper-ui` |
-| E | 마감 — `RELEASE_NOTES_v0.14.md` + 문서 갱신 + 4 게이트 최종 확인 | ⏳ 대기 | `v0.14-final` |
+| A | Backtest Export CLI + ProviderScorePolicy → producer 통합 (45 신규 pytest, Alembic 0건) | ✅ 인수 | `v0.14-export-policy` |
+| B | SimulationBroker (BrokerInterface 첫 구현체) + VirtualAccount + VirtualOrder + Alembic 0005 + AST 회귀 단언 | ✅ 인수 | `v0.14-sim-broker` |
+| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + PaperTradingCostModel paper-v1 + execute_pending_orders 본 구현 + Alembic 0006 | ✅ 인수 | `v0.14-pnl-tracker` |
+| D | Paper Trading API 6 라우터 (`/account` `/orders` `/positions` `/pnl` GET + `/orders` POST/DELETE) + 스케줄러 잡 2건 (16:00 / 16:30 KST) | ✅ 인수 | `v0.14-paper-api` |
+| E | 페이퍼 트레이딩 13번째 프런트 화면 `/paper` + RELEASE_NOTES_v0.14 + 마감 문서 + 4 게이트 최종 확인 | ✅ 문서 마감 | `v0.14-final` |
 
 **v0.14 핵심 정책 (cycle-wide)**:
 

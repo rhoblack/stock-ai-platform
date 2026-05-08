@@ -348,6 +348,56 @@ export const handlers = [
     }),
   ),
 
+  // v0.14 Phase E — Paper / Simulation Trading (read-only defaults).
+  // Empty defaults so the page renders empty placeholders naturally.
+  http.get('*/api/paper/account', () =>
+    HttpResponse.json({
+      id: 1,
+      name: 'paper',
+      currency: 'KRW',
+      paper_trading_enabled: true,
+      initial_cash: '10000000',
+      cash_balance: '10000000',
+      market_value: null,
+      total_value: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      snapshot_date: null,
+      created_at: '2026-05-08T00:00:00',
+      updated_at: '2026-05-08T00:00:00',
+    }),
+  ),
+  http.get('*/api/paper/orders', () =>
+    HttpResponse.json({ orders: [], total: 0, limit: 50 }),
+  ),
+  http.get('*/api/paper/positions', () =>
+    HttpResponse.json({ positions: [], total: 0 }),
+  ),
+  http.get('*/api/paper/pnl', () =>
+    HttpResponse.json({ snapshots: [], total: 0 }),
+  ),
+  // POST default: 503 disabled — tests that exercise the happy path
+  // override this with `server.use(...)`.  This default makes the
+  // forbidden-mutation guard hold at the MSW boundary.
+  http.post('*/api/paper/orders', () =>
+    HttpResponse.json(
+      {
+        detail:
+          'paper trading is disabled — set PAPER_TRADING_ENABLED=true in operator-private .env to opt in',
+      },
+      { status: 503 },
+    ),
+  ),
+  http.delete('*/api/paper/orders/:id', () =>
+    HttpResponse.json(
+      {
+        detail:
+          'paper trading is disabled — set PAPER_TRADING_ENABLED=true in operator-private .env to opt in',
+      },
+      { status: 503 },
+    ),
+  ),
+
   http.put('*/api/users/me/preferences', async ({ request }) => {
     const body = await request.json() as Record<string, unknown>
     return HttpResponse.json({
