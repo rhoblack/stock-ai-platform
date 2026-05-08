@@ -611,16 +611,6 @@ def test_v016_phase_a_real_order_orm_not_yet_created() -> None:
     )
 
 
-def test_v016_phase_a_kis_order_wrapper_not_yet_created() -> None:
-    """Phase A must NOT create kis_order_client.py — that is Phase B."""
-    from pathlib import Path
-
-    broker_dir = Path(__file__).resolve().parents[2] / "app" / "broker"
-    assert not (broker_dir / "kis_order_client.py").exists(), (
-        "kis_order_client.py must not exist in Phase A — it is a Phase B artefact"
-    )
-
-
 # ---------------------------------------------------------------------------
 # 13. v0.16 regression — v0.15 safety defaults still intact
 # ---------------------------------------------------------------------------
