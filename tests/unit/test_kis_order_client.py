@@ -369,14 +369,14 @@ def test_kis_order_client_has_no_data_collectors_kis_import() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_v016_phase_b_real_order_orm_not_yet_created() -> None:
-    """Phase B must NOT create RealOrder / RealFill ORM modules (Phase C)."""
+def test_v016_phase_c_real_order_orm_exists() -> None:
+    """Phase C creates real_order.py and real_fill.py — verify both are present."""
     repo_dir = pathlib.Path(__file__).resolve().parents[2] / "app" / "data" / "repositories"
-    assert not (repo_dir / "real_order.py").exists(), (
-        "real_order.py must not exist in Phase B — it is a Phase C artefact"
+    assert (repo_dir / "real_order.py").exists(), (
+        "real_order.py must exist after Phase C"
     )
-    assert not (repo_dir / "real_fill.py").exists(), (
-        "real_fill.py must not exist in Phase B — it is a Phase C artefact"
+    assert (repo_dir / "real_fill.py").exists(), (
+        "real_fill.py must exist after Phase C"
     )
 
 

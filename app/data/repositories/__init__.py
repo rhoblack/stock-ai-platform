@@ -1,5 +1,7 @@
 """Repository implementations for DB-backed persistence."""
 
+from app.data.repositories.real_fill import RealFillRepository
+from app.data.repositories.real_order import RealOrderRepository
 from app.data.repositories.analyst_reports import AnalystReportRepository
 from app.data.repositories.backtest_results import BacktestResultRepository
 from app.data.repositories.backtest_runs import BacktestRunRepository
@@ -39,6 +41,9 @@ from app.data.repositories.watchlist_items import WatchlistItemRepository
 from app.data.repositories.watchlists import WatchlistRepository
 
 __all__ = [
+    # v0.16 Phase C -- Real Order ORM repositories
+    "RealFillRepository",
+    "RealOrderRepository",
     "AnalystReportRepository",
     "BacktestResultRepository",
     "BacktestRunRepository",

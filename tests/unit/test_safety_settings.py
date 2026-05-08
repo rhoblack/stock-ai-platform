@@ -283,8 +283,9 @@ def test_v01_feature_full_auto_default_still_off(
 
 
 def test_phase_d_alembic_head_advanced_to_0008() -> None:
-    """v0.15 Phase D introduces ``0008_approval_audit_logs`` on top of
-    Phase B's ``0007_order_candidates``."""
+    """v0.15 Phase D introduced ``0008_approval_audit_logs``; v0.16 Phase C
+    subsequently added 0009_real_orders and 0010_real_fills.
+    This test verifies the full revision chain through 0010."""
     from pathlib import Path
 
     versions_dir = (
@@ -300,6 +301,8 @@ def test_phase_d_alembic_head_advanced_to_0008() -> None:
         "0006_virtual_positions.py",
         "0007_order_candidates.py",
         "0008_approval_audit_logs.py",
+        "0009_real_orders.py",
+        "0010_real_fills.py",
     ]
 
 
@@ -576,9 +579,9 @@ def test_can_attempt_real_order_settings_one_closed_gate_blocks(
 # ---------------------------------------------------------------------------
 
 
-def test_v016_phase_a_alembic_head_still_0008(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Phase A must NOT add any new Alembic revision.
-    Head remains 0008_approval_audit_logs."""
+def test_v016_phase_a_alembic_head_through_0010(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase A added no Alembic revision (head was 0008). Phase C subsequently
+    added 0009_real_orders and 0010_real_fills. Verify the full chain."""
     from pathlib import Path
 
     versions_dir = (
@@ -594,20 +597,21 @@ def test_v016_phase_a_alembic_head_still_0008(monkeypatch: pytest.MonkeyPatch) -
         "0006_virtual_positions.py",
         "0007_order_candidates.py",
         "0008_approval_audit_logs.py",
+        "0009_real_orders.py",
+        "0010_real_fills.py",
     ], f"Unexpected revisions: {revisions}"
 
 
-def test_v016_phase_a_real_order_orm_not_yet_created() -> None:
-    """Phase A must NOT create RealOrder / RealFill ORM modules.
-    Those are Phase C artefacts."""
+def test_v016_phase_c_real_order_orm_exists() -> None:
+    """Phase C creates real_order.py and real_fill.py — verify both are present."""
     from pathlib import Path
 
     repo_dir = Path(__file__).resolve().parents[2] / "app" / "data" / "repositories"
-    assert not (repo_dir / "real_order.py").exists(), (
-        "real_order.py must not exist in Phase A — it is a Phase C artefact"
+    assert (repo_dir / "real_order.py").exists(), (
+        "real_order.py must exist after Phase C"
     )
-    assert not (repo_dir / "real_fill.py").exists(), (
-        "real_fill.py must not exist in Phase A — it is a Phase C artefact"
+    assert (repo_dir / "real_fill.py").exists(), (
+        "real_fill.py must exist after Phase C"
     )
 
 

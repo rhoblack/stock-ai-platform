@@ -43,8 +43,8 @@ ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"
 BASELINE_REVISION = "0001_baseline_v0_7"
 # v0.8 Phase C introduces the third revision. ``HEAD_REVISION`` is what
 # ``alembic upgrade head`` should land on; new revisions update this constant.
-HEAD_REVISION = "0008_approval_audit_logs"
-EXPECTED_TABLE_COUNT = 39  # 27 baseline + 2 (0002) + 2 (0003) + 1 (0004) + 2 (0005) + 3 (0006) + 1 (0007) + 1 (0008)
+HEAD_REVISION = "0010_real_fills"
+EXPECTED_TABLE_COUNT = 41  # 27 baseline + 2 (0002) + 2 (0003) + 1 (0004) + 2 (0005) + 3 (0006) + 1 (0007) + 1 (0008) + 1 (0009) + 1 (0010)
 SPOT_CHECK_TABLES = (
     # v0.1 backend
     "stocks",
@@ -80,6 +80,9 @@ SPOT_CHECK_TABLES = (
     "order_candidates",
     # v0.15 Phase D Approval Trading audit trail
     "approval_audit_logs",
+    # v0.16 Phase C Real Order ORM skeleton
+    "real_orders",
+    "real_fills",
 )
 
 

@@ -1414,3 +1414,139 @@ class ApprovalAuditLog(Base):
             "event_type",
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.16 Phase C -- Real Order Integration (RealOrder 40th, RealFill 41st)
+#
+# RealOrder is the persistent record for every order attempt that exits the
+# Approval Workflow. Phase C covers the ORM skeleton only; actual KIS HTTP
+# calls live in Phase D's RealOrderExecutor.
+#
+# Safety policies enforced here:
+#   * dry_run=True default -- every row is a dry-run record unless an
+#     operator explicitly disables it (gated by can_attempt_real_order_settings).
+#   * broker_order_no is stored ONLY as a SHA-256 hash (broker_order_no_hash).
+#     The plaintext KIS order number is NEVER persisted.
+#   * Forbidden columns (regression-tested):
+#     api_key / app_secret / access_token / token / secret /
+#     raw_response / kis_response_raw / account_number / real_account.
+#   * error_message hard-capped at 500 chars; must not contain secrets
+#     (enforced application-side by RealOrderRepository.mark_failed).
+#
+# RealFill records the per-fill details that RealOrderExecutor (Phase D) will
+# write when a fill is confirmed. Phase C only defines the ORM; no fill is ever
+# written in this phase (no KIS calls exist).
+# ---------------------------------------------------------------------------
+
+
+class RealOrder(TimestampMixin, Base):
+    __tablename__ = "real_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # FK to the approved OrderCandidate that triggered this execution attempt.
+    # CASCADE on delete so archiving a candidate cleans up its execution records.
+    candidate_id: Mapped[int] = mapped_column(
+        ForeignKey("order_candidates.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # BUY / SELL only.  Application-side validated by RealOrderRepository.
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    # MARKET / LIMIT only.  Application-side validated.
+    order_type: Mapped[str] = mapped_column(String(16), nullable=False, default="MARKET")
+    # Required when order_type == LIMIT; NULL for MARKET orders.
+    limit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    # quantity * (limit_price or last close).  Used by risk reporting.
+    estimated_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+    # Status machine:
+    #   DRY_RUN (terminal)           -- order was recorded but not submitted.
+    #   CREATED → SUBMITTED          -- order submitted to KIS (Phase D).
+    #   SUBMITTED → PARTIALLY_FILLED -- KIS reports partial fill.
+    #   SUBMITTED / PARTIALLY_FILLED → FILLED / CANCELED / REJECTED / FAILED.
+    # TERMINAL_STATUSES = {DRY_RUN, FILLED, CANCELED, REJECTED, FAILED}.
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="DRY_RUN", index=True
+    )
+    # True by default.  Only set to False when can_attempt_real_order_settings()
+    # is True AND the operator explicitly opts in (Phase D).
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Deterministic identifier for dry-run orders (FakeKisOrderTransport output).
+    # NULL for real orders (where broker_order_no_hash is used instead).
+    fake_order_no: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # SHA-256 hex of the real KIS order number.  Plaintext KIS order number is
+    # NEVER stored.  NULL until SUBMITTED state is reached (Phase D).
+    broker_order_no_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Client-side idempotency key.  Used by Phase D executor to prevent duplicate
+    # submissions under retry.
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Short error classifier, e.g. "KIS_TIMEOUT" / "RISK_CAP_EXCEEDED".  NULL on success.
+    error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Human-readable error summary.  Hard-capped at 500 chars.
+    # MUST NOT contain secrets -- RealOrderRepository.mark_failed raises if
+    # any of _SENSITIVE_SUBSTRINGS is found in the message.
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Timestamp when the order was forwarded to KIS (NULL in dry-run mode).
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+    fills: Mapped[list["RealFill"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("ix_real_orders_candidate_status", "candidate_id", "status"),
+    )
+
+
+class RealFill(Base):
+    __tablename__ = "real_fills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    real_order_id: Mapped[int] = mapped_column(
+        ForeignKey("real_orders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # BUY / SELL -- mirrors the parent RealOrder.side.
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    fill_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    # Cost components stored separately for reporting.  NULL means not applicable.
+    fee: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+    tax: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+    # gross_amount = fill_price * quantity (always positive).
+    gross_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    # net_amount: magnitude of actual cash movement (BUY: gross+fee; SELL: gross-fee-tax).
+    net_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    # FULL -- entire order quantity was filled in this record.
+    # PARTIAL -- this fill covers only part of the order quantity.
+    fill_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    filled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    order: Mapped[RealOrder] = relationship(back_populates="fills")
+
+    __table_args__ = (
+        Index("ix_real_fills_order_filled_at", "real_order_id", "filled_at"),
+    )
