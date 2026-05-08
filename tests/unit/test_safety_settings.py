@@ -281,15 +281,15 @@ def test_v01_feature_full_auto_default_still_off(
 # ---------------------------------------------------------------------------
 
 
-def test_phase_a_does_not_introduce_new_alembic_revisions() -> None:
-    """Phase A must not change the head Alembic revision."""
+def test_phase_b_alembic_head_advanced_to_0007() -> None:
+    """v0.15 Phase B introduces ``0007_order_candidates``. Phase B must NOT
+    advance further (Phase D adds ``0008_approval_audit_logs``)."""
     from pathlib import Path
 
     versions_dir = (
         Path(__file__).resolve().parents[2] / "alembic" / "versions"
     )
     revisions = sorted(p.name for p in versions_dir.glob("0*.py"))
-    # v0.14 closed at 0006_virtual_positions; Phase A must not touch this.
     assert revisions == [
         "0001_baseline_v0_7.py",
         "0002_auth_foundation.py",
@@ -297,17 +297,33 @@ def test_phase_a_does_not_introduce_new_alembic_revisions() -> None:
         "0004_user_preferences.py",
         "0005_virtual_trading_core.py",
         "0006_virtual_positions.py",
+        "0007_order_candidates.py",
     ]
 
 
-def test_phase_a_does_not_add_paper_or_approval_routes_module() -> None:
-    """Phase A must not create the v0.15 Phase D Approval routes module yet."""
+def test_phase_b_does_not_add_approval_routes_module() -> None:
+    """Phase B must not create the v0.15 Phase D Approval routes module yet."""
     from pathlib import Path
 
     api_dir = (
         Path(__file__).resolve().parents[2] / "app" / "api"
     )
     assert not (api_dir / "approval_routes.py").exists(), (
-        "Phase A must not introduce app/api/approval_routes.py — that is "
+        "Phase B must not introduce app/api/approval_routes.py — that is "
         "Phase D scope."
+    )
+
+
+def test_phase_b_does_not_add_pre_trade_risk_engine_module() -> None:
+    """Phase B must not create the v0.15 Phase C risk engine module yet."""
+    from pathlib import Path
+
+    risk_dir = (
+        Path(__file__).resolve().parents[2] / "app" / "risk"
+    )
+    assert not risk_dir.exists() or not (
+        risk_dir / "pre_trade_risk_engine.py"
+    ).exists(), (
+        "Phase B must not introduce app/risk/pre_trade_risk_engine.py — that "
+        "is Phase C scope."
     )

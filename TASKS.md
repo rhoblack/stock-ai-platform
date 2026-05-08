@@ -1436,25 +1436,46 @@ Approval Trading Safety Layer (paper execution only)**.
       API / 프런트 변경 0건
 - [ ] `tag v0.15-safety-settings + push`
 
-### Phase B: OrderCandidate ORM + Repository
+### Phase B: OrderCandidate ORM + Repository ✅
 
-- [ ] `app/db/models.py` — `OrderCandidate` (38번째) ORM 추가. forbidden 컬럼 0건
-      (broker_order_id / kis_order_id / real_account / api_key / token / secret)
-- [ ] `alembic/versions/0007_order_candidates.py` 신규 — 1 테이블 + 4 인덱스 +
-      8-state status 컬럼 + downgrade
-- [ ] `app/data/repositories/order_candidate.py` 신규 — `create / get_by_id /
-      list_by_account / list_pending / update_status / update_risk_result /
-      set_approver / set_virtual_order_id`. 8 상태 머신 검증 (DRAFT /
-      RISK_CHECKING / RISK_REJECTED / PENDING_APPROVAL / APPROVED / REJECTED /
-      EXPIRED / EXECUTED_PAPER)
-- [ ] `tests/integration/test_order_candidate_repository.py` 신규 (~25건) — CRUD,
-      상태 머신 허용 전이 매트릭스, forbidden 컬럼, cascade delete from
-      VirtualAccount
-- [ ] `tests/integration/test_alembic_migration.py` —
+- [x] `app/db/models.py` — `OrderCandidate` (38번째) ORM 추가. forbidden 컬럼 0건
+      (broker_order_id / kis_order_id / real_account / real_order_id / api_key /
+      token / secret). `virtual_order_id` FK 만 paper 연결 가능 (실 KIS 0건)
+- [x] `alembic/versions/0007_order_candidates.py` 신규 — 1 테이블 + 5 인덱스
+      (`account_id` / `symbol` / `status` / `expires_at` /
+      `(account_id, status)`) + 8-state status 컬럼 + 3 FK
+      (account_id CASCADE / approver_user_id / virtual_order_id) + downgrade
+- [x] `app/data/repositories/order_candidate.py` 신규 — `create` (source / side /
+      order_type / status / quantity / LIMIT-price / estimated_amount /
+      symbol-trim+upper 검증) + `get_by_id` / `list_by_account` (status filter) /
+      `list_by_status` / `list_pending` / `list_expired_pending` (TTL 만료된
+      PENDING) / `update_status` (state machine 강제) / `attach_risk_result` /
+      `attach_virtual_order` (idempotent, overwrite 거부) /
+      `approve` / `reject` (256자 truncate) / `expire`. `VALID_SOURCES` /
+      `VALID_SIDES` / `VALID_ORDER_TYPES` / `VALID_STATUSES` /
+      `TERMINAL_STATUSES` 상수 export
+- [x] **상태 머신 허용 전이** (8 → 4 terminal): DRAFT → RISK_CHECKING →
+      (RISK_REJECTED | PENDING_APPROVAL) → (APPROVED → EXECUTED_PAPER | REJECTED
+      | EXPIRED). 잘못된 전이 / terminal 상태 추가 전이는
+      `InvalidOrderCandidateTransition` raise
+- [x] `tests/integration/test_order_candidate_repository.py` 신규 73건 — create
+      validation parametrize 9 + symbol normalize / MARKET ignore-price /
+      LIMIT decimal / list_by_account status filter / list_pending /
+      list_expired_pending / 4 allowed paths parametrize / 16 forbidden
+      transitions parametrize / 32 terminal × target outgoing edges
+      parametrize / unknown status / attach_risk_result happy + non-dict
+      reject / attach_virtual_order idempotent + overwrite refused /
+      approve+reject+expire 추적 / cascade delete / forbidden column 0건 /
+      AST forbidden import 0건 / Alembic upgrade head + downgrade 검증
+- [x] `tests/integration/test_alembic_migration.py` —
       `HEAD_REVISION='0007_order_candidates'`, `EXPECTED_TABLE_COUNT=38`,
-      spot-check 추가
-- [ ] `compare_metadata` diff 0건 가드
-- [ ] **게이트: pytest ~1465 → ~1505 (+~40)** — API / 프런트 변경 0건. Alembic head 0007
+      spot-check + parametrize 에 `order_candidates` 추가
+- [x] `tests/unit/test_safety_settings.py` — Phase B 가드 갱신 (Alembic 6 → 7
+      revisions, `order_candidates` 포함; `app/risk/pre_trade_risk_engine.py` /
+      `app/api/approval_routes.py` 미존재 단언 유지)
+- [x] `compare_metadata` diff 0건 가드 통과 (CI 강제)
+- [x] **게이트: pytest 1498 → 1581 passed (+83)** — 회귀 0건. API / 프런트 변경 0건.
+      Alembic head `0007_order_candidates`. KIS / 외부 네트워크 호출 0건
 - [ ] `tag v0.15-order-candidate + push`
 
 ### Phase C: PreTradeRiskEngine

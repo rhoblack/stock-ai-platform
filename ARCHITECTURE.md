@@ -1,5 +1,19 @@
 # Architecture
 
+> 본 문서는 **v0.15 Phase B 시점** 기준으로 갱신된다 (`v0.15-order-candidate`
+> 태그 예정). v0.14 paper 시뮬레이션 위에, v0.15 의 Approval Trading Safety
+> Layer 가 Phase A (SafetySettings 7종 + KillSwitch paranoid default) 와
+> Phase B (`OrderCandidate` 38번째 테이블 + 8-state 머신 + Alembic 0007) 까지
+> 진행되었다. **OrderCandidate** 는 추천 / 전략 / paper / 수동 입력으로부터의
+> 주문 후보를 staging 하며, `virtual_order_id` FK 가 paper 실행 결과에만 연결
+> 된다 (실 KIS / 실 broker / 실계좌 컬럼 0건). 8-state 머신
+> (`DRAFT → RISK_CHECKING → (RISK_REJECTED | PENDING_APPROVAL) → (APPROVED →
+> EXECUTED_PAPER | REJECTED | EXPIRED)`) 은 `OrderCandidateRepository.update_status`
+> 가 강제하며 terminal 4종은 outgoing edge 0건. PreTradeRiskEngine (Phase C),
+> ApprovalAuditLog + Approval API (Phase D), 14번째 프런트 화면 `/approvals`
+> (Phase E) 는 후속 phase 책임. 실 KIS 주문 / 자동매매 / FULL_AUTO / SMALL_AUTO /
+> APPROVAL 실거래 코드 0건은 v0.1 ~ v0.15 일관 정책으로 유지된다.
+>
 > 본 문서는 **v0.14 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.14-final`).
 > v0.14 5 Phase (Backtest Export CLI + ProviderScorePolicy 통합 → SimulationBroker +
 > VirtualAccount/VirtualOrder + Alembic 0005 → VirtualPosition + VirtualFill +
@@ -154,7 +168,7 @@ app/
 ├─ auth/                    # JWT 발급·검증 (v0.8) + BruteForceGuard (v0.9 Phase A)
 ├─ config/                  # Settings (.env 매핑) + logging.py (SensitiveFilter / RequestIDFilter, v0.9 Phase B)
 ├─ monitoring/              # sentry.py optional init (v0.9 Phase B, SENTRY_ENABLED=false 기본)
-├─ db/                      # SQLAlchemy 2.0 Base / 32 ORM 모델 (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1)
+├─ db/                      # SQLAlchemy 2.0 Base / 38 ORM 모델 (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1 + v0.14 5 + v0.15 1)
 ├─ data/
 │  ├─ collectors/           # KIS read-only HTTP / DailyPriceCollector / MarketCapCollector / Fake provider
 │  ├─ importers/            # operator CSV / Excel import (analyst reports, themes, mappings, signal events)

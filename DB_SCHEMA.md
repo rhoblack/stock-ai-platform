@@ -1,9 +1,8 @@
 # DB_SCHEMA.md
 
-> 본 문서는 **v0.14 Phase C 시점** 기준이다 (`v0.14-sim-broker` 위에
-> VirtualPosition / VirtualFill / VirtualPnLSnapshot + PnLTracker +
-> SimulationBroker.execute_pending_orders 도입 완료). 누적 **37 테이블**
-> (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1 + v0.14 5).
+> 본 문서는 **v0.15 Phase B 시점** 기준이다 (`v0.14-final` 위에 OrderCandidate
+> + Alembic 0007 도입 완료). 누적 **38 테이블** (v0.1 17 + v0.4 6 + v0.6 2 +
+> v0.7 2 + v0.8 4 + v0.9 1 + v0.14 5 + v0.15 1).
 > 자동매매 / 실 KIS 주문 / FULL_AUTO 컬럼 0건 정책 그대로 유지. v0.14 Phase B
 > 가 도입한 `virtual_accounts` / `virtual_orders` 는 paper / simulation 전용
 > 이며, **`broker_order_id` / `kis_order_id` / `real_account` / `api_key` /
@@ -17,7 +16,7 @@
 >
 > **v0.8 부터 Alembic 으로 관리한다.** 27 테이블의 baseline revision 은
 > `alembic/versions/0001_baseline_v0_7.py`. 이후 모든 ORM 변경은 신규 revision
-> 으로 추가한다 (manual ALTER 금지). 현재 head: `0006_virtual_positions`.
+> 으로 추가한다 (manual ALTER 금지). 현재 head: `0007_order_candidates`.
 > 운영 DB 절차 / stamp / upgrade / 롤백은 [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md)
 > §17 참조. CI 는 `tests/integration/test_alembic_migration.py` 가
 > `compare_metadata` diff 0건을 강제 — ORM 변경이 revision 없이 머지되면 CI 가
@@ -971,3 +970,66 @@ Idempotent — 같은 (account_id, snapshot_date) 재호출 시 in-place upsert.
 > → `virtual_fills` → `virtual_positions` 역순 drop, Phase B 테이블은 보존.
 >
 > **헤더 갱신**: DB_SCHEMA.md 헤더의 누적 테이블 수는 **37** (v0.14 Phase C 에서 +3).
+
+## 38. order_candidates (v0.15 Phase B)
+
+Approval Trading Safety Layer 의 staging 테이블. 추천 / 전략 / paper / 수동
+입력으로부터 들어온 주문 후보를 보관하며, PreTradeRiskEngine (Phase C) 와
+Approval Workflow (Phase D) 가 이 행을 소비한다. **paper execution 만 허용** —
+선택적 `virtual_order_id` FK 가 `virtual_orders.id` 에 연결되며, 실 KIS / 실
+broker / 실계좌 컬럼은 명시적으로 부재한다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | PK autoincrement |
+| account_id | FK → virtual_accounts.id `ON DELETE CASCADE`, NOT NULL, index |
+| source | String(16) NOT NULL — RECOMMENDATION / STRATEGY / PAPER / MANUAL (validator) |
+| source_ref_id | Integer nullable — recommendation_id / backtest_result_id / 등 (FK 미모델링, 이력 데이터 보존 위해) |
+| symbol | String(32) NOT NULL index |
+| side | String(8) NOT NULL — BUY / SELL (validator) |
+| quantity | Integer NOT NULL > 0 |
+| order_type | String(16) NOT NULL default `MARKET` — MARKET / LIMIT (validator) |
+| limit_price | Numeric(18,4) nullable — LIMIT 시 NOT NULL, MARKET 시 NULL (validator) |
+| estimated_amount | Numeric(18,4) NOT NULL default 0 — risk engine 의 per-order / daily cap 평가 입력 |
+| status | String(20) NOT NULL default `DRAFT` index — DRAFT / RISK_CHECKING / RISK_REJECTED / PENDING_APPROVAL / APPROVED / EXECUTED_PAPER / REJECTED / EXPIRED. 8-state 머신 `OrderCandidateRepository.update_status` 강제 |
+| risk_check_result_json | JSON nullable — `{"passed": bool, "violations": [...], "policy_version": str, "evaluated_at": ISO8601}` whitelist (Phase C) |
+| approver_user_id | FK → users.id nullable — APPROVE / REJECT 시 채워짐 |
+| rejection_reason | String(256) nullable — 사유 (256 자 자동 truncate) |
+| expires_at | DateTime(timezone=True) nullable index — TTL (Phase D 의 expire 잡 입력) |
+| virtual_order_id | FK → virtual_orders.id nullable — EXECUTED_PAPER 시점에만 attach. **실 KIS 주문에 연결 0건** |
+| created_at / updated_at | TimestampMixin |
+
+**Index**: `account_id`, `symbol`, `status`, `expires_at`,
+`(account_id, status)` (`ix_order_candidates_account_status`).
+
+**금지 컬럼 (회귀 단언)**: `broker_order_id` / `kis_order_id` / `real_account` /
+`real_order_id` / `api_key` / `token` / `secret`. test_order_candidate_repository.py 의
+`test_order_candidate_has_no_forbidden_columns` 가 강제.
+
+**State machine 허용 전이** (`OrderCandidateRepository._ALLOWED_TRANSITIONS`):
+
+```
+DRAFT
+  └─> RISK_CHECKING
+        ├─> RISK_REJECTED        (terminal)
+        └─> PENDING_APPROVAL
+              ├─> APPROVED
+              │     └─> EXECUTED_PAPER  (terminal)
+              ├─> REJECTED            (terminal)
+              └─> EXPIRED             (terminal)
+```
+
+terminal 4종 (RISK_REJECTED / EXECUTED_PAPER / REJECTED / EXPIRED) 은 어떤
+방향으로도 outgoing edge 0건 — `InvalidOrderCandidateTransition` raise.
+
+**Cascade**: VirtualAccount 삭제 시 자동 drop (DB FK ON DELETE CASCADE).
+
+> **운영 환경 마이그레이션 (v0.15 Phase B)**: Alembic revision
+> `0007_order_candidates` 가 1 테이블 + 5 인덱스 (`account_id` / `symbol` /
+> `status` / `expires_at` / `(account_id, status)`) 를 생성한다.
+> `0006_virtual_positions` 위에 layering — `alembic upgrade head` 한 번이면
+> 적용. `compare_metadata` diff 0건 (CI 강제). 다운그레이드
+> (`alembic downgrade 0006_virtual_positions`) 는 `order_candidates` 만 drop,
+> v0.14 paper trading 테이블은 보존.
+>
+> **헤더 갱신**: DB_SCHEMA.md 헤더의 누적 테이블 수는 **38** (v0.15 Phase B 에서 +1).

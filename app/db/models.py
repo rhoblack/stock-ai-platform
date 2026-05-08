@@ -1259,3 +1259,100 @@ class VirtualPnLSnapshot(TimestampMixin, Base):
             "snapshot_date",
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.15 Phase B -- Approval Trading Safety Layer (OrderCandidate, 38th table)
+#
+# OrderCandidate is the staging row for any order that wants to be executed
+# against a paper account. Phase B introduces ORM + repository + state
+# machine; the PreTradeRiskEngine (Phase C), Approval API + AuditLog
+# (Phase D), and frontend (Phase E) consume this table afterwards.
+#
+# Hard policies enforced here:
+#   * Only paper execution is allowed -- the optional ``virtual_order_id``
+#     FK pointing at ``virtual_orders.id`` is the ONLY downstream link.
+#     Real KIS / real broker / real account columns are explicitly absent.
+#   * Forbidden columns (regression-tested in
+#     tests/integration/test_order_candidate_repository.py):
+#     ``broker_order_id``, ``kis_order_id``, ``real_account``, ``real_order_id``,
+#     ``api_key``, ``token``, ``secret``.
+# ---------------------------------------------------------------------------
+
+
+class OrderCandidate(TimestampMixin, Base):
+    __tablename__ = "order_candidates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("virtual_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Provenance: where this candidate came from. Validated application-side.
+    # Allowed values: RECOMMENDATION / STRATEGY / PAPER / MANUAL.
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Optional id of the upstream row (recommendation_id / backtest_result_id /
+    # virtual_order_id at submission time / NULL for MANUAL). The FK is
+    # intentionally NOT modeled so that referencing tables can come and go
+    # without breaking historical candidates.
+    source_ref_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # BUY / SELL only; enforced application-side by the repository.
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    # MARKET / LIMIT only; enforced application-side by the repository.
+    order_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="MARKET"
+    )
+    limit_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    # quantity * (limit_price OR last close price). Set by the caller at
+    # creation time so the risk engine can evaluate per-order / daily caps
+    # without re-resolving prices.
+    estimated_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=Decimal("0")
+    )
+    # 8-state machine -- DRAFT / RISK_CHECKING / RISK_REJECTED /
+    # PENDING_APPROVAL / APPROVED / EXECUTED_PAPER / REJECTED / EXPIRED.
+    # Allowed transitions are enforced by OrderCandidateRepository.
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="DRAFT", index=True
+    )
+    # PreTradeRiskEngine output (Phase C). Whitelist-shaped:
+    # {"passed": bool, "violations": [{"rule_name": str, "message": str,
+    #  "severity": "HARD"|"SOFT"}], "policy_version": str,
+    #  "evaluated_at": ISO8601}.
+    risk_check_result_json: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )
+    # Filled when an admin user approves OR rejects the candidate.
+    approver_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    # Short, operator-facing reason for REJECTED / RISK_REJECTED / EXPIRED.
+    rejection_reason: Mapped[str | None] = mapped_column(
+        String(256), nullable=True
+    )
+    # TTL. PENDING_APPROVAL candidates past this time are eligible for
+    # EXPIRED transition (lazy or scheduler-driven, Phase D).
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # Set when the approved candidate has been forwarded to
+    # SimulationBroker.submit_order. NEVER points at a real KIS order.
+    virtual_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("virtual_orders.id"),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_order_candidates_account_status",
+            "account_id",
+            "status",
+        ),
+    )

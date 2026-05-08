@@ -38,7 +38,7 @@ Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `Simul
 | Phase | 내용 | 예상 태그 | 실제 pytest |
 |---|---|---|---|
 | A | SafetySettings + KillSwitch + 7 신규 settings (안전 default) | `v0.15-safety-settings` | **1438→1498 (+60) ✅** |
-| B | OrderCandidate ORM (38번째) + Repository + Alembic 0007 + 8-state 머신 | `v0.15-order-candidate` | **~1498→~1538 (+~40)** |
+| B | OrderCandidate ORM (38번째) + Repository + Alembic 0007 + 8-state 머신 | `v0.15-order-candidate` | **1498→1581 (+83) ✅** |
 | C | PreTradeRiskEngine (6 hard 룰) + RiskCheckResult | `v0.15-pre-trade-risk` | **~1538→~1578 (+~40)** |
 | D | Approval Workflow API 7종 + ApprovalAuditLog (39번째) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) | `v0.15-approval-api` | **~1578→~1623 (+~45)** |
 | E | 14번째 프런트 화면 `/approvals` + `RELEASE_NOTES_v0.15.md` + 4 게이트 확인 | `v0.15-final` | vitest **186→~200 (+~14)** / e2e **22→23 (+1)** |
@@ -68,6 +68,41 @@ Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `Simul
   Alembic revision 0건 (head 0006_virtual_positions 그대로) / API 라우터 변경
   0건 / 프런트 변경 0건 / 신규 pip 0건 / 외부 네트워크 호출 0건 / KIS / 자동매매
   / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건**
+
+### v0.15 Phase B 완료 (2026-05-08)
+
+- `app/db/models.py`: `OrderCandidate` (38번째) ORM 추가. account_id (CASCADE) /
+  approver_user_id / virtual_order_id 3 FK + 5 인덱스 + 8-state status 컬럼.
+  forbidden 컬럼 0건 (broker_order_id / kis_order_id / real_account /
+  real_order_id / api_key / token / secret). 회귀 단언 통과
+- `alembic/versions/0007_order_candidates.py` 신규: 1 테이블 + 5 인덱스 + 3 FK +
+  downgrade
+- `app/data/repositories/order_candidate.py` 신규: `OrderCandidateRepository`
+  (create / get_by_id / list_by_account / list_by_status / list_pending /
+  list_expired_pending / update_status / attach_risk_result / attach_virtual_order /
+  approve / reject / expire). `VALID_SOURCES` / `VALID_SIDES` /
+  `VALID_ORDER_TYPES` / `VALID_STATUSES` / `TERMINAL_STATUSES` /
+  `InvalidOrderCandidateTransition` / `OrderCandidateValidationError` export.
+  AST forbidden import 0건 (KIS / DART / RSS / requests / httpx / urllib)
+- 8-state 머신 허용 전이: `DRAFT → RISK_CHECKING → (RISK_REJECTED | PENDING_APPROVAL)
+  → (APPROVED → EXECUTED_PAPER | REJECTED | EXPIRED)`. terminal 4종 (RISK_REJECTED /
+  EXECUTED_PAPER / REJECTED / EXPIRED) 은 outgoing edge 0건 — 잘못된 전이는
+  `InvalidOrderCandidateTransition` raise
+- `tests/integration/test_order_candidate_repository.py` 신규 73건 — create
+  validation 9 / symbol normalize / MARKET ignore-price / LIMIT decimal /
+  list filter / 4 allowed paths / 16 forbidden transitions / 32 terminal ×
+  target outgoing edges / risk_result attach / virtual_order attach idempotent /
+  approve / reject 256자 truncate / expire / cascade delete / forbidden 컬럼 /
+  AST forbidden import / Alembic upgrade head + downgrade
+- `tests/integration/test_alembic_migration.py`: `HEAD_REVISION='0007_order_candidates'`,
+  `EXPECTED_TABLE_COUNT=38`, spot-check + parametrize 에 `order_candidates` 추가
+- `tests/unit/test_safety_settings.py`: Phase A 격리 단언을 Phase B 격리 단언으로
+  갱신 (Alembic 7 revisions 정확히, `app/api/approval_routes.py` /
+  `app/risk/pre_trade_risk_engine.py` 미존재 단언)
+- **실제 게이트: pytest 1498 → 1581 passed (+83) / 회귀 0건 / Alembic head:
+  `0007_order_candidates` / `compare_metadata` diff 0건 / API 라우터 변경 0건 /
+  프런트 변경 0건 / 신규 pip 0건 / KIS API / 외부 네트워크 호출 0건 / 실 KIS /
+  자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건**
 
 ### v0.15 핵심 정책
 
