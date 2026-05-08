@@ -1,5 +1,19 @@
 # Architecture
 
+> 본 문서는 **v0.14 Phase B 시점** 기준으로 갱신된다 (`v0.14-sim-broker` 태그
+> 예정). v0.14 Phase A 의 Backtest Export CLI + ProviderScorePolicy producer
+> 통합 위에, **Phase B** 가 paper / simulation 트레이딩 코어를 도입했다 —
+> `app/broker/simulation_broker.py` `SimulationBroker` (`BrokerInterface` 첫
+> 구현체, KIS / DART / RSS / requests / httpx import 0건),
+> `app/db/models.py` `VirtualAccount` (33번째) + `VirtualOrder` (34번째),
+> `alembic/versions/0005_virtual_trading_core.py`,
+> `app/data/repositories/virtual_account.py` + `virtual_order.py`,
+> `Settings.paper_trading_enabled=False` (default OFF). Paper Trading API
+> 라우터 / 프런트 화면 / VirtualPosition / VirtualFill / VirtualPnLSnapshot /
+> PnLTracker / `execute_pending_orders` 체결 로직은 모두 Phase C/D/E 책임.
+> 실 KIS 주문 / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 코드 0건은
+> 그대로 유지된다.
+>
 > 본 문서는 **v0.13 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.13-final`).
 > **v0.13 Phase A** — `app/scoring/provider_policy.py` 신규: `ProviderScorePolicy` +
 > `DATA_SOURCE_RELIABILITY` (PROVIDER=1.00 / CSV=0.90 / MANUAL=0.80) + `_BYPASS_SOURCES={"FAKE"}`.
@@ -107,7 +121,7 @@ app/
 ├─ notification/            # ReportGenerator, TelegramNotifier (DRY_RUN), Dispatchers
 ├─ api/                     # FastAPI routers (23+ GET + 5 auth/watchlist POST/DELETE v0.8 + 6 watchlist/pref PATCH/PUT v0.9)
 ├─ scheduler/               # APScheduler + run_job wrapper + 9 jobs
-└─ broker/                  # placeholder only (ABC) — 자동매매 진입 전까지 비어 있음
+└─ broker/                  # v0.14 Phase B — SimulationBroker (BrokerInterface 첫 구현체, paper trading 전용 / KIS API 0건). 실 KIS / 자동매매 broker 는 여전히 placeholder
 
 frontend/                   # v0.2 Vite/React/TS PC 대시보드 + v0.3~v0.9 누적
 ├─ src/
@@ -569,10 +583,19 @@ v0.4 는 `DummyScoreProducer` (neutral 50 + rule 기반 ±5 보정) 만 사용. 
 
 ### BrokerInterface
 
-미래 확장용 ABC. **v0.1 ~ v0.4 어디에도 구현체가 없다.**
+자동매매 / 가상매매 boundary. v0.14 Phase B 부터 첫 구현체가 도입된다.
 
-- KisBroker (실거래) — v1.0+
-- MockBroker / ReplayBroker / SimulationBroker — v0.5+ 가상매매 사이클
+- **`SimulationBroker` (v0.14 Phase B)** — `app/broker/simulation_broker.py`.
+  paper / simulation 전용. **KIS / DART / RSS / requests / httpx import 0건**
+  (AST + grep 두 가지 방법으로 회귀 단언). `submit_order` 는
+  `Settings.paper_trading_enabled=False` (default) 상태에서 명확히 거부
+  (`PaperTradingDisabledError`). enable 시 `VirtualOrder(CREATED)` 행을 작성하고,
+  중복 idempotency_key 는 기존 행을 반환 (`SubmitResult.deduplicated=True`).
+  `cancel_order` 는 CREATED / SUBMITTED 상태만 CANCELED 로 이행. 체결 로직
+  (`execute_pending_orders`) 은 Phase C 책임 — 현재는 `NotImplementedError`
+  placeholder.
+- KisBroker (실거래) — v1.0+ 별도 보안·컴플라이언스 사이클 후 진입
+- MockBroker / ReplayBroker — 필요시 검토
 
 ### StrategyInterface
 

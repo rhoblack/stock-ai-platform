@@ -43,8 +43,8 @@ ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"
 BASELINE_REVISION = "0001_baseline_v0_7"
 # v0.8 Phase C introduces the third revision. ``HEAD_REVISION`` is what
 # ``alembic upgrade head`` should land on; new revisions update this constant.
-HEAD_REVISION = "0004_user_preferences"
-EXPECTED_TABLE_COUNT = 32  # 27 baseline + 2 from 0002 + 2 from 0003 + 1 from 0004
+HEAD_REVISION = "0005_virtual_trading_core"
+EXPECTED_TABLE_COUNT = 34  # 27 baseline + 2 (0002) + 2 (0003) + 1 (0004) + 2 (0005)
 SPOT_CHECK_TABLES = (
     # v0.1 backend
     "stocks",
@@ -69,6 +69,9 @@ SPOT_CHECK_TABLES = (
     "watchlist_items",
     # v0.9 Phase C user preferences
     "user_preferences",
+    # v0.14 Phase B virtual trading core
+    "virtual_accounts",
+    "virtual_orders",
 )
 
 
@@ -299,6 +302,9 @@ def test_offline_mode_emits_sql_without_connecting(tmp_path: Path) -> None:
         "watchlist_items",
         # v0.9 Phase C user preferences
         "user_preferences",
+        # v0.14 Phase B virtual trading core
+        "virtual_accounts",
+        "virtual_orders",
     ],
 )
 def test_spot_check_each_required_table_present(

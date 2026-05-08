@@ -1032,3 +1032,93 @@ class UserPreference(TimestampMixin, Base):
 
     user: Mapped["User"] = relationship(back_populates="preferences")
     default_watchlist: Mapped["Watchlist | None"] = relationship(foreign_keys=[default_watchlist_id])
+
+
+# ---------------------------------------------------------------------------
+# v0.14 Phase B -- Virtual Trading Core (VirtualAccount, VirtualOrder)
+#
+# Foundation for in-process paper / simulation trading. NO real broker /
+# KIS / autotrade integration is wired here -- VirtualOrder is a pure DB row
+# written by ``app.broker.simulation_broker.SimulationBroker`` and gated by
+# ``Settings.paper_trading_enabled`` (default False).
+#
+# Forbidden columns (regression-tested in
+# tests/integration/test_virtual_trading_core.py): ``broker_order_id``,
+# ``kis_order_id``, ``real_account``, ``api_key``, ``token``, ``secret``.
+# VirtualPosition / VirtualFill / VirtualPnLSnapshot belong to Phase C.
+# ---------------------------------------------------------------------------
+
+
+class VirtualAccount(TimestampMixin, Base):
+    __tablename__ = "virtual_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Optional FK to users.id. Single-user deployments may leave this NULL --
+    # the simulation core works without authentication, mirroring the v0.7
+    # backtest engine which is also user-agnostic.
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    initial_cash: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    cash_balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="KRW")
+    # Per-account opt-in flag. The global ``Settings.paper_trading_enabled``
+    # gates the broker; this column is the per-account knob (e.g. an admin
+    # can pre-create accounts but keep them inert).
+    paper_trading_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+
+    orders: Mapped[list["VirtualOrder"]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_virtual_accounts_user_name"),
+    )
+
+
+class VirtualOrder(TimestampMixin, Base):
+    __tablename__ = "virtual_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("virtual_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # BUY / SELL only; enforced application-side by SimulationBroker.
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    # MARKET / LIMIT only; enforced application-side by SimulationBroker.
+    order_type: Mapped[str] = mapped_column(String(16), nullable=False, default="MARKET")
+    limit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    # CREATED / SUBMITTED / PARTIALLY_FILLED / FILLED / CANCELED / REJECTED.
+    # Phase B writes only CREATED / CANCELED / REJECTED; fill states are
+    # produced by Phase C's execute_pending_orders().
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="CREATED", index=True
+    )
+    # Idempotency key for client-driven dedup. Unique per account so two
+    # accounts can independently use the same client-side key.
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Short, operator-facing reason / note. Hard-capped to 256 chars to
+    # discourage paragraph dumps -- VirtualOrder is metadata, not a journal.
+    reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    account: Mapped[VirtualAccount] = relationship(back_populates="orders")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "idempotency_key",
+            name="uq_virtual_orders_account_idempotency",
+        ),
+        Index("ix_virtual_orders_account_status", "account_id", "status"),
+    )

@@ -16,7 +16,7 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 - 시작 일자: **2026-05-08 (Asia/Seoul)**
 - 기준 게이트: pytest **1277 passed** / vitest **175 passed** / e2e **21 passed** / build 그린
 - 기준 태그: `v0.13-final` → 예상 마감 태그: `v0.14-final`
-- Alembic head: `0004_user_preferences` → v0.14 신규 revision **2건** 예정
+- Alembic head: `0004_user_preferences` → **`0005_virtual_trading_core` (Phase B 완료)** → 0006 (Phase C 예정)
   (`0005_virtual_trading_core`: VirtualAccount + VirtualOrder /
    `0006_virtual_positions`: VirtualPosition + VirtualFill + VirtualPnLSnapshot)
 - 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0014`
@@ -37,9 +37,9 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 | Phase | 내용 | 예상 태그 | 실제 pytest |
 |---|---|---|---|
 | A | Backtest Export CLI + ProviderScorePolicy→Producer 통합 | `v0.14-export-policy` | **1277→1322 (+45) ✅** |
-| B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | **~1322→~1362 (+~40)** |
-| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **~1362→~1392 (+~30)** |
-| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **~1392→~1418 (+~26)** |
+| B | SimulationBroker + VirtualAccount/VirtualOrder ORM + Alembic 0005 | `v0.14-sim-broker` | **1322→1365 (+43) ✅** |
+| C | VirtualPosition + VirtualFill + VirtualPnLSnapshot + PnLTracker + CostModel 확장 (Alembic 0006) | `v0.14-pnl-tracker` | **~1365→~1395 (+~30)** |
+| D | Paper Trading API (GET 4 + POST 1 + DELETE 1) + 스케줄러 잡 2건 | `v0.14-paper-api` | **~1395→~1421 (+~26)** |
 | E | Frontend 13번째 화면 `/paper` + `RELEASE_NOTES_v0.14.md` + 4 게이트 확인 | `v0.14-final` | vitest **175→~185 (+~10)** / e2e **21→22 (+1)** |
 
 ### v0.14 Phase A 완료 (2026-05-08)
@@ -49,6 +49,20 @@ VirtualAccount / VirtualOrder / VirtualPosition / PnL 추적 + Paper Trading API
 - `tests/integration/test_backtest_export.py` 신규 23건
 - `tests/unit/test_score_producers.py` 25건 추가
 - **실제 게이트: pytest 1322 passed / 회귀 0건 / Alembic revision 0건 / DB 모델 변경 0건 / 신규 pip 0건**
+
+### v0.14 Phase B 완료 (2026-05-08)
+
+- `app/config/settings.py`: `paper_trading_enabled: bool = False` (env `PAPER_TRADING_ENABLED`) — 페이퍼 트레이딩 마스터 스위치 default OFF
+- `app/db/models.py`: `VirtualAccount` (33번째) + `VirtualOrder` (34번째) ORM 추가. forbidden 컬럼 0건 (broker_order_id / kis_order_id / real_account / api_key / token / secret)
+- `alembic/versions/0005_virtual_trading_core.py` 신규: `virtual_accounts` + `virtual_orders` create_table + 인덱스 4건 + unique 제약 2건 (`uq_virtual_accounts_user_name`, `uq_virtual_orders_account_idempotency`) + downgrade 포함
+- `app/data/repositories/virtual_account.py` 신규: `create / get_by_id / list_by_user / get_default / update_cash_balance / set_paper_trading_enabled`
+- `app/data/repositories/virtual_order.py` 신규: `create / get_by_id / list_by_account / get_by_idempotency_key / update_status / cancel`. 상태 머신: CREATED → SUBMITTED / CANCELED / REJECTED / (PARTIALLY_FILLED / FILLED는 Phase C)
+- `app/broker/__init__.py`: `SimulationBroker` / `SubmitResult` / `PaperTradingDisabledError` / `SimulationBrokerError` export
+- `app/broker/simulation_broker.py` 신규: `SimulationBroker` (BrokerInterface 첫 구현체, KIS / DART / RSS / requests / httpx import 0건). `submit_order` 는 PAPER_TRADING_ENABLED=False 또는 account.paper_trading_enabled=False 시 거부, idempotency_key 중복 시 기존 row 반환 (`deduplicated=True`). `cancel_order` 는 CREATED/SUBMITTED → CANCELED 만 허용. `execute_pending_orders` 는 Phase C placeholder (`NotImplementedError`)
+- `tests/unit/test_simulation_broker.py` 신규 29건: switch off / on, validation, idempotency, cancel, terminal-state guard, AST + grep 두 가지 방법으로 forbidden import 0건 단언
+- `tests/integration/test_virtual_trading_core.py` 신규 16건: repository CRUD, unique 제약 IntegrityError, cascade delete, broker end-to-end, forbidden 컬럼 0건, alembic upgrade head / downgrade 검증
+- `tests/integration/test_alembic_migration.py`: `HEAD_REVISION='0005_virtual_trading_core'`, `EXPECTED_TABLE_COUNT=34`, spot-check 2종 추가
+- **실제 게이트: pytest 1322 → 1365 passed (+43) / 회귀 0건 / Alembic head: 0005_virtual_trading_core / `compare_metadata` diff 0건 / KIS API 호출 0건 / 외부 네트워크 호출 0건 / Paper Trading API 라우터 0건 / 프런트 변경 0건 / 신규 pip 0건**
 
 ### v0.14 핵심 정책
 

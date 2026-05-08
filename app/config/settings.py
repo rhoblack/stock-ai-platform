@@ -315,6 +315,18 @@ class Settings:
         default_factory=lambda: os.getenv("PROMETHEUS_PATH", "/metrics"),
     )
 
+    # v0.14 Phase B -- Paper / Simulation Trading master switch.
+    # Default OFF: SimulationBroker.submit_order() refuses to write any
+    # VirtualOrder row when this is False. KIS / real broker / autotrade are
+    # NEVER affected by this flag -- it gates only the in-process simulation
+    # core (VirtualAccount, VirtualOrder, SimulationBroker). When operators
+    # explicitly opt in via PAPER_TRADING_ENABLED=true, the broker writes
+    # CREATED-state VirtualOrder rows but still performs ZERO outbound
+    # network calls and ZERO KIS API access (see app/broker/simulation_broker.py).
+    paper_trading_enabled: bool = field(
+        default_factory=lambda: _as_bool(os.getenv("PAPER_TRADING_ENABLED"), False),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )

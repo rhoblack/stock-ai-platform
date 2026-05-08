@@ -1328,20 +1328,22 @@ Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)*
 - [x] **게이트: pytest 1322 passed (기준 1277 +45)** — 회귀 0건
 - [ ] `tag v0.14-export-policy + push`
 
-### Phase B: SimulationBroker + VirtualAccount/VirtualOrder 도메인
+### Phase B: SimulationBroker + VirtualAccount/VirtualOrder 도메인 ✅
 
-- [ ] `app/broker/__init__.py` 신규 — `SimulationBroker` export
-- [ ] `app/broker/simulation_broker.py` 신규 — `SimulationBroker` (BrokerInterface 첫 구현체, KIS API 0건)
-- [ ] `app/db/models.py` — `VirtualAccount` (33번째) + `VirtualOrder` (34번째) ORM 추가
-- [ ] `alembic/versions/0005_virtual_trading_core.py` 신규 — 2 테이블 migration
-- [ ] `app/data/repositories/virtual_account.py` 신규
-- [ ] `app/data/repositories/virtual_order.py` 신규 (idempotency key + 중복 방지)
-- [ ] `app/config/settings.py` — `PAPER_TRADING_ENABLED: bool = False` 추가
-- [ ] `tests/unit/test_project_structure.py` — `paper_trading_enabled` defaults 단언
-- [ ] `tests/unit/test_simulation_broker.py` 신규 — KIS API import 0건 단언 포함
-- [ ] `tests/integration/test_virtual_account.py` 신규 (~20건)
-- [ ] `compare_metadata` 0건 가드 확인
-- [ ] `tag v0.14-sim-broker + push` — **게이트: pytest ~1337 (+~40)**
+- [x] `app/broker/__init__.py` — `SimulationBroker` / `SubmitResult` / `PaperTradingDisabledError` / `SimulationBrokerError` export
+- [x] `app/broker/simulation_broker.py` 신규 — `SimulationBroker` (BrokerInterface 첫 구현체). `submit_order` 는 PAPER_TRADING_ENABLED=False 또는 account.paper_trading_enabled=False 시 `PaperTradingDisabledError` 발생, 정상 시 `VirtualOrder(CREATED)` DB write. idempotency_key 중복은 기존 row 반환 (`SubmitResult.deduplicated=True`). `cancel_order` 는 CREATED/SUBMITTED → CANCELED 만 허용, terminal/fill 진행 상태(FILLED/PARTIALLY_FILLED/CANCELED/REJECTED) 거부. `execute_pending_orders` 는 Phase C placeholder (`NotImplementedError`)
+- [x] `app/db/models.py` — `VirtualAccount` (33번째) + `VirtualOrder` (34번째) ORM 추가. forbidden 컬럼 0건 (broker_order_id / kis_order_id / real_account / api_key / token / secret)
+- [x] `alembic/versions/0005_virtual_trading_core.py` 신규 — 2 테이블 + 4 인덱스 + 2 unique constraint (`uq_virtual_accounts_user_name`, `uq_virtual_orders_account_idempotency`) + downgrade 포함
+- [x] `app/data/repositories/virtual_account.py` 신규 — `create / get_by_id / list_by_user / get_default / update_cash_balance / set_paper_trading_enabled`
+- [x] `app/data/repositories/virtual_order.py` 신규 — `create / get_by_id / list_by_account / get_by_idempotency_key / update_status / cancel`. side / order_type / status / quantity / limit_price 검증
+- [x] `app/config/settings.py` — `paper_trading_enabled: bool = False` (env `PAPER_TRADING_ENABLED`)
+- [x] `tests/unit/test_project_structure.py` — `paper_trading_enabled` 기본 False 단언 추가
+- [x] `tests/unit/test_simulation_broker.py` 신규 (29건) — switch off / on, validation, idempotency, cancel, terminal-state guard, AST 기반 forbidden import 0건 단언, source-grep KIS/httpx/requests 0건 단언, `execute_pending_orders` Phase C placeholder
+- [x] `tests/integration/test_virtual_trading_core.py` 신규 (16건) — repository CRUD, unique 제약 IntegrityError, cascade delete, broker end-to-end, forbidden 컬럼 0건, `alembic upgrade head` 가 두 신규 테이블 생성, `alembic downgrade 0004` 가 두 테이블만 drop
+- [x] `tests/integration/test_alembic_migration.py` — `HEAD_REVISION='0005_virtual_trading_core'`, `EXPECTED_TABLE_COUNT=34`, spot-check / parametrize 에 `virtual_accounts` / `virtual_orders` 추가
+- [x] `compare_metadata` 0건 가드 통과 (CI 강제)
+- [x] **게이트: pytest 1322 → 1365 passed (+43)** — 회귀 0건. KIS API / 외부 네트워크 / Paper Trading API 라우터 / 프런트 변경 0건
+- [ ] `tag v0.14-sim-broker + push`
 
 ### Phase C: VirtualPosition + PnL 추적 + CostModel 확장
 

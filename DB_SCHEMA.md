@@ -1,10 +1,14 @@
 # DB_SCHEMA.md
 
-> 본 문서는 **v0.9 Phase C 시점** 기준이다 (`v0.8-final` 위에 Alembic baseline
-> + auth foundation + watchlist + user_preferences 도입 완료). 누적 **32 테이블**
-> (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1). 자동매매 / 주문 /
-> 계좌 / 가격 / 수량 컬럼 0건 정책 그대로 유지. v0.8 Phase B 가 도입한
-> `users.password_hash` 는 scrypt 해시만 저장 (평문 0건).
+> 본 문서는 **v0.14 Phase B 시점** 기준이다 (`v0.14-export-policy` 위에
+> SimulationBroker / VirtualAccount / VirtualOrder 도입 완료). 누적
+> **34 테이블** (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1 + v0.14 2).
+> 자동매매 / 실 KIS 주문 / FULL_AUTO 컬럼 0건 정책 그대로 유지. v0.14 Phase B
+> 가 도입한 `virtual_accounts` / `virtual_orders` 는 paper / simulation 전용
+> 이며, **`broker_order_id` / `kis_order_id` / `real_account` / `api_key` /
+> `token` / `secret` 컬럼 0건** (회귀 단언:
+> `tests/integration/test_virtual_trading_core.py::test_models_have_no_forbidden_columns`).
+> v0.8 Phase B 가 도입한 `users.password_hash` 는 scrypt 해시만 저장 (평문 0건).
 > `login_audit_logs.source_ip_hash` / `user_agent_hash` 는 SHA256 해시만 저장
 > (평문 IP / user agent 0건). v0.8 Phase C 의 `watchlist_items` 는 broker /
 > account / quantity / order_* / source_file_path 컬럼 0건. v0.9 Phase C 의
@@ -12,8 +16,8 @@
 >
 > **v0.8 부터 Alembic 으로 관리한다.** 27 테이블의 baseline revision 은
 > `alembic/versions/0001_baseline_v0_7.py`. 이후 모든 ORM 변경은 신규 revision
-> 으로 추가한다 (manual ALTER 금지). 현재 head: `0004_user_preferences`. 운영 DB
-> 절차 / stamp / upgrade / 롤백은 [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md)
+> 으로 추가한다 (manual ALTER 금지). 현재 head: `0005_virtual_trading_core`.
+> 운영 DB 절차 / stamp / upgrade / 롤백은 [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md)
 > §17 참조. CI 는 `tests/integration/test_alembic_migration.py` 가
 > `compare_metadata` diff 0건을 강제 — ORM 변경이 revision 없이 머지되면 CI 가
 > 즉시 실패한다.
@@ -817,3 +821,71 @@ quantity / order_* 컬럼 0건** (설정 스토리지이지 주문/인증이 아
 > 다운그레이드 (`alembic downgrade -1`) 는 `user_preferences` 만 drop, watchlist 테이블은 보존.
 >
 > **헤더 갱신**: DB_SCHEMA.md 헤더의 누적 테이블 수는 **32** (v0.9 Phase C 에서 +1).
+
+## 33. virtual_accounts (v0.14 Phase B)
+
+페이퍼 / 시뮬레이션 트레이딩의 가상 계좌. **실 broker / KIS / 자동매매와
+물리적으로 분리** — `broker_order_id` / `kis_order_id` / `real_account` /
+`api_key` / `token` / `secret` 컬럼 0건. 실 주문이 절대 이 테이블을 참조하지
+않는다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | PK autoincrement |
+| user_id | FK → users.id, nullable, index — 단일 사용자 배포에서는 NULL 허용 |
+| name | String(64) NOT NULL — 빈 문자열 금지 (Repository validator) |
+| initial_cash | Numeric(18,4) NOT NULL — 계좌 초기 자본 (디폴트 10,000,000 KRW) |
+| cash_balance | Numeric(18,4) NOT NULL — 현재 보유 현금 (음수 금지) |
+| currency | String(8) NOT NULL default `KRW` |
+| paper_trading_enabled | Boolean NOT NULL default true — 계좌별 OFF 스위치. 글로벌 `Settings.paper_trading_enabled` 와 함께 AND 조건으로 SimulationBroker 게이팅 |
+| created_at / updated_at | TimestampMixin |
+
+**Unique**: `(user_id, name)` (`uq_virtual_accounts_user_name`) — 같은 user 가
+동일 이름 계좌 둘 만들지 못함 (NULL user 는 SQL 표준상 distinct).
+**Index**: `user_id`.
+
+**관계**: `VirtualAccount.orders` ← VirtualOrder (1:N, ON DELETE CASCADE).
+
+## 34. virtual_orders (v0.14 Phase B)
+
+페이퍼 / 시뮬레이션 트레이딩 주문 행. SimulationBroker 가 작성하며, **실 KIS
+주문과 코드 경로 / 테이블이 완전히 분리**된다. `broker_order_id` /
+`kis_order_id` / `real_account` / `api_key` / `token` / `secret` 컬럼 0건.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | PK autoincrement |
+| account_id | FK → virtual_accounts.id `ON DELETE CASCADE`, NOT NULL, index |
+| symbol | String(32) NOT NULL index |
+| side | String(8) NOT NULL — `BUY` / `SELL` (application-side validator) |
+| quantity | Integer NOT NULL — `> 0` 검증 |
+| order_type | String(16) NOT NULL default `MARKET` — `MARKET` / `LIMIT` |
+| limit_price | Numeric(18,4) nullable — `LIMIT` 일 때 NOT NULL, `MARKET` 일 때 NULL (validator) |
+| status | String(20) NOT NULL default `CREATED` index — `CREATED / SUBMITTED / PARTIALLY_FILLED / FILLED / CANCELED / REJECTED`. Phase B 는 `CREATED / CANCELED / REJECTED` 만 작성, 체결 상태는 Phase C 의 `execute_pending_orders()` 책임 |
+| idempotency_key | String(64) nullable — 클라이언트 멱등 키 |
+| reason | String(256) nullable — 거부 / 취소 사유 (단문) |
+| note | String(256) nullable — 운영자 메모 (단문) |
+| created_at / updated_at | TimestampMixin |
+
+**Unique**: `(account_id, idempotency_key)` (`uq_virtual_orders_account_idempotency`)
+— SimulationBroker.submit_order 가 같은 키 재호출 시 새 행을 만들지 않고 기존
+행을 반환 (`SubmitResult.deduplicated=True`). 서로 다른 계좌는 같은 키 사용 가능.
+**Index**: `account_id`, `symbol`, `status`, `(account_id, status)`
+(`ix_virtual_orders_account_status`).
+
+**Cascade**: VirtualAccount 삭제 시 자동 drop (DB FK ON DELETE CASCADE + ORM
+`cascade="all, delete-orphan"`). SQLite 는 `PRAGMA foreign_keys=ON` 필요 —
+테스트 fixture 가 이를 보장한다.
+
+**금지**: 이 테이블은 paper / simulation 전용. 실 KIS 주문 / FULL_AUTO /
+SMALL_AUTO / APPROVAL 플로우와 코드 경로가 완전히 분리되어 있고,
+`tests/unit/test_simulation_broker.py` 가 SimulationBroker 모듈에 KIS / DART /
+RSS / requests / httpx import 0건을 AST + grep 두 가지 방법으로 강제한다.
+
+> **운영 환경 마이그레이션 (v0.14 Phase B)**: Alembic revision
+> `0005_virtual_trading_core` 가 두 테이블 생성. `0004_user_preferences` 위에
+> layering — `alembic upgrade head` 한 번이면 적용. `compare_metadata` diff
+> 0건 (CI 강제). 다운그레이드 (`alembic downgrade 0004_user_preferences`) 는
+> `virtual_orders` → `virtual_accounts` 순서로 drop, 그 외 테이블은 보존.
+>
+> **헤더 갱신**: DB_SCHEMA.md 헤더의 누적 테이블 수는 **34** (v0.14 Phase B 에서 +2).

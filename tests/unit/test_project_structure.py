@@ -20,6 +20,10 @@ def test_settings_defaults():
     # v0.5 Phase B — 공시 자동 수집도 default OFF. DISCLOSURE_COLLECTION_ENABLED=true
     # 명시 설정 시에만 enable.
     assert settings.disclosure_collection_enabled is False
+    # v0.14 Phase B — Paper / Simulation Trading 마스터 스위치도 default OFF.
+    # PAPER_TRADING_ENABLED=true 명시 설정 시에만 SimulationBroker.submit_order
+    # 가 VirtualOrder 행을 기록한다 (외부 호출 0건 정책 그대로 유지).
+    assert settings.paper_trading_enabled is False
 
 
 def test_interfaces_importable():
