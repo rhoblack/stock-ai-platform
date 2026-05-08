@@ -1405,11 +1405,154 @@ Paper Trading Full Stack (SimulationBroker + VirtualAccount/Order/Position/PnL)*
 
 ---
 
-## v0.15+ — Backlog
+## v0.15 — Approval Trading Safety Layer (시작 선언)
+
+기준선: `v0.14-final`. 회귀 게이트: pytest **1438** / vitest **186** / e2e **22** / build 그린.
+세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0015`. 채택 시나리오: **Scenario X —
+Approval Trading Safety Layer (paper execution only)**.
+실 KIS 주문 / 실 broker / 자동매매 / FULL_AUTO 0건 (v0.1~v0.14 정책 승계).
+
+### Phase A: SafetySettings + KillSwitch
+
+- [ ] `app/config/settings.py` — 7 신규 필드 (`trading_safety_enabled` /
+      `kill_switch_enabled` / `approval_required` / `max_order_amount` /
+      `max_daily_order_amount` / `max_position_ratio` / `max_daily_loss_amount`).
+      모두 안전 default — kill_switch ON / approval_required True / 한도 보수적
+- [ ] `tests/unit/test_project_structure.py` — 7 신규 default 단언
+- [ ] `tests/unit/test_safety_settings.py` 신규 (~20건) — env override / 경계값 /
+      kill_switch ON 기본 / max_position_ratio in (0, 1] / 7 필드 frozen 단언
+- [ ] **게이트: pytest 1438 → ~1465 (+~27)** — DB / API / 프런트 변경 0건
+- [ ] `tag v0.15-safety-settings + push`
+
+### Phase B: OrderCandidate ORM + Repository
+
+- [ ] `app/db/models.py` — `OrderCandidate` (38번째) ORM 추가. forbidden 컬럼 0건
+      (broker_order_id / kis_order_id / real_account / api_key / token / secret)
+- [ ] `alembic/versions/0007_order_candidates.py` 신규 — 1 테이블 + 4 인덱스 +
+      8-state status 컬럼 + downgrade
+- [ ] `app/data/repositories/order_candidate.py` 신규 — `create / get_by_id /
+      list_by_account / list_pending / update_status / update_risk_result /
+      set_approver / set_virtual_order_id`. 8 상태 머신 검증 (DRAFT /
+      RISK_CHECKING / RISK_REJECTED / PENDING_APPROVAL / APPROVED / REJECTED /
+      EXPIRED / EXECUTED_PAPER)
+- [ ] `tests/integration/test_order_candidate_repository.py` 신규 (~25건) — CRUD,
+      상태 머신 허용 전이 매트릭스, forbidden 컬럼, cascade delete from
+      VirtualAccount
+- [ ] `tests/integration/test_alembic_migration.py` —
+      `HEAD_REVISION='0007_order_candidates'`, `EXPECTED_TABLE_COUNT=38`,
+      spot-check 추가
+- [ ] `compare_metadata` diff 0건 가드
+- [ ] **게이트: pytest ~1465 → ~1505 (+~40)** — API / 프런트 변경 0건. Alembic head 0007
+- [ ] `tag v0.15-order-candidate + push`
+
+### Phase C: PreTradeRiskEngine
+
+- [ ] `app/risk/__init__.py` 신규 — `PreTradeRiskEngine` / `RiskCheckResult` /
+      `RiskViolation` export
+- [ ] `app/risk/pre_trade_risk_engine.py` 신규 — 6 hard 룰 (kill_switch_off /
+      per_symbol_limit / daily_total_limit / position_ratio_limit /
+      daily_loss_limit / duplicate_recent + account_paper_enabled).
+      `POLICY_VERSION="pre-trade-v1"`
+- [ ] `tests/unit/test_pre_trade_risk_engine.py` 신규 (~30건) — 룰별 happy /
+      boundary / off-by-one / kill_switch ON / max_position_ratio 0.2 정확 검증 /
+      duplicate window 4분59초 vs 5분0초 경계 / RiskCheckResult 직렬화
+- [ ] `tests/integration/test_pre_trade_risk_integration.py` 신규 (~10건) —
+      VirtualAccount / VirtualPosition 시드 후 BUY / SELL 시나리오 + 룰 조합
+- [ ] AST 단언 — `pre_trade_risk_engine.py` 가 KIS / DART / RSS / requests /
+      httpx import 0건
+- [ ] **게이트: pytest ~1505 → ~1545 (+~40)** — DB 모델 변경 0건. API / 프런트 변경 0건
+- [ ] `tag v0.15-pre-trade-risk + push`
+
+### Phase D: Approval Workflow API + Audit Log + Service
+
+- [ ] `app/db/models.py` — `ApprovalAuditLog` (39번째) ORM 추가 (append-only)
+- [ ] `alembic/versions/0008_approval_audit_logs.py` 신규
+- [ ] `app/data/repositories/approval_audit_log.py` 신규 — `append /
+      list_by_candidate / list_recent`. **수정 / 삭제 메서드 0건**
+- [ ] `app/approval/__init__.py` + `app/approval/approval_service.py` 신규 —
+      `ApprovalService.create_candidate` (PreTradeRiskEngine 호출 →
+      PENDING_APPROVAL or RISK_REJECTED) / `approve` (kill_switch + 재검사 →
+      APPROVED → execute_approved 자동) / `reject` / `expire` /
+      `execute_approved` (`SimulationBroker.submit_order` 만 호출, KIS API 0건)
+- [ ] `app/api/approval_routes.py` 신규 — 7 엔드포인트:
+      - `GET /api/approvals/candidates?status=&account_id=&limit=`
+      - `GET /api/approvals/candidates/{id}` (audit log + risk_check_result 포함)
+      - `POST /api/approvals/candidates` (create + risk check, AUTH + safety + kill 게이트)
+      - `POST /api/approvals/{id}/approve` (AUTH + safety + kill 게이트)
+      - `POST /api/approvals/{id}/reject`
+      - `POST /api/approvals/{id}/expire` (admin only)
+      - `GET /api/approvals/audit?candidate_id=&limit=`
+- [ ] `app/api/schemas.py` — Approval 스키마 ~10종 추가. forbidden 응답 필드 12종 0건
+- [ ] `app/api/__init__.py` + `app/main.py` — `approval_router` 등록
+- [ ] `app/scheduler/jobs.py` — `expire_pending_approvals` 잡 (5분 간격, kill_switch /
+      trading_safety 게이트). 12번째 잡
+- [ ] `app/scheduler/scheduler.py` — DEFAULT_SCHEDULE 12 jobs 로 확장
+- [ ] `tests/integration/test_approval_api.py` 신규 (~30건) — workflow 전체 흐름,
+      503 (safety off / kill on), 401 (AUTH), 409 (이미 결정됨), 422 (validation),
+      forbidden 응답 필드 / KIS import 0건 AST
+- [ ] `tests/integration/test_approval_audit_log.py` 신규 (~10건) — append-only
+      단언 + 수정 시도 시 NoResultFound / 422
+- [ ] `tests/integration/test_approval_scheduler_jobs.py` 신규 (~5건) — expire
+      잡 disabled SKIPPED + enabled FILLED 격리
+- [ ] `tests/integration/test_alembic_migration.py` —
+      `HEAD_REVISION='0008_approval_audit_logs'`, `EXPECTED_TABLE_COUNT=39`
+- [ ] `tests/integration/test_auth_security.py` — mutating endpoint count 11 → 17
+      갱신, no_auto_trade_strings_in_routes 가드 갱신 (`approval` keyword 는
+      `/api/approvals/` prefix 만 허용)
+- [ ] `tests/integration/test_scheduler_jobs.py` — registry sanity 11 → 12
+- [ ] `compare_metadata` diff 0건 가드
+- [ ] **게이트: pytest ~1545 → ~1590 (+~45)** — 프런트 변경 0건. Alembic head 0008
+- [ ] `tag v0.15-approval-api + push`
+
+### Phase E: Approval UI 14번째 화면 + 마감 문서
+
+- [ ] `frontend/src/api/approval.ts` 신규 — 7 fetch 함수 (`fetchApprovalCandidates`
+      / `fetchApprovalCandidate` / `submitApprovalCandidate` / `approveCandidate` /
+      `rejectCandidate` / `expireCandidate` / `fetchApprovalAudit`)
+- [ ] `frontend/src/hooks/useApprovals.ts` 신규 — read 4 + mutation 3 hooks. mutation 후
+      approval namespace + paper namespace invalidate
+- [ ] `frontend/src/pages/Approvals/index.tsx` 신규 (14번째 화면 `/approvals`):
+      - `KillSwitchBanner` (ON 시 빨강 / OFF 시 회색, 항상 노출)
+      - `TradingSafetyBanner` (TRADING_SAFETY_ENABLED=false 안내)
+      - `PendingCandidatesTable` (PENDING_APPROVAL 행 + 승인 / 거절 버튼 + risk preview)
+      - `CandidateDetailDrawer` (risk_check_result_json + audit log timeline)
+      - `HistoryTable` (EXECUTED_PAPER / REJECTED / EXPIRED / RISK_REJECTED)
+      - 버튼 라벨: "승인 (paper 실행)" / "거절" / "만료". "주문 실행" / "place real order" 0건
+- [ ] `frontend/src/router.tsx` — ApprovalsPage lazy + `/approvals` route
+- [ ] `frontend/src/components/layout/Sidebar.tsx` — `ShieldCheck` 아이콘 + "승인 대기 (β)"
+      (14번째 메뉴) + footer 라벨 v0.15 갱신
+- [ ] `frontend/src/api/types.ts` — `OrderCandidate` / `RiskCheckResult` /
+      `RiskViolation` / `ApprovalAuditLog` / 응답 wrapper 타입 추가
+- [ ] `frontend/src/tests/Approvals.test.tsx` 신규 vitest ~14건 — page render /
+      kill switch banner ON·OFF / safety banner / pending happy / approve mutation /
+      reject mutation / risk drawer / forbidden DOM 토큰 0건 / 자동매매 CTA 0건
+- [ ] `frontend/src/tests/mswServer.ts` — approval 7 mock 추가 (POST 기본 503)
+- [ ] `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts` — sidebar 13 → 14 +
+      `/approvals` happy-path navigation + KillSwitchBanner ON 시뮬레이션 + 자동매매
+      CTA 0건 단언
+- [ ] `RELEASE_NOTES_v0.15.md` 신규 — Phase A~E 산출물 + 최종 게이트 + 안전 정책 +
+      알려진 한계 + v0.16 후보
+- [ ] `README.md` v0.15-final 배너 / 기능 목록 / 누적 사이클 표 / 회귀 기준선 갱신
+- [ ] `PROJECT_STATUS.md` §0 v0.15 마감 선언 (현재 §0 → §0-1 강등)
+- [ ] `ROADMAP.md` v0.15 행 ✅ 마감
+- [ ] `TASKS.md` Phase E 체크박스 전체 완료
+- [ ] `ARCHITECTURE.md` Approval workflow / risk engine / kill switch 흐름 반영
+- [ ] `TESTING.md` v0.15 최종 게이트 갱신
+- [ ] `API_SPEC.md` Approval API 7종 추가
+- [ ] `INTEGRATION_RUNBOOK.md` §23 Approval 운영 절차 추가 (TRADING_SAFETY_ENABLED /
+      KILL_SWITCH_ENABLED 활성화 절차 + 후보 시드 + workflow smoke)
+- [ ] `DB_SCHEMA.md` 38, 39번째 테이블 추가
+- [ ] 최종 4 게이트 확인 (pytest ~1590 / vitest ~200 / e2e 23 / build)
+- [ ] `tag v0.15-final + push`
+
+---
+
+## v0.16+ — Backlog
 
 자세한 분류는 [`ROADMAP.md`](./ROADMAP.md) / [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) 참조. 한 줄 요약:
 
-- **Approval Trading 준비** — OrderCandidate / 승인 플로우 설계 + skeleton (Paper Trading 안정 후, v0.15 후보)
+- **Real Order Integration (v0.16+ 후보)** — KIS order wrapper + 실주문 audit + 컴플라이언스 검토. v0.15 OrderCandidate(status=APPROVED) 가 직접 입력. 별도 보안·컴플라이언스 사이클 선행 필수
+- **Approval Trading 준비** — ✅ v0.15 채택 (OrderCandidate + PreTradeRiskEngine + SafetySettings + Approval Workflow + UI; paper execution only)
 - **ScoringEngine 본 weight 보강** — v0.13/v0.14 validation report 결과 기반 (누적 데이터 6개월+ 필요)
 - **Grafana dashboard JSON 동봉** — v0.11 Prometheus exporter 위 시각화 layer (외부 인프라)
 - **ProviderHealthMonitor 영속화** — DB / Redis 백업으로 재시작 후 history 유지

@@ -7,7 +7,67 @@
 
 ---
 
-## 0. v0.14 마감 선언 — Paper / Simulation Trading Foundation
+## 0. v0.15 시작 선언 — Approval Trading Safety Layer
+
+**v0.15 cycle 시작.** `v0.14-final` 위에 **OrderCandidate + PreTradeRiskEngine +
+SafetySettings (KillSwitch 포함) + Approval Workflow API + 14번째 프런트 화면
+`/approvals`** 5 Phase 진행 예정. 채택 시나리오: **Scenario X — Approval Trading
+Safety Layer (paper execution only)**.
+
+- 시작 일자: **2026-05-08 (Asia/Seoul)**
+- 기준 게이트: pytest **1438 passed** / vitest **186 passed** / e2e **22 passed** / build 그린
+- 기준 태그: `v0.14-final` → 예상 마감 태그: `v0.15-final`
+- Alembic head: `0006_virtual_positions` → 예상 v0.15 신규 revision **2건** (`0007_order_candidates` Phase B, `0008_approval_audit_logs` Phase D, 누적 39 테이블)
+- 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0015`
+
+### v0.15 채택 결론 (시나리오 비교 요약)
+
+`PLANS.md` `PLAN-0015` 4 시나리오 비교 후 채택: **Scenario X — Approval Trading
+Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `SimulationBroker` 만
+호출 (paper execution only).
+
+| 시나리오 | 내용 | 결정 |
+|---|---|---|
+| **X** | OrderCandidate + PreTradeRiskEngine + SafetySettings + Approval Workflow + Approval UI (paper execution only) | ✅ **핵심 채택** |
+| Y | Approval UI 중심 (workflow / risk engine 최소화) | ❌ 기각 — UI 만으로는 안전성 검증 불가, Phase E 의 한 부분으로 흡수 |
+| Z | KIS 실주문 wrapper 준비 (KisOrderClient skeleton) | ❌ 기각 — 컴플라이언스·보안 사이클 선행 필수, 실주문 누설 위험 → v0.16+ |
+| W | Paper Trading 고도화만 (PnL 차트 / 멀티 계좌) | ⚠️ 일부 v0.15.+ 또는 v0.17 백로그 |
+
+### v0.15 Phase 목표
+
+| Phase | 내용 | 예상 태그 | 예상 pytest |
+|---|---|---|---|
+| A | SafetySettings + KillSwitch + 7 신규 settings (안전 default) | `v0.15-safety-settings` | **~1465 (+~27)** |
+| B | OrderCandidate ORM (38번째) + Repository + Alembic 0007 + 8-state 머신 | `v0.15-order-candidate` | **~1505 (+~40)** |
+| C | PreTradeRiskEngine (6 hard 룰) + RiskCheckResult | `v0.15-pre-trade-risk` | **~1545 (+~40)** |
+| D | Approval Workflow API 7종 + ApprovalAuditLog (39번째) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) | `v0.15-approval-api` | **~1590 (+~45)** |
+| E | 14번째 프런트 화면 `/approvals` + `RELEASE_NOTES_v0.15.md` + 4 게이트 확인 | `v0.15-final` | vitest **186→~200 (+~14)** / e2e **22→23 (+1)** |
+
+### v0.15 핵심 정책
+
+- **모든 mutation 은 KillSwitch + TradingSafety + AUTH 3중 게이트** — 어느 하나라도 false 면 503
+- **승인된 후보는 `SimulationBroker.submit_order` 만 호출** — 실 KIS 주문 / 실 broker 0건 (AST 회귀 단언)
+- **`KILL_SWITCH_ENABLED=true` 기본** — paranoid default. 운영자가 명시 false 로 끄지 않으면 모든 후보 차단
+- **`TRADING_SAFETY_ENABLED=false` 기본** — Approval API 자체 503
+- **`approval_required=True` 기본** — 자동 승인 / 자동 실행 0건
+- **ApprovalAuditLog append-only** — 수정 / 삭제 API 0건
+- **자동매매 / 실 KIS 주문 / FULL_AUTO / SMALL_AUTO 코드 0건** (v0.1~v0.15 일관)
+- **Alembic 2 revisions** (0007 + 0008), `compare_metadata` 0건 가드
+- **ScoringEngine / HoldingCheckEngine 본 weight 변경 0건**
+- **신규 pip 의존성 0건**
+- **DART/RSS/Prometheus/Provider Data Ingestion/Score Policy/Paper Trading default OFF 유지**
+- **forbidden 응답 / DOM 필드 0건** (v0.14 12종 정책 승계)
+
+### v0.16+ 경계 정리
+
+v0.15 의 산출물 (`OrderCandidate(status=APPROVED)` / `PreTradeRiskEngine` /
+`ApprovalAuditLog` / `KillSwitch`) 은 v0.16 의 직접 기반이 된다.
+v0.16 진입 전에는 **컴플라이언스 / 자본 한도 정책 / 비상정지 이력 / 실주문 로그 보존**
+의 별도 사이클이 선행되어야 한다.
+
+---
+
+## 0-1. v0.14 마감 선언 — Paper / Simulation Trading Foundation
 
 **v0.14 cycle 마감.** `v0.13-final` 위에 **SimulationBroker (BrokerInterface 첫 구현체) +
 VirtualAccount / VirtualOrder / VirtualPosition / VirtualFill / VirtualPnLSnapshot +

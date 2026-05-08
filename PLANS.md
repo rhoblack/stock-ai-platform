@@ -3756,3 +3756,497 @@ virtual_pnl_snapshots (37번째 테이블) — Alembic 0006
 - DART/RSS/Prometheus/Provider Data Ingestion/Score Policy 모두 기본 OFF 유지
 - `compare_metadata` diff 0건 (각 Phase B/C 인수 시점)
 - 비밀값 / URL query secret 노출 0건
+
+---
+
+## PLAN-0015: v0.15 Approval Trading Safety Layer (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.14-final` (커밋 `058c91a`, 2026-05-08)
+- 회귀 게이트: backend pytest **1438 passed** / frontend vitest **186 passed** / Playwright e2e **22 passed** / build 그린
+- Alembic head: `0006_virtual_positions` (37 테이블)
+- v0.14 누적 기능: SimulationBroker (`BrokerInterface` 첫 구현체) + VirtualAccount/Order/Position/Fill/PnL 5 ORM + Paper Trading API 6 라우터 + 스케줄러 잡 2건 + 13번째 프런트 화면 `/paper`
+- 누적 정책: 실 KIS 주문 / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 코드 0건 (v0.1 ~ v0.14 일관)
+
+### 목표
+
+v0.14 의 paper 시뮬레이션 위에 **Approval Trading Safety Layer** 를 구축한다.
+주문 후보 (`OrderCandidate`) 생성, 사전 리스크 검사 (`PreTradeRiskEngine`),
+운영자 안전 설정 (`SafetySettings` + `KillSwitch`), 사용자 승인 워크플로우
+(`approval_audit_logs`), 14번째 프런트 화면 `/approvals` 를 모두 도입한다.
+**승인된 후보는 paper execution 만 실행한다** — 실 KIS 주문 / 실 broker /
+실거래 연결은 v0.16+ 별도 사이클로 미룬다.
+
+핵심 아이디어: "실거래는 아직 멀었지만, 실거래로 가는 길에 반드시 통과해야
+하는 안전 게이트 레이어" 를 v0.15 에서 미리 검증한다. 모든 승인 / 거절 /
+만료 / 실행은 immutable audit log 로 기록되어 미래의 컴플라이언스 검토에
+대응한다.
+
+### 라이선스 / 약관 메모
+
+- 신규 외부 API 0건 — Approval workflow 는 내부 상태 머신만
+- KIS 실주문 API 0건 — `KisOrderClient` / 실 broker wrapper 구현 금지
+- Approval 후보 → paper 실행: 기존 `SimulationBroker.submit_order` 호출만
+- DART/RSS/Prometheus/Provider Data Ingestion/Score Policy 모두 default OFF 유지
+
+### 후보 시나리오 비교 (v0.15 진입 시점)
+
+| # | 시나리오 | 가치 | 난이도 | 위험 | 외부 의존성 | DB/Alembic | v1.0 기여 | v0.15 채택 |
+|---|---|---|---|---|---|---|---|---|
+| **X** | **Approval Trading Safety Layer** — OrderCandidate + PreTradeRiskEngine + SafetySettings + Approval Workflow + Approval UI (paper execution only) | **매우 높음** — 실거래 진입 전 반드시 통과해야 하는 안전 게이트를 paper 단계에서 완성. v0.16+ 실 KIS 연결의 직접 기반 | **높음** — 2 ORM 신규 + 상태 머신 + risk engine + audit log + 14번째 프런트 화면 | **중** — kill switch 누출 / risk bypass 방지 설계 필요 (코드 레벨 가드) | 없음 (내부 워크플로우) | 2 revisions / 2 테이블 | **매우 높음** | ✅ **채택** |
+| Y | Approval UI 중심 — workflow / 리스크 엔진 최소화, UI 카드만 풍성하게 | 중 — UI 만으로는 안전성 검증 불가. 상태 머신 / risk engine 부재 시 UI 가 부유함 | 중-낮음 | 낮음 | 없음 | 1 revision | 중 | ❌ — Phase E 의 한 부분으로 흡수 |
+| Z | KIS 실주문 wrapper 준비 — `KisOrderClient` skeleton + 실 API 호환 설계 | 낮음 (현 단계) | **매우 높음** | **매우 높음** — 실 KIS 주문 누설 위험, 미성숙 단계, 컴플라이언스 사이클 미선행 | KIS 실 API | 2-3 revisions | 중 | ❌ **기각** — v0.16+ 별도 보안·컴플라이언스 사이클 선행 필수 |
+| W | Paper Trading 고도화만 — PnL 차트 / 멀티 계좌 / 호가 체결 정밀화 | 중 — 점진적 개선이지만 v0.15 의 안전 게이트 구축 압박은 해소되지 않음 | 중 | 낮음 | 없음 | 0~1 revision | 중-낮음 | ⚠️ Phase 외 일부 흡수 (PnL 차트는 v0.15.+ 또는 v0.16) |
+
+**채택 근거 (Scenario X)**:
+
+- v0.14 가 paper 시뮬레이션 (가상 자본 + 가상 체결) 을 완성했지만, **승인 게이트가
+  부재** — 모든 paper 주문이 즉시 CREATED 로 들어가고 다음 잡에서 자동 체결됨.
+  실거래로 진입하기 전 **사용자 명시 승인 단계**가 반드시 필요하다.
+- v0.16+ 의 KIS 실주문 wrapper 가 도입되더라도, 그 wrapper 의 입력은
+  `OrderCandidate(status=APPROVED)` 가 되어야 한다. 즉 v0.15 의 워크플로우는
+  v0.16 의 직접 기반.
+- Scenario Y (UI only) 는 안전 game 의 핵심인 risk engine + 상태 머신을 빠뜨리므로 부적합.
+- Scenario Z (KIS wrapper) 는 컴플라이언스 검토 / 사용자 자본 한도 정책 /
+  비상정지 이력 / 실주문 로그 이중화 등이 모두 미수립 — 진입 시 위험이 너무 큼.
+- Scenario W (paper 고도화) 는 v0.15 가 끝난 뒤 v0.15.+ 패치 또는 v0.17 백로그.
+
+### v0.15 할 것 / 하지 않을 것
+
+**할 것:**
+
+- `app/config/settings.py` — 7 신규 settings (`trading_safety_enabled` /
+  `kill_switch_enabled` / `approval_required` / `max_order_amount` /
+  `max_daily_order_amount` / `max_position_ratio` / `max_daily_loss_amount`)
+  모두 안전 default — kill_switch ON / approval_required True / 한도들은 보수적
+  최댓값
+- `app/db/models.py` — `OrderCandidate` (38번째) + `ApprovalAuditLog` (39번째) ORM
+- Alembic `0007_order_candidates` (Phase B) + `0008_approval_audit_logs` (Phase D)
+- `app/risk/pre_trade_risk_engine.py` 신규 — `PreTradeRiskEngine` (6 룰)
+- `app/data/repositories/order_candidate.py` + `approval_audit_log.py` 신규
+- `app/approval/approval_service.py` 신규 — `ApprovalService` (workflow + audit 통합)
+- `app/api/approval_routes.py` 신규 — 6 엔드포인트
+- 14번째 프런트 화면 `/approvals` (`Sidebar` `ShieldCheck` 아이콘, "승인 대기 (β)")
+- `RELEASE_NOTES_v0.15.md` + 4 게이트 최종 확인 (Phase E)
+
+**하지 않을 것:**
+
+- ❌ KIS 실주문 wrapper / `KisOrderClient` 구현 (v0.16+)
+- ❌ 실 BrokerInterface 를 KIS API 에 연결 — `SimulationBroker` 만 사용
+- ❌ 사용자 승인 없는 자동 주문 실행 — Approval workflow 가 강제
+- ❌ kill switch ON 상태에서 후보 생성 / 승인 / 실행 (모두 차단)
+- ❌ 실거래 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 — v0.1~v0.14 정책 승계
+- ❌ 다중 사용자 SaaS / OAuth / RBAC — 단일 사용자 + 단일 승인자
+- ❌ ScoringEngine / HoldingCheckEngine 본 weight 변경 (walk-forward 검증 누적 데이터 필요)
+- ❌ DART/RSS/Prometheus/Provider Data Ingestion default ON 변경
+- ❌ 신규 pip 의존성 (stdlib only)
+- ❌ LLM 자동 전략 생성 / 자동 후보 생성 (v0.16+)
+- ❌ 실시간 WebSocket / SSE — polling + invalidation 으로 충분
+- ❌ Telegram 자동 발송 — DRY_RUN 기본 (v0.5 정책 승계)
+- ❌ 비밀값 / API key / token / URL query secret 평문 노출
+
+### Approval Trading 흐름 (v0.15 범위)
+
+```
+[추천 / 전략 / 페이퍼 / 수동] → POST /api/approvals/candidates
+   → OrderCandidate(DRAFT) 작성
+   → PreTradeRiskEngine.evaluate(candidate)
+       ↓
+   ┌─ violations 0건 → status=PENDING_APPROVAL
+   └─ violations 1건+ → status=RISK_REJECTED + reason
+                        ↓
+                       (운영자가 사유 확인 후 강제 종결)
+
+PENDING_APPROVAL 후보:
+   ├─ POST /api/approvals/{id}/approve
+   │     → kill_switch / approval_required 재검사
+   │     → 통과 시 status=APPROVED
+   │     → ApprovalService.execute_approved(candidate)
+   │         → SimulationBroker.submit_order(account, ...)  ← paper 실행만
+   │         → status=EXECUTED_PAPER + virtual_order_id 연결
+   │     → ApprovalAuditLog (event=APPROVED → EXECUTED_PAPER)
+   │
+   ├─ POST /api/approvals/{id}/reject
+   │     → status=REJECTED + reason
+   │     → ApprovalAuditLog (event=REJECTED)
+   │
+   └─ TTL 만료 (스케줄러 잡 또는 lazy 검사)
+         → status=EXPIRED
+         → ApprovalAuditLog (event=EXPIRED)
+```
+
+**핵심 설계 원칙:**
+
+- **kill switch ON 시 모든 후보 생성 / 승인 / 실행 차단** — `_require_kill_switch_off`
+  데코레이터 또는 헬퍼로 강제
+- **모든 후보는 paper execution 으로만 종결** — `ApprovalService.execute_approved`
+  는 `SimulationBroker` 만 호출, KIS 호출 0건 (AST 회귀 단언)
+- **`approval_required=True` 기본** — 자동 승인 / 자동 실행 0건. 승인은 사용자
+  명시 POST 만
+- **모든 상태 전이는 immutable audit log 1행 기록** — append-only,
+  `approval_audit_logs.id` UNIQUE, 수정 / 삭제 API 0건
+- **단일 승인자** — `approver_user_id` FK 는 v0.8 의 단일 admin 사용자만 허용
+
+### OrderCandidate 데이터 모델
+
+```
+order_candidates (38번째 테이블) — Alembic 0007
+  id: Integer PK autoincrement
+  account_id: FK → virtual_accounts.id (CASCADE DELETE) — paper 계좌 연결
+  source: String(32) — RECOMMENDATION / STRATEGY / PAPER / MANUAL
+  source_ref_id: Integer nullable — recommendation_id / backtest_result_id 등
+  symbol: String(32) NOT NULL index
+  side: String(8) — BUY / SELL
+  quantity: Integer NOT NULL > 0
+  order_type: String(16) — MARKET / LIMIT
+  limit_price: Numeric(18,4) nullable
+  estimated_amount: Numeric(18,4) NOT NULL — quantity × (limit_price 또는 마지막 close)
+  status: String(20) default 'DRAFT' index —
+    DRAFT / RISK_CHECKING / RISK_REJECTED / PENDING_APPROVAL /
+    APPROVED / REJECTED / EXPIRED / EXECUTED_PAPER
+  risk_check_result_json: JSON nullable —
+    {"passed": bool, "violations": [{"rule_name": str, "message": str, "severity": "HARD"|"SOFT"}],
+     "policy_version": str, "evaluated_at": ISO8601}
+  approver_user_id: FK → users.id nullable — 승인 시 채워짐 (REJECT 도 동일)
+  rejection_reason: String(256) nullable
+  expires_at: DateTime(timezone=True) nullable — TTL (기본 30분 후)
+  created_at / updated_at: TimestampMixin
+  virtual_order_id: FK → virtual_orders.id nullable — EXECUTED_PAPER 시점 연결
+```
+
+**Unique / Index:**
+
+- `(account_id, status)` — 활성 후보 빠른 조회
+- 인덱스: `account_id`, `symbol`, `status`, `expires_at`
+
+**금지 컬럼 (회귀 단언):**
+
+- `broker_order_id`, `kis_order_id`, `real_account`, `real_order_id`,
+  `api_key`, `token`, `secret` — v0.14 정책 승계
+
+### ApprovalAuditLog 데이터 모델
+
+```
+approval_audit_logs (39번째 테이블) — Alembic 0008
+  id: Integer PK autoincrement
+  candidate_id: FK → order_candidates.id (CASCADE DELETE), index
+  event_type: String(32) NOT NULL index —
+    CREATED / RISK_CHECKED / RISK_REJECTED / APPROVED / REJECTED /
+    EXPIRED / EXECUTED_PAPER / KILL_SWITCH_BLOCKED
+  prev_status: String(20) nullable
+  next_status: String(20) NOT NULL
+  actor_user_id: FK → users.id nullable — 시스템 이벤트는 NULL
+  actor_via: String(16) nullable — manual / scheduler / system
+  reason: String(256) nullable
+  context_json: JSON nullable —
+    {"risk_violations": [...], "kill_switch_state": "ON"|"OFF",
+     "policy_version": str, "ip_hash": SHA256, "user_agent_hash": SHA256}
+  created_at: DateTime(timezone=True) NOT NULL index
+```
+
+**Append-only 정책:**
+
+- 수정 / 삭제 API 0건 — 오직 INSERT
+- `actor_via` 가 `system` 인 경우 (TTL expire 등) `actor_user_id` 는 NULL
+- `ip_hash` / `user_agent_hash` 는 v0.8 `LoginAuditLog` 와 동일하게 SHA256 만 저장
+
+### SafetySettings / KillSwitch 설계
+
+`Settings` 신규 7건 (모두 안전 default):
+
+```python
+# app/config/settings.py
+
+trading_safety_enabled: bool = False
+# False (default) → Approval API 자체가 503 응답
+# True → Approval API 활성. 단, kill_switch 도 OFF 여야 실행 가능
+
+kill_switch_enabled: bool = True
+# True (default, paranoid) → 모든 후보 생성 / 승인 / 실행 차단.
+# 운영자가 명시적으로 .env 에서 false 로 끄지 않으면 동작 X.
+
+approval_required: bool = True
+# True (default) → 후보는 PENDING_APPROVAL 상태 → 사용자 승인 필요
+# False → 자동 승인 후 paper 실행 (테스트 전용 / 운영 비권장)
+
+max_order_amount: int = 100_000           # 단일 주문 최대 (KRW)
+max_daily_order_amount: int = 1_000_000   # 일일 누적 주문 최대 (KRW)
+max_position_ratio: float = 0.20           # 단일 종목 최대 비중 (계좌 총평가액 대비)
+max_daily_loss_amount: int = 500_000      # 일일 실현 손실 한도 (KRW)
+```
+
+**KillSwitch 정책:**
+
+- env: `KILL_SWITCH_ENABLED=false` 명시 시에만 OFF — 변수 부재 / 부정확 값 → ON
+- kill switch ON 상태에서 어떤 API 호출이 와도:
+  - `POST /api/approvals/candidates` → 503 + audit `KILL_SWITCH_BLOCKED`
+  - `POST /api/approvals/{id}/approve` → 503 + audit `KILL_SWITCH_BLOCKED`
+  - 자동 실행 잡 → SKIPPED (로그만)
+- UI 는 kill switch 상태 배지를 항상 노출 (ON 시 전 화면 빨강)
+
+### PreTradeRiskEngine 설계
+
+`app/risk/pre_trade_risk_engine.py`:
+
+```python
+class PreTradeRiskEngine:
+    """6 hard 룰 + 0 soft 룰 (v0.15 시작 시점)."""
+
+    POLICY_VERSION = "pre-trade-v1"
+
+    def evaluate(
+        self,
+        session: Session,
+        candidate: OrderCandidate,
+        *,
+        settings: Settings,
+    ) -> RiskCheckResult:
+        violations = []
+        violations.extend(self._check_kill_switch(settings))
+        violations.extend(self._check_per_symbol_limit(session, candidate, settings))
+        violations.extend(self._check_daily_total_limit(session, candidate, settings))
+        violations.extend(self._check_position_ratio_limit(session, candidate, settings))
+        violations.extend(self._check_daily_loss_limit(session, candidate, settings))
+        violations.extend(self._check_duplicate_recent(session, candidate))
+        violations.extend(self._check_account_paper_enabled(session, candidate))
+        return RiskCheckResult(
+            passed=not violations,
+            violations=violations,
+            policy_version=self.POLICY_VERSION,
+            evaluated_at=utc_now(),
+        )
+```
+
+**6 룰 (모두 HARD severity):**
+
+1. `kill_switch_off` — settings.kill_switch_enabled=False
+2. `per_symbol_limit` — 동일 (account, symbol) 활성 후보 합계 + 신규 후보 estimated_amount ≤ max_order_amount
+3. `daily_total_limit` — 오늘 (KST) 누적 후보 estimated_amount + 신규 ≤ max_daily_order_amount
+4. `position_ratio_limit` — BUY 시 (estimated_amount + 현 시장가치) / 계좌 총평가액 ≤ max_position_ratio
+5. `daily_loss_limit` — 오늘 (KST) realized_pnl 누계 ≥ -max_daily_loss_amount
+6. `duplicate_recent` — 최근 5분 내 동일 (account, symbol, side, quantity) 후보 부재
+
+**SOFT 룰** (v0.15 범위 외, v0.15.+ 또는 v0.16 후보): 추천 grade 가 D 이하인 종목,
+보유 점검에서 SELL_REVIEW 가 떨어진 종목 등.
+
+### Approval Workflow API
+
+| 메서드 | 경로 | 목적 |
+|---|---|---|
+| GET | `/api/approvals/candidates?status=&account_id=&limit=` | 후보 목록 (read-only) |
+| GET | `/api/approvals/candidates/{id}` | 후보 상세 + risk_check_result + audit log |
+| POST | `/api/approvals/candidates` | 후보 생성 (DRAFT → PreTradeRiskEngine → PENDING_APPROVAL or RISK_REJECTED) |
+| POST | `/api/approvals/{id}/approve` | 승인 (PENDING_APPROVAL → APPROVED → EXECUTED_PAPER 자동 진행) |
+| POST | `/api/approvals/{id}/reject` | 거절 (PENDING_APPROVAL → REJECTED + reason) |
+| POST | `/api/approvals/{id}/expire` | 강제 만료 (admin 전용) |
+| GET | `/api/approvals/audit?candidate_id=&limit=` | audit log 조회 (read-only) |
+
+**모든 mutation:**
+
+- `TRADING_SAFETY_ENABLED=false` 시 503
+- `KILL_SWITCH_ENABLED=true` 시 503 + audit `KILL_SWITCH_BLOCKED`
+- AUTH 필요 (`require_auth`)
+- 응답 forbidden 필드 12종 0건 (v0.14 정책 승계) + KIS / real-account 0건
+
+**스케줄러 잡 (Phase D 후반):**
+
+- `expire_pending_approvals` (5분 간격) — `expires_at < now` AND `status=PENDING_APPROVAL`
+  후보를 EXPIRED 로 이행 + audit log
+- `TRADING_SAFETY_ENABLED=false` 또는 `kill_switch_enabled=true` 시 SKIPPED
+
+### Approval UI 설계
+
+14번째 화면 `/approvals` (`ShieldCheck` 아이콘, "승인 대기 (β)"):
+
+| 컴포넌트 | 내용 |
+|---|---|
+| **KillSwitchBanner** | 상단 항상 노출. ON 시 빨강 / OFF 시 회색. "kill switch ON — 모든 주문 후보 차단됨" |
+| **TradingSafetyBanner** | TRADING_SAFETY_ENABLED=false 일 때 안내 (503 정책) |
+| **PendingCandidatesTable** | PENDING_APPROVAL 상태 후보. 승인 / 거절 버튼 + 위험 검사 결과 미리보기 |
+| **CandidateDetailDrawer** | 후보 클릭 시 우측 drawer — risk_check_result_json + audit log timeline |
+| **HistoryTable** | EXECUTED_PAPER / REJECTED / EXPIRED / RISK_REJECTED 후보 (read-only) |
+
+**금지된 UI / 문구:**
+
+- ❌ "실거래 시작" / "실주문 실행" / "place real order" / "FULL_AUTO" / "SMALL_AUTO"
+- ❌ KIS 계좌번호 / api_key / token 노출
+- ❌ 실 broker 호출 버튼
+
+**허용된 UI 문구:**
+
+- ✅ "승인", "거절", "만료", "재시도", "**dry-run 시뮬레이션**", "**paper execution 결과**",
+  "kill switch 상태", "정책 버전 (pre-trade-v1)"
+
+### v0.15 Phase 구성
+
+| Phase | 내용 | 예상 태그 | 예상 게이트 |
+|---|---|---|---|
+| A | SafetySettings + KillSwitch + 안전 default 7건 + 단위 테스트 | `v0.15-safety-settings` | pytest **1438→~1465 (+~27)** |
+| B | OrderCandidate ORM (38번째) + Repository + Alembic 0007 + 상태 머신 단위 테스트 | `v0.15-order-candidate` | pytest **~1465→~1505 (+~40)** |
+| C | PreTradeRiskEngine (6 룰) + RiskCheckResult + 룰별 단위 + 통합 테스트 | `v0.15-pre-trade-risk` | pytest **~1505→~1545 (+~40)** |
+| D | Approval Workflow API 7종 + ApprovalAuditLog (39번째) + Alembic 0008 + ApprovalService + 스케줄러 잡 1건 | `v0.15-approval-api` | pytest **~1545→~1590 (+~45)** |
+| E | 14번째 프런트 화면 `/approvals` + RELEASE_NOTES_v0.15 + 4 게이트 최종 확인 | `v0.15-final` | vitest **186→~200 (+~14)** / e2e **22→23 (+1)** |
+
+### Phase A — SafetySettings + KillSwitch
+
+**목표:** 7 신규 settings 와 안전 default 를 도입한다. 코드 동작에는 아직 영향이 없으며,
+v0.15 의 모든 후속 Phase 가 이 settings 를 참조한다.
+
+**수정할 파일:**
+
+- `app/config/settings.py` — 7 신규 필드 (trading_safety_enabled / kill_switch_enabled /
+  approval_required / max_order_amount / max_daily_order_amount / max_position_ratio /
+  max_daily_loss_amount). default 모두 안전
+- `tests/unit/test_project_structure.py` — 7 신규 단언 추가
+- `tests/unit/test_safety_settings.py` 신규 (~20건) — env override / 경계값 / kill_switch
+  ON 기본 / max_position_ratio in (0, 1] 등
+
+**완료 기준:** pytest 1438→~1465 (+~27). DB / API / 프런트 변경 0건.
+
+### Phase B — OrderCandidate ORM + Repository
+
+**목표:** 주문 후보 도메인을 도입한다. 이 시점에는 아직 risk engine / approval API 미구현 —
+ORM + repository + 상태 머신만.
+
+**수정할 파일:**
+
+- `app/db/models.py` — `OrderCandidate` (38번째) 추가. forbidden 컬럼 0건 단언
+- `alembic/versions/0007_order_candidates.py` 신규 — 1 테이블 + 인덱스 + downgrade
+- `app/data/repositories/order_candidate.py` 신규 — `create / get_by_id /
+  list_by_account / list_pending / update_status / update_risk_result /
+  set_approver / set_virtual_order_id`
+- `tests/integration/test_order_candidate_repository.py` 신규 (~25건) — CRUD,
+  상태 머신 (8 상태 × 허용 전이 매트릭스), forbidden 컬럼, cascade delete
+- `tests/integration/test_alembic_migration.py` — head=`0007_order_candidates`,
+  expected=38, spot-check 추가
+
+**완료 기준:** pytest ~1465→~1505 (+~40). `compare_metadata` diff 0건. API / 프런트 변경 0건.
+
+### Phase C — PreTradeRiskEngine
+
+**목표:** 6 룰 hard-gate risk engine 도입. OrderCandidate 와 SimulationBroker / VirtualPosition /
+VirtualPnLSnapshot 을 결합한 검사 로직. 외부 호출 0건.
+
+**수정할 파일:**
+
+- `app/risk/__init__.py` 신규 — `PreTradeRiskEngine`, `RiskCheckResult`, `RiskViolation` export
+- `app/risk/pre_trade_risk_engine.py` 신규 — 6 룰 + dataclass 결과
+- `tests/unit/test_pre_trade_risk_engine.py` 신규 (~30건) — 룰별 happy / boundary /
+  off-by-one / kill_switch ON / max_position_ratio 0.2 정확 검증 / duplicate window
+  4분59초 / 5분0초 경계
+- `tests/integration/test_pre_trade_risk_integration.py` 신규 (~10건) — VirtualAccount /
+  VirtualPosition 시드 후 BUY / SELL 시나리오
+- AST 검사 — `pre_trade_risk_engine.py` 가 KIS / DART / RSS / requests / httpx import 0건
+
+**완료 기준:** pytest ~1505→~1545 (+~40). DB 모델 변경 0건. API / 프런트 변경 0건.
+
+### Phase D — Approval Workflow API + Audit Log + Service
+
+**목표:** 사용자 승인 워크플로우 API 7종 + immutable audit log + ApprovalService.
+
+**수정할 파일:**
+
+- `app/db/models.py` — `ApprovalAuditLog` (39번째) 추가
+- `alembic/versions/0008_approval_audit_logs.py` 신규
+- `app/data/repositories/approval_audit_log.py` 신규 — `append / list_by_candidate /
+  list_recent`. 수정 / 삭제 메서드 0건 (append-only)
+- `app/approval/__init__.py` + `app/approval/approval_service.py` 신규 —
+  `ApprovalService.create_candidate / approve / reject / expire / execute_approved`.
+  `execute_approved` 는 `SimulationBroker.submit_order` 만 호출
+- `app/api/approval_routes.py` 신규 — 7 엔드포인트
+- `app/api/schemas.py` — Approval 스키마 ~10종 추가 (forbidden 필드 가드 12종)
+- `app/api/__init__.py` + `app/main.py` — `approval_router` 등록
+- `app/scheduler/jobs.py` — `expire_pending_approvals` 잡 추가 (5분 간격, kill_switch /
+  trading_safety 게이트)
+- `app/scheduler/scheduler.py` — DEFAULT_SCHEDULE 12 jobs 로 확장
+- `tests/integration/test_approval_api.py` 신규 (~30건) — workflow 전체 흐름 + 503 /
+  401 / 409 / 422 / forbidden 응답 / KIS import 0건 AST
+- `tests/integration/test_approval_audit_log.py` 신규 (~10건) — append-only 단언 +
+  수정 시도 IntegrityError
+- `tests/integration/test_approval_scheduler_jobs.py` 신규 (~5건) — expire 잡 disabled
+  SKIPPED + enabled FILLED 격리
+- `tests/integration/test_alembic_migration.py` — head=`0008_approval_audit_logs`,
+  expected=39
+- `tests/integration/test_auth_security.py` — mutating endpoint count 11 → 17 갱신,
+  no_auto_trade_strings_in_routes 가드 갱신 (`approval` keyword 는 `/api/approvals/` prefix 만 허용)
+
+**완료 기준:** pytest ~1545→~1590 (+~45). `compare_metadata` diff 0건. ApprovalService 가 KIS API
+호출 0건 AST 단언. 프런트 변경 0건.
+
+### Phase E — 14번째 프런트 화면 + 마감 문서
+
+**목표:** `/approvals` 14번째 화면 + 마감 문서.
+
+**수정할 파일:**
+
+- `frontend/src/api/approval.ts` 신규 — 7 fetch 함수
+- `frontend/src/hooks/useApprovals.ts` 신규 — read 4 + mutation 3 hooks
+- `frontend/src/pages/Approvals/index.tsx` 신규 — KillSwitchBanner / TradingSafetyBanner /
+  PendingCandidatesTable / CandidateDetailDrawer / HistoryTable
+- `frontend/src/router.tsx` + `Sidebar.tsx` — `/approvals` route + 14번째 메뉴 (`ShieldCheck`,
+  "승인 대기 (β)")
+- `frontend/src/api/types.ts` — `OrderCandidate / RiskCheckResult / RiskViolation /
+  ApprovalAuditLog` 타입
+- `frontend/src/tests/Approvals.test.tsx` 신규 vitest ~14건
+- `frontend/src/tests/mswServer.ts` — approval 7 mock 추가 (POST 기본 503)
+- `frontend/e2e/fixtures/apiMocks.ts` + `dashboard.spec.ts` — sidebar 13 → 14 + `/approvals`
+  navigation + kill switch banner + 자동매매 CTA 0건 단언
+- `RELEASE_NOTES_v0.15.md` 신규
+- `README.md` / `PROJECT_STATUS.md` / `ROADMAP.md` / `TASKS.md` / `ARCHITECTURE.md` /
+  `TESTING.md` / `API_SPEC.md` / `INTEGRATION_RUNBOOK.md` v0.15 마감 갱신
+
+**완료 기준:** vitest 186 → ~200 (+~14), e2e 22 → 23 (+1), build 그린.
+
+### 핵심 정책 (cycle-wide)
+
+- **모든 mutation 은 KillSwitch + TradingSafety + AUTH 3중 게이트** — 어느 하나라도
+  false 면 503
+- **승인된 후보는 paper execution 으로만 종결** — `SimulationBroker.submit_order` 만 호출,
+  KIS API 호출 0건 (AST 회귀 단언)
+- **모든 상태 전이는 ApprovalAuditLog 1행** — append-only, 수정 / 삭제 API 0건
+- **사용자 승인 없는 주문 실행 0건** — `approval_required=True` 기본
+- **실 KIS 주문 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건** — v0.1~v0.14 정책 승계
+- **DART/RSS/Prometheus/Provider Data Ingestion/Score Policy/Paper Trading default OFF 유지**
+- **신규 pip 의존성 0건** — stdlib only
+- **ScoringEngine / HoldingCheckEngine 본 weight 변경 0건** — walk-forward 누적 데이터 미달
+- **forbidden 응답 / DOM 필드 0건** — api_key / token / secret / source_file_path /
+  broker_order_id / kis_order_id / real_account / broker / account_number / raw_text /
+  body / full_text (v0.14 12종 정책 승계)
+- **자동매매 / 실주문 UI 문구 0건** — "승인 준비" / "dry-run" / "paper execution" 만
+- **비밀값 / URL query secret / body text 평문 노출 0건**
+
+### 완료 기준 (cycle-wide)
+
+- 4 게이트 그린: pytest ~1590 (1438 → +~152) / vitest ~200 (186 → +~14) / e2e 23 (+1) / build
+- 5 태그 push: `v0.15-safety-settings` → `v0.15-order-candidate` → `v0.15-pre-trade-risk` →
+  `v0.15-approval-api` → `v0.15-final`
+- Alembic 2 revisions: `0007_order_candidates` + `0008_approval_audit_logs` (누적 39 테이블)
+- ApprovalService / pre_trade_risk_engine / approval_routes 모두 KIS / DART / RSS /
+  requests / httpx import 0건 AST 단언
+- KillSwitch ON 시 모든 mutation 503 + audit log
+- ApprovalAuditLog append-only 단언 (수정 / 삭제 시도 시 IntegrityError 또는 422)
+- `compare_metadata` diff 0건 (각 Phase B/D 인수 시점)
+- 비밀값 / URL query secret 노출 0건
+
+### v0.16+ 경계 정리
+
+v0.15 가 마감되면 **v0.16 Real Order Integration** 가 자연스러운 다음 단계가 된다.
+v0.15 의 산출물은 v0.16 의 직접 기반:
+
+- v0.15 `OrderCandidate(status=APPROVED)` → v0.16 `KisOrderClient.place_order(candidate)`
+  의 입력
+- v0.15 `PreTradeRiskEngine` → v0.16 에서 동일 사용 + 새 룰 (호가 jump 검사 / 시간외
+  차단 등) 추가
+- v0.15 `ApprovalAuditLog` → v0.16 의 실거래 audit 의 base table — `event_type` 에
+  `EXECUTED_REAL` / `EXECUTED_REAL_FAILED` / `KIS_REJECTED` 추가만
+- v0.15 `KillSwitch` → v0.16 에서도 최우선 게이트
+
+**v0.16 진입 전제:**
+
+- v0.15 안정 운영 6주+ (실제 paper execution 결과 누적)
+- 컴플라이언스 / 자본 한도 / 비상정지 정책 / 실주문 로그 보존 정책 검토 별도 사이클
+- KIS API 라이선스 검토 (실주문 호출 권한 / 부가 약관)
+- 운영자 책임 / 면책 정책 명문화
+
+이 모든 전제가 충족되기 전에는 v0.15 의 paper execution 만이 종착점이다.
