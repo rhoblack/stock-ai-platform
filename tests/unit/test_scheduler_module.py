@@ -16,7 +16,11 @@ def _dummy_session_factory():
 
 
 def test_build_scheduler_registers_six_jobs():
-    from app.scheduler.scheduler import DEFAULT_SCHEDULE, build_scheduler
+    from app.scheduler.scheduler import (
+        DEFAULT_INTERVAL_SCHEDULE,
+        DEFAULT_SCHEDULE,
+        build_scheduler,
+    )
 
     scheduler = build_scheduler(
         session_factory=_dummy_session_factory(),
@@ -29,11 +33,18 @@ def test_build_scheduler_registers_six_jobs():
         if scheduler.running:
             scheduler.shutdown(wait=False)
 
-    assert job_ids == set(DEFAULT_SCHEDULE.keys())
+    # v0.15 Phase D: cron + interval schedule combined.
+    assert job_ids == set(DEFAULT_SCHEDULE.keys()) | set(
+        DEFAULT_INTERVAL_SCHEDULE.keys()
+    )
 
 
 def test_build_scheduler_cron_triggers_match_default_schedule():
-    from app.scheduler.scheduler import DEFAULT_SCHEDULE, build_scheduler
+    from app.scheduler.scheduler import (
+        DEFAULT_INTERVAL_SCHEDULE,
+        DEFAULT_SCHEDULE,
+        build_scheduler,
+    )
 
     scheduler = build_scheduler(
         session_factory=_dummy_session_factory(),
@@ -41,6 +52,11 @@ def test_build_scheduler_cron_triggers_match_default_schedule():
     )
     try:
         for job in scheduler.get_jobs():
+            # Interval-scheduled jobs (v0.15 Phase D) use IntervalTrigger and
+            # do NOT carry hour/minute fields -- skip them here. They are
+            # covered separately in test_paper_scheduler / test_approval_scheduler.
+            if job.id in DEFAULT_INTERVAL_SCHEDULE:
+                continue
             expected_hour, expected_minute = DEFAULT_SCHEDULE[job.id]
             trigger = job.trigger
             # APScheduler CronTrigger fields are accessible via .fields
@@ -70,6 +86,9 @@ def test_build_scheduler_accepts_custom_schedule_overrides():
     scheduler = build_scheduler(
         session_factory=_dummy_session_factory(),
         schedule={JOB_NAME_COLLECT_MARKET_CLOSE: (3, 15)},
+        # v0.15 Phase D: explicitly empty interval override so the custom
+        # schedule isolation guarantee still holds.
+        interval_schedule={},
     )
     try:
         jobs = list(scheduler.get_jobs())

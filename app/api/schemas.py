@@ -990,3 +990,219 @@ class PaperStatusResponse(BaseModel):
 
     status: str = "ok"
     order_id: int
+
+
+# ---------------------------------------------------------------------------
+# v0.15 Phase D -- Approval Trading Safety Layer API
+#
+# Forbidden response fields (NEVER expose, regression-tested):
+#   api_key, token, secret, source_file_path, broker_order_id, kis_order_id,
+#   real_account, real_order_id, broker, account_number, raw_text, body,
+#   full_text. The schemas below are read-only views over OrderCandidate /
+#   ApprovalAuditLog and intentionally do NOT include any of those keys.
+# ---------------------------------------------------------------------------
+
+
+class RiskViolationSchema(_BaseSchema):
+    """One ``RiskViolation`` rendered from ``risk_check_result_json``."""
+
+    rule_id: str
+    severity: str = "HARD"
+    message: str
+    details: Optional[Dict[str, Any]] = None
+
+
+class RiskCheckResultSchema(_BaseSchema):
+    """Whitelist projection of ``OrderCandidate.risk_check_result_json``."""
+
+    policy_version: Optional[str] = None
+    passed: Optional[bool] = None
+    violations: List[RiskViolationSchema] = []
+    checked_at: Optional[str] = None
+
+
+class OrderCandidateSchema(_BaseSchema):
+    id: int
+    account_id: int
+    source: str
+    source_ref_id: Optional[int] = None
+    symbol: str
+    side: str
+    quantity: int
+    order_type: str
+    limit_price: Optional[str] = None
+    estimated_amount: Optional[str] = None
+    status: str
+    rejection_reason: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    virtual_order_id: Optional[int] = None
+    approver_user_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class OrderCandidatesResponse(_BaseSchema):
+    candidates: List[OrderCandidateSchema]
+    total: int
+    limit: int
+
+
+class OrderCandidateDetailResponse(_BaseSchema):
+    candidate: OrderCandidateSchema
+    risk_check_result: Optional[RiskCheckResultSchema] = None
+
+
+class CreateOrderCandidateRequest(BaseModel):
+    """Request body for ``POST /api/approvals/candidates``.
+
+    ``account_id`` is optional -- when omitted, the route resolves to the
+    first VirtualAccount for the authenticated user. Forbidden / KIS /
+    real-broker fields are intentionally absent from the input model;
+    pydantic drops unknown fields silently and the persisted
+    ``OrderCandidate`` row carries 0 KIS columns.
+    """
+
+    symbol: str
+    side: str
+    quantity: int
+    order_type: str = "MARKET"
+    limit_price: Optional[str] = None
+    estimated_amount: Optional[str] = None
+    source: str = "MANUAL"
+    source_ref_id: Optional[int] = None
+    account_id: Optional[int] = None
+    ttl_minutes: Optional[int] = None
+
+    @validator("symbol")
+    def _symbol_not_empty(cls, value: str) -> str:  # noqa: N805
+        cleaned = (value or "").strip().upper()
+        if not cleaned:
+            raise ValueError("symbol must not be empty")
+        if len(cleaned) > 32:
+            raise ValueError("symbol must be at most 32 chars")
+        return cleaned
+
+    @validator("side")
+    def _side_valid(cls, value: str) -> str:  # noqa: N805
+        cleaned = (value or "").strip().upper()
+        if cleaned not in {"BUY", "SELL"}:
+            raise ValueError("side must be BUY or SELL")
+        return cleaned
+
+    @validator("order_type")
+    def _order_type_valid(cls, value: str) -> str:  # noqa: N805
+        cleaned = (value or "").strip().upper()
+        if cleaned not in {"MARKET", "LIMIT"}:
+            raise ValueError("order_type must be MARKET or LIMIT")
+        return cleaned
+
+    @validator("source")
+    def _source_valid(cls, value: str) -> str:  # noqa: N805
+        cleaned = (value or "").strip().upper()
+        if cleaned not in {"RECOMMENDATION", "STRATEGY", "PAPER", "MANUAL"}:
+            raise ValueError(
+                "source must be RECOMMENDATION / STRATEGY / PAPER / MANUAL"
+            )
+        return cleaned
+
+    @validator("quantity")
+    def _quantity_positive(cls, value: int) -> int:  # noqa: N805
+        if value is None or value <= 0:
+            raise ValueError("quantity must be > 0")
+        return value
+
+    @validator("limit_price")
+    def _limit_price_valid(cls, value: Optional[str]) -> Optional[str]:  # noqa: N805
+        if value is None:
+            return None
+        try:
+            parsed = Decimal(str(value))
+        except (ValueError, ArithmeticError) as exc:
+            raise ValueError("limit_price must be a decimal number") from exc
+        if parsed <= 0:
+            raise ValueError("limit_price must be > 0")
+        return str(parsed)
+
+    @validator("estimated_amount")
+    def _estimated_amount_valid(
+        cls, value: Optional[str]  # noqa: N805
+    ) -> Optional[str]:
+        if value is None:
+            return None
+        try:
+            parsed = Decimal(str(value))
+        except (ValueError, ArithmeticError) as exc:
+            raise ValueError("estimated_amount must be a decimal number") from exc
+        if parsed < 0:
+            raise ValueError("estimated_amount must be >= 0")
+        return str(parsed)
+
+    @validator("ttl_minutes")
+    def _ttl_positive(cls, value: Optional[int]) -> Optional[int]:  # noqa: N805
+        if value is None:
+            return None
+        if value <= 0 or value > 24 * 60:
+            raise ValueError("ttl_minutes must be in (0, 1440]")
+        return value
+
+
+class CreateOrderCandidateResponse(_BaseSchema):
+    """Response wrapper for ``POST /api/approvals/candidates``.
+
+    ``risk_passed`` lets the client tell whether the candidate landed in
+    PENDING_APPROVAL (waiting for human approval) vs RISK_REJECTED.
+    """
+
+    candidate: OrderCandidateSchema
+    risk_check_result: RiskCheckResultSchema
+    risk_passed: bool
+
+
+class ApproveCandidateRequest(BaseModel):
+    """No body needed; included for consistency with reject/expire."""
+
+
+class ApproveCandidateResponse(_BaseSchema):
+    candidate: OrderCandidateSchema
+    virtual_order_id: int
+
+
+class RejectCandidateRequest(BaseModel):
+    reason: str
+
+    @validator("reason")
+    def _reason_required(cls, value: str) -> str:  # noqa: N805
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise ValueError("reason must not be empty")
+        if len(cleaned) > 256:
+            raise ValueError("reason must be at most 256 chars")
+        return cleaned
+
+
+class ExpireCandidateRequest(BaseModel):
+    """Empty body. Provided for symmetry with reject."""
+
+
+class ApprovalAuditLogSchema(_BaseSchema):
+    id: int
+    candidate_id: int
+    event_type: str
+    user_id: Optional[int] = None
+    reason: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+
+class ApprovalAuditResponse(_BaseSchema):
+    items: List[ApprovalAuditLogSchema]
+    total: int
+    limit: int
+
+
+class ApprovalCandidateStatusResponse(BaseModel):
+    """Generic ack for reject / expire."""
+
+    status: str = "ok"
+    candidate_id: int
+    new_status: str

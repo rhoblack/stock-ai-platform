@@ -40,7 +40,7 @@ Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `Simul
 | A | SafetySettings + KillSwitch + 7 신규 settings (안전 default) | `v0.15-safety-settings` | **1438→1498 (+60) ✅** |
 | B | OrderCandidate ORM (38번째) + Repository + Alembic 0007 + 8-state 머신 | `v0.15-order-candidate` | **1498→1581 (+83) ✅** |
 | C | PreTradeRiskEngine (6 hard 룰) + RiskCheckResult | `v0.15-pre-trade-risk` | **1581→1622 (+41) ✅** |
-| D | Approval Workflow API 7종 + ApprovalAuditLog (39번째) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) | `v0.15-approval-api` | **~1578→~1623 (+~45)** |
+| D | Approval Workflow API 7종 + ApprovalAuditLog (39번째) + Alembic 0008 + ApprovalService + expire 잡 (12번째 잡) | `v0.15-approval-api` | **1622→1693 (+71) ✅** |
 | E | 14번째 프런트 화면 `/approvals` + `RELEASE_NOTES_v0.15.md` + 4 게이트 확인 | `v0.15-final` | vitest **186→~200 (+~14)** / e2e **22→23 (+1)** |
 
 ### v0.15 Phase A 완료 (2026-05-08)
@@ -132,6 +132,50 @@ Safety Layer**. 실거래는 v0.15 에서도 0건 — 승인된 후보는 `Simul
   Alembic head `0007_order_candidates` 그대로 (revision 0건) / API 라우터 변경
   0건 / 프런트 변경 0건 / 신규 pip 0건 / KIS API / 외부 네트워크 호출 0건 / 실
   KIS / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건**
+
+### v0.15 Phase D 완료 (2026-05-08)
+
+- `app/db/models.py`: `ApprovalAuditLog` (39번째) ORM. append-only,
+  `ip_hash` / `user_agent_hash` SHA256 hex 만 저장 (v0.8 LoginAuditLog 정책 승계).
+  forbidden 컬럼 0건
+- `alembic/versions/0008_approval_audit_logs.py` 신규: 1 테이블 + 4 인덱스 + 2 FK
+  (candidate_id CASCADE / user_id) + downgrade
+- `app/data/repositories/approval_audit_log.py` 신규: `append / list_by_candidate
+  / list_recent`. **수정 / 삭제 메서드 0건** — 회귀 단언이 mutation 키워드
+  (`update / delete / remove / set_event / edit / patch / mutate`) 0건을 강제.
+  forbidden details 키 14종 거부, hash 64자 cap
+- `app/approval/__init__.py` + `app/approval/approval_service.py` 신규:
+  `ApprovalService` workflow orchestrator + `ApprovalActor` (SHA256 hash 입력) +
+  4 errors. workflow: `create_candidate` (CREATED → RISK_CHECKING →
+  (RISK_REJECTED | PENDING_APPROVAL)) / `approve` (재 risk check →
+  SimulationBroker.submit_order **paper only** → EXECUTED_PAPER) / `reject` /
+  `expire`. 모든 transition 이 audit 1행 영속
+- `app/api/approval_routes.py` 신규: 7 엔드포인트 (read 3 + mutation 4). 3중
+  게이트 (TRADING_SAFETY_ENABLED / KILL_SWITCH_ENABLED / require_auth) — 실패 시
+  503 / 401 / 422
+- `app/api/schemas.py`: 12종 approval 스키마 추가. forbidden 응답 필드 12종 0건
+- `app/api/__init__.py` + `app/main.py`: `approval_router` 등록 (15 mutating
+  endpoints 누적)
+- `app/scheduler/jobs.py` + `scheduler.py`: `expire_pending_approvals` 신규
+  (5분 간격 IntervalTrigger). `DEFAULT_INTERVAL_SCHEDULE` 신규 — cron + interval
+  두 family 분리. 12번째 잡
+- `tests/integration/test_approval_audit_log.py` 신규 17건 + `test_approval_api.py`
+  신규 29건 + `test_approval_scheduler_jobs.py` 신규 6건
+- `tests/integration/test_alembic_migration.py`: `HEAD_REVISION='0008_approval_audit_logs'`,
+  `EXPECTED_TABLE_COUNT=39`, spot-check 추가
+- `tests/integration/test_auth_security.py`: mutating endpoint count 11 → 15
+  갱신, `no_auto_trade_strings_in_routes` 가드는 `approval` keyword 를
+  `/api/approvals/` prefix 만 허용
+- `tests/integration/test_scheduler_jobs.py`: registry sanity 11 → 12 갱신
+- `tests/unit/test_safety_settings.py`: Phase D 가드 갱신 (Alembic 8 revisions,
+  approval 모듈 3종 존재 단언)
+- `tests/unit/test_scheduler_module.py`: cron + interval 두 family 인지하도록
+  3 테스트 갱신
+- **실제 게이트: pytest 1622 → 1693 passed (+71) / 회귀 0건 / Alembic head:
+  `0008_approval_audit_logs` / `compare_metadata` diff 0건 / API 라우터 +4
+  (auth 2 + watchlist 6 + preferences 1 + paper 2 + approval 4 = 15 mutating) /
+  프런트 변경 0건 / 신규 pip 0건 / KIS API / 외부 네트워크 호출 0건 / 실 KIS /
+  자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건**
 
 ### v0.15 핵심 정책
 

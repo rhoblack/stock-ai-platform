@@ -1614,3 +1614,133 @@ print(outcome.status, outcome.result_summary)
 - 스케줄러 잡: `PAPER_TRADING_ENABLED=false` 시 SKIPPED (외부 호출 / DB write 0건)
 - 실 KIS API / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 코드 0건 (v0.1 ~ v0.14 일관)
 - VirtualOrder 와 실 KIS 주문 코드 경로 물리적 분리 (별도 테이블 / 라우터 / 서비스)
+
+
+## 23. Approval Workflow 운영 절차 (v0.15 Phase B/C/D)
+
+### 23.1 안전 게이트 활성화 절차
+
+> **기본값**: `TRADING_SAFETY_ENABLED=false` + `KILL_SWITCH_ENABLED=true`
+> + `APPROVAL_REQUIRED=true`. 운영자가 아래를 명시 설정하지 않는 한 모든
+> Approval API mutation 은 503 으로 거부되며 `expire_pending_approvals`
+> 스케줄러 잡은 SKIPPED 로 즉시 종료. 외부 호출 / 실 KIS 주문 가능성 0건.
+
+```dotenv
+# .env (운영자가 명시 설정 필요 — 모두 안전 default 와 반대)
+TRADING_SAFETY_ENABLED=true     # Approval API self-gate 해제
+KILL_SWITCH_ENABLED=false        # paranoid kill switch 끄기
+APPROVAL_REQUIRED=true           # default 그대로 유지 권장 (자동 승인 금지)
+PAPER_TRADING_ENABLED=true       # SimulationBroker 활성 (Phase D 의 paper 실행 경로)
+AUTH_ENABLED=true
+JWT_SECRET=<32-char-secret>
+SCHEDULER_ENABLED=true
+
+# Cap 정책 (default 보수적 — 운영 환경에 맞춰 조정)
+MAX_ORDER_AMOUNT=100000
+MAX_DAILY_ORDER_AMOUNT=1000000
+MAX_POSITION_RATIO=0.20
+MAX_DAILY_LOSS_AMOUNT=500000
+```
+
+활성화 후 Alembic 상태 확인:
+
+```powershell
+.venv\Scripts\python.exe -m alembic current
+# expected: 0008_approval_audit_logs (head)
+```
+
+### 23.2 Approval API smoke
+
+`AUTH_ENABLED=true` 시 Bearer 토큰을 먼저 획득.
+
+```powershell
+$token = (curl -X POST http://localhost:8000/api/auth/login `
+    -H "Content-Type: application/json" `
+    -d '{"username":"admin","password":"..."}' | ConvertFrom-Json).access_token
+
+# 후보 생성 (3중 게이트 통과 시 PENDING_APPROVAL 또는 RISK_REJECTED)
+curl -X POST http://localhost:8000/api/approvals/candidates `
+    -H "Authorization: Bearer $token" -H "Content-Type: application/json" `
+    -d '{
+          "symbol": "005930",
+          "side": "BUY",
+          "quantity": 10,
+          "order_type": "MARKET",
+          "estimated_amount": "100000",
+          "source": "MANUAL"
+        }'
+# expected: 201 + {"candidate":{...status:"PENDING_APPROVAL"...}, "risk_passed":true, ...}
+
+# disabled 상태에서 호출 시 503
+# expected: 503 "approval workflow is disabled — set TRADING_SAFETY_ENABLED=true ..."
+
+# kill switch ON 상태에서 호출 시 503
+# expected: 503 "kill switch is ON — set KILL_SWITCH_ENABLED=false ..."
+
+# 승인 → SimulationBroker 자동 호출 (실 KIS 주문 0건) → EXECUTED_PAPER
+curl -X POST http://localhost:8000/api/approvals/1/approve `
+    -H "Authorization: Bearer $token"
+# expected: 200 + {"candidate":{...status:"EXECUTED_PAPER"...}, "virtual_order_id":N}
+
+# 거절
+curl -X POST http://localhost:8000/api/approvals/1/reject `
+    -H "Authorization: Bearer $token" -H "Content-Type: application/json" `
+    -d '{"reason":"market regime risk"}'
+
+# 만료 (admin only)
+curl -X POST http://localhost:8000/api/approvals/1/expire `
+    -H "Authorization: Bearer $token"
+
+# 후보 / detail / audit (read-only, AUTH 만 필요)
+curl http://localhost:8000/api/approvals/candidates -H "Authorization: Bearer $token"
+curl http://localhost:8000/api/approvals/candidates/1 -H "Authorization: Bearer $token"
+curl http://localhost:8000/api/approvals/audit -H "Authorization: Bearer $token"
+```
+
+### 23.3 Approval 스케줄러 잡 수동 트리거
+
+```python
+from app.db.session import SessionLocal
+from app.scheduler.jobs import (
+    JOB_NAME_EXPIRE_PENDING_APPROVALS,
+    expire_pending_approvals,
+    run_job,
+)
+
+outcome = run_job(
+    session_factory=SessionLocal,
+    job_name=JOB_NAME_EXPIRE_PENDING_APPROVALS,
+    fn=expire_pending_approvals,
+)
+print(outcome.status, outcome.result_summary)
+# disabled (TRADING_SAFETY_ENABLED=false 또는 KILL_SWITCH_ENABLED=true)
+#   → SUCCESS + data_status=SKIPPED + reason=trading_safety_disabled
+#     | kill_switch_enabled
+# enabled → SUCCESS + expired_count=N + audit EXPIRED 1행씩
+```
+
+### 23.4 v0.15 안전 가드
+
+- Alembic head = `0008_approval_audit_logs` (Phase D 신규 1건; 0007은 Phase B)
+- `compare_metadata` diff 0건 (CI 강제)
+- `approval_routes.py` / `approval_service.py` AST 에 `requests / httpx /
+  urllib / urllib3 / app.kis / app.data.dart_provider /
+  app.data.rss_provider / app.data.collectors.kis_client` import 0건 (회귀
+  단언)
+- `ApprovalAuditLogRepository` 의 public 메서드명에 `update / delete /
+  remove / set_event / edit / patch / mutate` 키워드 0건 (회귀 단언)
+- 응답 forbidden 필드 12종 0건 (`api_key / token / secret / source_file_path /
+  broker_order_id / kis_order_id / real_account / real_order_id / broker /
+  account_number / raw_text / body / full_text`)
+- audit log 의 `details_json` 에 forbidden 키 14종 거부 (repository 단계)
+- 평문 IP / user_agent 저장 0건 — `ip_hash` / `user_agent_hash` SHA256 hex만
+  (v0.8 LoginAuditLog 정책 승계)
+- mutation 3중 게이트: `TRADING_SAFETY_ENABLED=true` + `KILL_SWITCH_ENABLED=false`
+  + `require_auth`. expire 라우터만 kill_switch 무관 (TTL 만료 보장)
+- 승인된 후보는 `SimulationBroker.submit_order` 만 호출 — 실 KIS / 실 broker
+  / 자동매매 / FULL_AUTO / SMALL_AUTO / APPROVAL 실거래 코드 0건 (v0.1 ~ v0.15
+  일관)
+- `expire_pending_approvals` 잡: `TRADING_SAFETY_ENABLED=false` 또는
+  `KILL_SWITCH_ENABLED=true` 시 SKIPPED (외부 호출 / DB 변경 0건)
+- mutation 라우터 누적: auth 2 + watchlist 6 + preferences 1 + paper 2 +
+  approval 4 = 15. 실 KIS / FULL_AUTO 라우터 0건

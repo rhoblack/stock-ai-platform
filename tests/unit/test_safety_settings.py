@@ -281,9 +281,9 @@ def test_v01_feature_full_auto_default_still_off(
 # ---------------------------------------------------------------------------
 
 
-def test_phase_b_alembic_head_advanced_to_0007() -> None:
-    """v0.15 Phase B introduces ``0007_order_candidates``. Phase B must NOT
-    advance further (Phase D adds ``0008_approval_audit_logs``)."""
+def test_phase_d_alembic_head_advanced_to_0008() -> None:
+    """v0.15 Phase D introduces ``0008_approval_audit_logs`` on top of
+    Phase B's ``0007_order_candidates``."""
     from pathlib import Path
 
     versions_dir = (
@@ -298,27 +298,29 @@ def test_phase_b_alembic_head_advanced_to_0007() -> None:
         "0005_virtual_trading_core.py",
         "0006_virtual_positions.py",
         "0007_order_candidates.py",
+        "0008_approval_audit_logs.py",
     ]
 
 
-def test_phase_b_does_not_add_approval_routes_module() -> None:
-    """Phase B must not create the v0.15 Phase D Approval routes module yet."""
+def test_phase_d_approval_modules_exist() -> None:
+    """v0.15 Phase D introduces approval_routes / approval_service /
+    approval_audit_log."""
     from pathlib import Path
 
-    api_dir = (
-        Path(__file__).resolve().parents[2] / "app" / "api"
-    )
-    assert not (api_dir / "approval_routes.py").exists(), (
-        "Phase B must not introduce app/api/approval_routes.py — that is "
-        "Phase D scope."
-    )
+    root = Path(__file__).resolve().parents[2]
+    assert (root / "app" / "api" / "approval_routes.py").exists()
+    assert (root / "app" / "approval" / "__init__.py").exists()
+    assert (root / "app" / "approval" / "approval_service.py").exists()
+    assert (
+        root / "app" / "data" / "repositories" / "approval_audit_log.py"
+    ).exists()
 
 
 def test_phase_c_pre_trade_risk_engine_module_exists() -> None:
     """v0.15 Phase C introduces ``app/risk/pre_trade_risk_engine.py``.
 
-    Phase D's ApprovalService will import :class:`PreTradeRiskEngine` and
-    its result dataclasses; this guard catches accidental deletion.
+    Phase D's ApprovalService imports :class:`PreTradeRiskEngine`; this
+    guard catches accidental deletion.
     """
     from pathlib import Path
 

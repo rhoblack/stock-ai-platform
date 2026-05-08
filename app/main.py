@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.api import (
+    approval_router,
     auth_router,
     health_router,
     metrics_router,
@@ -168,6 +169,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics_router)
     app.include_router(validation_router)
     app.include_router(paper_router)
+    app.include_router(approval_router)
     app.include_router(api_router)
 
     # v0.11 Phase C -- initialise Prometheus metrics bundle when the

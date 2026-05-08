@@ -1356,3 +1356,61 @@ class OrderCandidate(TimestampMixin, Base):
             "status",
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.15 Phase D -- Approval Trading Safety Layer (ApprovalAuditLog, 39th table)
+#
+# Append-only audit trail for every state transition / kill-switch block
+# the Approval Workflow performs. NO update / delete API exists: the
+# repository only exposes ``append`` / ``list_*``. Raw IP / user-agent
+# values are NEVER persisted -- only SHA256 hashes via
+# ``app.auth.security.hash_for_audit`` (same convention as
+# ``LoginAuditLog`` from v0.8 Phase B).
+#
+# Forbidden columns (regression-tested):
+# ``broker_order_id`` / ``kis_order_id`` / ``real_account`` /
+# ``real_order_id`` / ``api_key`` / ``token`` / ``secret``.
+# ---------------------------------------------------------------------------
+
+
+class ApprovalAuditLog(Base):
+    __tablename__ = "approval_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    candidate_id: Mapped[int] = mapped_column(
+        ForeignKey("order_candidates.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # 8 event types: CREATED / RISK_CHECKED / RISK_REJECTED / APPROVED /
+    # REJECTED / EXPIRED / EXECUTED_PAPER / KILL_SWITCH_BLOCKED.
+    # Validated application-side by ApprovalAuditLogRepository.
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # NULL when the event is system-driven (TTL expire / KILL_SWITCH_BLOCKED
+    # by an unauthenticated request).
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # Whitelist-shaped JSON. ApprovalService writes only safe keys
+    # (e.g. ``policy_version``, ``violation_rule_ids``, ``virtual_order_id``).
+    details_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # SHA256 hex (64 chars) only -- raw IP / user-agent NEVER stored.
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+        index=True,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_approval_audit_logs_candidate_event",
+            "candidate_id",
+            "event_type",
+        ),
+    )

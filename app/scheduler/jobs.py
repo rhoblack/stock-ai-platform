@@ -99,6 +99,9 @@ JOB_NAME_COLLECT_DISCLOSURES = "collect_disclosures"
 # when ``Settings.paper_trading_enabled`` is False (default).
 JOB_NAME_EXECUTE_PAPER_ORDERS = "execute_paper_orders"
 JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT = "create_paper_pnl_snapshot"
+# v0.15 Phase D -- Approval Workflow TTL expiration job. SKIPPED when
+# ``trading_safety_enabled`` is False or ``kill_switch_enabled`` is True.
+JOB_NAME_EXPIRE_PENDING_APPROVALS = "expire_pending_approvals"
 
 
 @dataclass(frozen=True)
@@ -1312,6 +1315,122 @@ def create_paper_pnl_snapshot(session: Session) -> JobResult:
     )
 
 
+# ---------- expire_pending_approvals (v0.15 Phase D) ----------
+
+
+def expire_pending_approvals(session: Session) -> JobResult:
+    """Move PENDING_APPROVAL candidates past their TTL to EXPIRED.
+
+    Behaviour:
+      * ``trading_safety_enabled=False`` (default) → SUCCESS, data_status=SKIPPED.
+      * ``kill_switch_enabled=True`` (default) → SUCCESS, data_status=SKIPPED.
+        Kill switch is a stronger signal than expiration; while the switch
+        is on, the safest action is to not touch any candidate state.
+      * enabled → expire all candidates whose ``expires_at <= now`` and
+        whose status is ``PENDING_APPROVAL``. ApprovalService.expire writes
+        an ``EXPIRED`` audit row per candidate. Per-candidate failures are
+        isolated (the overall job stays SUCCESS / PARTIAL).
+
+    No KIS / external HTTP calls. Pure local DB.
+    """
+    settings = _resolve_settings(session)
+    if not settings.trading_safety_enabled:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.15-D",
+                "data_status": "SKIPPED",
+                "reason": "trading_safety_disabled",
+                "expired_count": 0,
+                "failed_count": 0,
+            },
+        )
+    if settings.kill_switch_enabled:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.15-D",
+                "data_status": "SKIPPED",
+                "reason": "kill_switch_enabled",
+                "expired_count": 0,
+                "failed_count": 0,
+            },
+        )
+
+    # Lazy imports keep the approval / risk stacks out of the cold path
+    # when the feature is disabled.
+    from app.approval.approval_service import (  # noqa: PLC0415
+        ApprovalActor,
+        ApprovalService,
+    )
+    from app.data.repositories.order_candidate import (  # noqa: PLC0415
+        OrderCandidateRepository,
+    )
+
+    candidates_repo = OrderCandidateRepository(session)
+    expired_targets = candidates_repo.list_expired_pending(
+        now=_utc_now()
+    )
+    if not expired_targets:
+        return JobResult(
+            status=JOB_STATUS_SUCCESS,
+            summary={
+                "phase": "v0.15-D",
+                "data_status": "SUCCESS",
+                "reason": "nothing_expired",
+                "expired_count": 0,
+                "failed_count": 0,
+            },
+        )
+
+    service = ApprovalService(settings=settings)
+    actor = ApprovalActor()  # system-driven (user_id=None)
+    expired = 0
+    failures: list[dict[str, Any]] = []
+    for cand in expired_targets:
+        try:
+            service.expire(session, candidate_id=cand.id, actor=actor)
+        except Exception as exc:  # noqa: BLE001 - isolate per-candidate
+            failures.append(
+                {
+                    "candidate_id": cand.id,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:256],
+                }
+            )
+            continue
+        expired += 1
+
+    if failures and expired == 0:
+        status_code = JOB_STATUS_FAILED
+        error_message = f"{len(failures)} expirations failed"
+    elif failures:
+        status_code = JOB_STATUS_PARTIAL
+        error_message = f"{len(failures)} expirations failed"
+    else:
+        status_code = JOB_STATUS_SUCCESS
+        error_message = None
+
+    return JobResult(
+        status=status_code,
+        summary={
+            "phase": "v0.15-D",
+            "data_status": "SUCCESS" if not failures else "PARTIAL",
+            "expired_count": expired,
+            "failed_count": len(failures),
+            "failures": failures,
+        },
+        error_message=error_message,
+    )
+
+
+def _utc_now():
+    """Local helper to keep `expire_pending_approvals` import-light."""
+    from app.db.base import utc_now as _impl  # noqa: PLC0415
+
+    return _impl()
+
+
 # ---------- registry for the scheduler module ----------
 
 JOB_FUNCTIONS: dict[str, JobFn] = {
@@ -1326,4 +1445,5 @@ JOB_FUNCTIONS: dict[str, JobFn] = {
     JOB_NAME_COLLECT_DISCLOSURES: collect_disclosures,
     JOB_NAME_EXECUTE_PAPER_ORDERS: execute_paper_orders,
     JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT: create_paper_pnl_snapshot,
+    JOB_NAME_EXPIRE_PENDING_APPROVALS: expire_pending_approvals,
 }

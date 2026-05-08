@@ -1,5 +1,43 @@
 # API_SPEC.md
 
+> 본 문서는 **v0.15 Phase D 시점** 기준이다 (`v0.15-approval-api` 태그
+> 예정). v0.15 Phase D 가 **Approval Trading Safety Layer API** 7 라우터
+> (read-only GET 3건 + mutation 4건) 를 추가했다.
+>
+> **v0.15 Phase D 신규 엔드포인트:**
+>
+> - `GET /api/approvals/candidates?status=&account_id=&limit=` — OrderCandidate
+>   목록 (read-only). status 필터 미지정 시 PENDING_APPROVAL 만 반환
+> - `GET /api/approvals/candidates/{id}` — 후보 + risk_check_result
+>   whitelist 반환. forbidden 응답 필드 0건
+> - `POST /api/approvals/candidates` — 후보 생성 + PreTradeRiskEngine 평가.
+>   3중 게이트: `TRADING_SAFETY_ENABLED=true` + `KILL_SWITCH_ENABLED=false`
+>   + `require_auth`. 통과 시 PENDING_APPROVAL, 실패 시 RISK_REJECTED.
+>   audit row: CREATED → RISK_CHECKED → (RISK_REJECTED?)
+> - `POST /api/approvals/{id}/approve` — 3중 게이트. PENDING_APPROVAL → 재
+>   risk check → APPROVED → `SimulationBroker.submit_order` (paper only) →
+>   EXECUTED_PAPER + virtual_order_id attach. **실 KIS 주문 / 실 broker
+>   호출 0건** (AST 회귀 단언). audit: APPROVED + EXECUTED_PAPER
+> - `POST /api/approvals/{id}/reject` — 3중 게이트. body `{reason}` 필수
+>   (256자 자동 truncate). audit: REJECTED
+> - `POST /api/approvals/{id}/expire` — TRADING_SAFETY_ENABLED 필요 (kill
+>   switch 무관 — 만료는 운영자 안전 가드와 분리). audit: EXPIRED
+> - `GET /api/approvals/audit?candidate_id=&event_type=&limit=` — 감사 로그
+>   조회 (read-only). 평문 IP / user_agent 응답 0건 — DB 저장도 SHA256 만
+>
+> **forbidden 응답 필드 (회귀 단언):** `api_key` / `token` / `secret` /
+> `source_file_path` / `broker_order_id` / `kis_order_id` / `real_account` /
+> `real_order_id` / `broker` / `account_number` / `raw_text` / `body` /
+> `full_text` 0건.
+>
+> **approval_routes.py / approval_service.py forbidden import (AST 회귀
+> 단언):** `requests / httpx / urllib / urllib3 / app.kis /
+> app.data.dart_provider / app.data.rss_provider /
+> app.data.collectors.kis_client` 0건.
+>
+> **mutation 라우터 변동:** v0.14 의 11건 → v0.15 Phase D 15건 (+4 approval).
+> 실 KIS / FULL_AUTO / SMALL_AUTO 라우터는 여전히 0건.
+>
 > 본 문서는 **v0.14 마감 시점** 기준이다 (마감 태그 `v0.14-final`).
 > v0.14 Phase D 가 **Paper / Simulation Trading API** 6 라우터 (read-only
 > GET 4건 + mutation 2건) 를 추가했다. 모든 mutation 은 `Settings.paper_trading_enabled=true`

@@ -1,5 +1,32 @@
 # Architecture
 
+> 본 문서는 **v0.15 Phase D 시점** 기준으로 갱신된다 (`v0.15-approval-api`
+> 태그 예정). v0.15 Approval Trading Safety Layer 가 Phase A → D 까지
+> 진행되어, **OrderCandidate** (Phase B) → **PreTradeRiskEngine** (Phase C)
+> → **ApprovalService + ApprovalAuditLog + Approval API + expire 잡** (Phase
+> D) 의 종단 워크플로우가 완성되었다.
+>
+> **ApprovalService (`app/approval/approval_service.py`)** 는 OrderCandidate
+> 8-state 머신 + PreTradeRiskEngine + ApprovalAuditLog (append-only) +
+> `SimulationBroker.submit_order` (paper execution only) 를 결합한다.
+> mutation API 7종 중 4건 (`POST /api/approvals/candidates` / `/approve` /
+> `/reject` / `/expire`) 이 **3중 게이트** (`TRADING_SAFETY_ENABLED` +
+> `KILL_SWITCH_ENABLED=False` + `require_auth`) 를 거친다. expire 라우터만
+> kill_switch 무관 — TTL 만료는 운영자 안전 가드와 분리된다 (만료가
+> 막히면 후보가 무한 누적). 승인된 후보는 `SimulationBroker.submit_order`
+> 만 호출 (실 KIS / 실 broker 호출 0건, AST 회귀 단언). audit 의 8 event
+> type (`CREATED / RISK_CHECKED / RISK_REJECTED / APPROVED / REJECTED /
+> EXPIRED / EXECUTED_PAPER / KILL_SWITCH_BLOCKED`) 이 모든 state 전이를
+> 영속 기록하며, 평문 IP / user-agent 는 SHA256 해시만 저장 (v0.8
+> LoginAuditLog 정책 승계).
+>
+> 12번째 스케줄러 잡 `expire_pending_approvals` 는 `IntervalTrigger` 5분
+> 주기 (Phase D 신규 `DEFAULT_INTERVAL_SCHEDULE`). 안전 게이트 OFF / 킬
+> 스위치 ON 시 SKIPPED. mutation 라우터는 11 → 15건 (+approval 4); 실 KIS
+> / FULL_AUTO / SMALL_AUTO 라우터는 여전히 **0건**. 14번째 프런트 화면
+> `/approvals` 는 후속 phase E 책임. 실 KIS 주문 / 자동매매 / FULL_AUTO /
+> SMALL_AUTO / APPROVAL 실거래 코드 0건은 v0.1 ~ v0.15 일관 정책으로 유지된다.
+>
 > 본 문서는 **v0.15 Phase C 시점** 기준으로 갱신된다 (`v0.15-pre-trade-risk`
 > 태그 예정). v0.14 paper 시뮬레이션 위에, v0.15 의 Approval Trading Safety
 > Layer 가 Phase A (SafetySettings 7종 + KillSwitch paranoid default) →
@@ -190,7 +217,7 @@ app/
 ├─ auth/                    # JWT 발급·검증 (v0.8) + BruteForceGuard (v0.9 Phase A)
 ├─ config/                  # Settings (.env 매핑) + logging.py (SensitiveFilter / RequestIDFilter, v0.9 Phase B)
 ├─ monitoring/              # sentry.py optional init (v0.9 Phase B, SENTRY_ENABLED=false 기본)
-├─ db/                      # SQLAlchemy 2.0 Base / 38 ORM 모델 (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1 + v0.14 5 + v0.15 1)
+├─ db/                      # SQLAlchemy 2.0 Base / 39 ORM 모델 (v0.1 17 + v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1 + v0.14 5 + v0.15 2)
 ├─ data/
 │  ├─ collectors/           # KIS read-only HTTP / DailyPriceCollector / MarketCapCollector / Fake provider
 │  ├─ importers/            # operator CSV / Excel import (analyst reports, themes, mappings, signal events)
@@ -208,7 +235,8 @@ app/
 ├─ scheduler/               # APScheduler + run_job wrapper + 9 jobs
 ├─ broker/                  # v0.14 Phase B — SimulationBroker (BrokerInterface 첫 구현체, paper trading 전용 / KIS API 0건). v0.14 Phase C 가 execute_pending_orders 본 구현 추가. 실 KIS / 자동매매 broker 는 여전히 placeholder
 ├─ paper/                   # v0.14 Phase C — PnLTracker (paper trading 전용 PnL / fill 엔진, daily_prices.close 기준 가격, 외부 호출 0건)
-└─ risk/                    # v0.15 Phase C — PreTradeRiskEngine (7 HARD 룰, read-only DB read, RiskCheckResult JSON-safe). policy_version="pre-trade-v1". KIS / DART / RSS / requests / httpx import 0건
+├─ risk/                    # v0.15 Phase C — PreTradeRiskEngine (7 HARD 룰, read-only DB read, RiskCheckResult JSON-safe). policy_version="pre-trade-v1". KIS / DART / RSS / requests / httpx import 0건
+└─ approval/                # v0.15 Phase D — ApprovalService workflow orchestrator (OrderCandidate 8-state + PreTradeRiskEngine + ApprovalAuditLog append-only + SimulationBroker.submit_order paper only). 3중 게이트 (trading_safety + kill_switch + AUTH). 실 KIS 호출 0건 (AST 단언)
 
 frontend/                   # v0.2 Vite/React/TS PC 대시보드 + v0.3~v0.14 누적
 ├─ src/

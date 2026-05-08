@@ -313,7 +313,14 @@ def test_mutating_endpoint_count_unchanged(session):
       POST   /api/paper/orders                 (SimulationBroker.submit_order)
       DELETE /api/paper/orders/{id}            (SimulationBroker.cancel_order)
 
-    Total mutating: auth(2) + watchlist(6) + preferences(1) + paper(2) = 11.
+    v0.15 Phase D adds (Approval Workflow only -- still 0 KIS / real
+    broker; approved candidates are forwarded to SimulationBroker only):
+      POST   /api/approvals/candidates         (create + risk-check)
+      POST   /api/approvals/{id}/approve       (paper execution only)
+      POST   /api/approvals/{id}/reject
+      POST   /api/approvals/{id}/expire
+
+    Total mutating: auth(2) + watchlist(6) + preferences(1) + paper(2) + approvals(4) = 15.
     POST /api/auth/register is not present (single-user, no self-registration).
     """
     from app.main import app as _app
@@ -323,9 +330,9 @@ def test_mutating_endpoint_count_unchanged(session):
         for r in _app.routes
         if hasattr(r, "methods") and r.methods & {"POST", "PUT", "PATCH", "DELETE"}
     ]
-    assert len(mutating) == 11, (
-        f"Expected 11 mutating endpoints (auth 2 + watchlist 6 + preferences 1 "
-        f"+ paper 2), found {len(mutating)}: {mutating}"
+    assert len(mutating) == 15, (
+        f"Expected 15 mutating endpoints (auth 2 + watchlist 6 + preferences 1 "
+        f"+ paper 2 + approvals 4), found {len(mutating)}: {mutating}"
     )
 
 
@@ -336,22 +343,32 @@ def test_no_auto_trade_strings_in_routes(session):
     """Reject KIS / real-broker / autotrade keywords in route paths.
 
     v0.14 Phase D legitimately introduces ``/api/paper/orders`` for
-    in-process simulation. The guard is unchanged in spirit: it still
-    rejects ``broker / auto_trade / full_auto / approval / small_auto``
-    plus any ``order`` path that is NOT under ``/api/paper/`` (which is
-    explicitly the paper / simulation namespace).
+    in-process simulation. v0.15 Phase D introduces ``/api/approvals/...``
+    for the safety / approval workflow whose mutations forward only to
+    ``SimulationBroker.submit_order`` (paper execution). The guard still
+    rejects ``broker / auto_trade / full_auto / small_auto`` outright,
+    plus any ``order`` path NOT under ``/api/paper/`` and any
+    ``approval`` path NOT under ``/api/approvals/``.
     """
     from app.main import app as _app
 
     forbidden_patterns = re.compile(
-        r"broker|auto_trade|full_auto|approval|small_auto", re.IGNORECASE
+        r"broker|auto_trade|full_auto|small_auto", re.IGNORECASE
     )
     order_pattern = re.compile(r"order", re.IGNORECASE)
+    approval_pattern = re.compile(r"approval", re.IGNORECASE)
     for route in _app.routes:
         path = getattr(route, "path", "")
         assert not forbidden_patterns.search(path), (
             f"Forbidden pattern found in route path: {path}"
         )
+        if approval_pattern.search(path):
+            assert path.startswith("/api/approvals/") or path == "/api/approvals", (
+                f"Route {path!r} contains 'approval' but is NOT under "
+                f"/api/approvals/. Real-broker / KIS approval endpoints are "
+                f"forbidden; only the v0.15 paper-execution Approval "
+                f"Workflow is allowed."
+            )
         if order_pattern.search(path):
             assert path.startswith("/api/paper/"), (
                 f"Route {path!r} contains 'order' but is NOT under "

@@ -1527,45 +1527,83 @@ Approval Trading Safety Layer (paper execution only)**.
       KIS / 외부 네트워크 호출 0건
 - [ ] `tag v0.15-pre-trade-risk + push`
 
-### Phase D: Approval Workflow API + Audit Log + Service
+### Phase D: Approval Workflow API + Audit Log + Service ✅
 
-- [ ] `app/db/models.py` — `ApprovalAuditLog` (39번째) ORM 추가 (append-only)
-- [ ] `alembic/versions/0008_approval_audit_logs.py` 신규
-- [ ] `app/data/repositories/approval_audit_log.py` 신규 — `append /
-      list_by_candidate / list_recent`. **수정 / 삭제 메서드 0건**
-- [ ] `app/approval/__init__.py` + `app/approval/approval_service.py` 신규 —
-      `ApprovalService.create_candidate` (PreTradeRiskEngine 호출 →
-      PENDING_APPROVAL or RISK_REJECTED) / `approve` (kill_switch + 재검사 →
-      APPROVED → execute_approved 자동) / `reject` / `expire` /
-      `execute_approved` (`SimulationBroker.submit_order` 만 호출, KIS API 0건)
-- [ ] `app/api/approval_routes.py` 신규 — 7 엔드포인트:
+- [x] `app/db/models.py` — `ApprovalAuditLog` (39번째) ORM. append-only,
+      평문 IP / user-agent 0건 (`ip_hash` / `user_agent_hash` SHA256만)
+- [x] `alembic/versions/0008_approval_audit_logs.py` 신규 — 1 테이블 + 4 인덱스
+      (`candidate_id` / `event_type` / `created_at` /
+      `(candidate_id, event_type)`) + downgrade
+- [x] `app/data/repositories/approval_audit_log.py` 신규 — `append /
+      list_by_candidate / list_recent`. **수정 / 삭제 메서드 0건** (회귀 단언:
+      `update/delete/remove/set_event/edit/patch/mutate` 키워드 0건). forbidden
+      `details` keys 14종 거부, hash 64자 cap
+- [x] `app/approval/__init__.py` + `app/approval/approval_service.py` 신규 —
+      `ApprovalService` + `ApprovalActor` + 결과 dataclass +
+      `ApprovalServiceError / TradingSafetyDisabledError /
+      KillSwitchBlockedError / ApprovalDeniedError`. workflow:
+      `create_candidate` (CREATED → RISK_CHECKING → (RISK_REJECTED |
+      PENDING_APPROVAL) + audit 1~3건) / `approve` (재 risk check 통과 시
+      APPROVED → SimulationBroker.submit_order (paper only) → EXECUTED_PAPER +
+      virtual_order_id attach + audit 2건; 실패 시 REJECTED + RISK_REJECTED
+      audit) / `reject` / `expire` (system-driven, kill-switch 무관)
+- [x] `app/api/approval_routes.py` 신규 — 7 엔드포인트:
       - `GET /api/approvals/candidates?status=&account_id=&limit=`
-      - `GET /api/approvals/candidates/{id}` (audit log + risk_check_result 포함)
-      - `POST /api/approvals/candidates` (create + risk check, AUTH + safety + kill 게이트)
-      - `POST /api/approvals/{id}/approve` (AUTH + safety + kill 게이트)
-      - `POST /api/approvals/{id}/reject`
-      - `POST /api/approvals/{id}/expire` (admin only)
-      - `GET /api/approvals/audit?candidate_id=&limit=`
-- [ ] `app/api/schemas.py` — Approval 스키마 ~10종 추가. forbidden 응답 필드 12종 0건
-- [ ] `app/api/__init__.py` + `app/main.py` — `approval_router` 등록
-- [ ] `app/scheduler/jobs.py` — `expire_pending_approvals` 잡 (5분 간격, kill_switch /
-      trading_safety 게이트). 12번째 잡
-- [ ] `app/scheduler/scheduler.py` — DEFAULT_SCHEDULE 12 jobs 로 확장
-- [ ] `tests/integration/test_approval_api.py` 신규 (~30건) — workflow 전체 흐름,
-      503 (safety off / kill on), 401 (AUTH), 409 (이미 결정됨), 422 (validation),
-      forbidden 응답 필드 / KIS import 0건 AST
-- [ ] `tests/integration/test_approval_audit_log.py` 신규 (~10건) — append-only
-      단언 + 수정 시도 시 NoResultFound / 422
-- [ ] `tests/integration/test_approval_scheduler_jobs.py` 신규 (~5건) — expire
-      잡 disabled SKIPPED + enabled FILLED 격리
-- [ ] `tests/integration/test_alembic_migration.py` —
-      `HEAD_REVISION='0008_approval_audit_logs'`, `EXPECTED_TABLE_COUNT=39`
-- [ ] `tests/integration/test_auth_security.py` — mutating endpoint count 11 → 17
-      갱신, no_auto_trade_strings_in_routes 가드 갱신 (`approval` keyword 는
-      `/api/approvals/` prefix 만 허용)
-- [ ] `tests/integration/test_scheduler_jobs.py` — registry sanity 11 → 12
-- [ ] `compare_metadata` diff 0건 가드
-- [ ] **게이트: pytest ~1545 → ~1590 (+~45)** — 프런트 변경 0건. Alembic head 0008
+      - `GET /api/approvals/candidates/{id}` (risk_check_result whitelist 포함)
+      - `POST /api/approvals/candidates` (3중 게이트: trading_safety + kill_switch + AUTH)
+      - `POST /api/approvals/{id}/approve` (3중 게이트, paper execution only)
+      - `POST /api/approvals/{id}/reject` (3중 게이트, reason 필수)
+      - `POST /api/approvals/{id}/expire` (trading_safety 게이트만 — kill switch 무관)
+      - `GET /api/approvals/audit?candidate_id=&event_type=&limit=`
+- [x] `app/api/schemas.py` — Approval 스키마 12종 추가
+      (`OrderCandidateSchema` / `OrderCandidatesResponse` /
+      `OrderCandidateDetailResponse` / `RiskViolationSchema` /
+      `RiskCheckResultSchema` / `CreateOrderCandidateRequest` /
+      `CreateOrderCandidateResponse` / `ApproveCandidateResponse` /
+      `RejectCandidateRequest` / `ExpireCandidateRequest` /
+      `ApprovalAuditLogSchema` / `ApprovalAuditResponse` /
+      `ApprovalCandidateStatusResponse`). forbidden 응답 필드 12종 0건
+- [x] `app/api/__init__.py` + `app/main.py` — `approval_router` 등록
+- [x] `app/scheduler/jobs.py` — `expire_pending_approvals` 잡 신규.
+      `trading_safety_enabled=False` 또는 `kill_switch_enabled=True` 시
+      SKIPPED + 명확한 reason. enabled 시 expired PENDING_APPROVAL 후보 모두
+      EXPIRED 전이 + audit 1행씩. per-candidate isolation (PARTIAL 가능)
+- [x] `app/scheduler/scheduler.py` — `DEFAULT_INTERVAL_SCHEDULE` 신규
+      (`expire_pending_approvals=5분`) + `IntervalTrigger` 분기 처리.
+      build_scheduler 가 cron + interval 두 schedule 모두 등록
+- [x] `tests/integration/test_approval_api.py` 신규 29건 — GET 4건 (default
+      pending / detail + risk / 404 / 422) / POST candidate 503 safety off /
+      503 kill switch / 401 auth / risk pass / risk fail (over-cap) / 422 / approve
+      EXECUTED_PAPER + virtual_order_id / approve 404 / approve 409 / approve
+      503 kill / reject happy / reject 422 / expire happy / expire 409 / audit
+      전체 timeline / event_type filter / 422 / AST forbidden 0건 (routes +
+      service) / mutation method 405 (parametrize 6건)
+- [x] `tests/integration/test_approval_audit_log.py` 신규 17건 — append happy
+      + 256자 truncate / 8 event_types parametrize / 미지원 event_type 거부 /
+      forbidden details key 14종 parametrize / non-dict details / hash 65자 거부
+      (parametrize 2건) / list_by_candidate ascending / list_recent descending /
+      event filter / unknown event 거부 / **append-only 회귀** (mutation 키워드
+      메서드 0건) / forbidden 컬럼 0건 / cascade delete from candidate
+- [x] `tests/integration/test_approval_scheduler_jobs.py` 신규 6건 — disabled
+      safety SKIPPED / kill switch ON SKIPPED / no overdue SUCCESS / 다중
+      overdue → EXPIRED + 신선 candidate 보존 + audit 1행씩 / run_job 래퍼
+      SUCCESS / `DEFAULT_INTERVAL_SCHEDULE` 5분 등록
+- [x] `tests/integration/test_alembic_migration.py` —
+      `HEAD_REVISION='0008_approval_audit_logs'`, `EXPECTED_TABLE_COUNT=39`,
+      spot-check + parametrize 에 `approval_audit_logs` 추가
+- [x] `tests/integration/test_auth_security.py` — mutating endpoint count
+      11 → 15 갱신. `no_auto_trade_strings_in_routes` 가드 정밀화 (`approval`
+      키워드는 `/api/approvals/` prefix 만 허용; 그 외는 거부)
+- [x] `tests/integration/test_scheduler_jobs.py` — registry sanity 11 → 12 jobs
+- [x] `tests/unit/test_safety_settings.py` — Phase C 가드 → Phase D 가드 갱신
+      (Alembic 8 revisions, approval_routes / approval_service /
+      approval_audit_log 모두 **존재** 단언)
+- [x] `tests/unit/test_scheduler_module.py` — `DEFAULT_INTERVAL_SCHEDULE`
+      포함 jobs 단언 + cron 검증 시 interval 잡 skip + custom override 시
+      `interval_schedule={}` 전달
+- [x] `compare_metadata` diff 0건 가드 통과
+- [x] **게이트: pytest 1622 → 1693 passed (+71)** — 회귀 0건. KIS / 외부 네트워크
+      호출 0건. 프런트 변경 0건. Alembic head `0008_approval_audit_logs`
 - [ ] `tag v0.15-approval-api + push`
 
 ### Phase E: Approval UI 14번째 화면 + 마감 문서

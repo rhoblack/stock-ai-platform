@@ -39,6 +39,7 @@ from app.scheduler.jobs import (
     JOB_NAME_COLLECT_NEWS,
     JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT,
     JOB_NAME_EXECUTE_PAPER_ORDERS,
+    JOB_NAME_EXPIRE_PENDING_APPROVALS,
     JOB_NAME_POST_MARKET_HOLDING_CHECK,
     JOB_NAME_PRE_MARKET_HOLDING_CHECK,
     JOB_NAME_SEND_RECOMMENDATION_REPORT,
@@ -1303,7 +1304,8 @@ def test_update_recommendation_results_via_run_job_records_partial_summary(
 
 def test_job_functions_registry_covers_all_nine_jobs():
     """v0.5 Phase B 에서 collect_disclosures 가 추가되어 9개.
-    v0.14 Phase D 에서 execute_paper_orders + create_paper_pnl_snapshot 추가 → 11개."""
+    v0.14 Phase D 에서 execute_paper_orders + create_paper_pnl_snapshot 추가 → 11개.
+    v0.15 Phase D 에서 expire_pending_approvals 추가 → 12개."""
     assert set(JOB_FUNCTIONS) == {
         JOB_NAME_COLLECT_MARKET_CLOSE,
         JOB_NAME_CALCULATE_INDICATORS,
@@ -1316,6 +1318,7 @@ def test_job_functions_registry_covers_all_nine_jobs():
         JOB_NAME_COLLECT_DISCLOSURES,
         JOB_NAME_EXECUTE_PAPER_ORDERS,
         JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT,
+        JOB_NAME_EXPIRE_PENDING_APPROVALS,
     }
 
 

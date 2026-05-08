@@ -1,8 +1,8 @@
 # DB_SCHEMA.md
 
-> 본 문서는 **v0.15 Phase B 시점** 기준이다 (`v0.14-final` 위에 OrderCandidate
-> + Alembic 0007 도입 완료). 누적 **38 테이블** (v0.1 17 + v0.4 6 + v0.6 2 +
-> v0.7 2 + v0.8 4 + v0.9 1 + v0.14 5 + v0.15 1).
+> 본 문서는 **v0.15 Phase D 시점** 기준이다 (Approval Trading Safety Layer
+> 의 ApprovalAuditLog + Alembic 0008 도입 완료). 누적 **39 테이블** (v0.1 17 +
+> v0.4 6 + v0.6 2 + v0.7 2 + v0.8 4 + v0.9 1 + v0.14 5 + v0.15 2).
 > 자동매매 / 실 KIS 주문 / FULL_AUTO 컬럼 0건 정책 그대로 유지. v0.14 Phase B
 > 가 도입한 `virtual_accounts` / `virtual_orders` 는 paper / simulation 전용
 > 이며, **`broker_order_id` / `kis_order_id` / `real_account` / `api_key` /
@@ -16,7 +16,7 @@
 >
 > **v0.8 부터 Alembic 으로 관리한다.** 27 테이블의 baseline revision 은
 > `alembic/versions/0001_baseline_v0_7.py`. 이후 모든 ORM 변경은 신규 revision
-> 으로 추가한다 (manual ALTER 금지). 현재 head: `0007_order_candidates`.
+> 으로 추가한다 (manual ALTER 금지). 현재 head: `0008_approval_audit_logs`.
 > 운영 DB 절차 / stamp / upgrade / 롤백은 [`INTEGRATION_RUNBOOK.md`](./INTEGRATION_RUNBOOK.md)
 > §17 참조. CI 는 `tests/integration/test_alembic_migration.py` 가
 > `compare_metadata` diff 0건을 강제 — ORM 변경이 revision 없이 머지되면 CI 가
@@ -1033,3 +1033,44 @@ terminal 4종 (RISK_REJECTED / EXECUTED_PAPER / REJECTED / EXPIRED) 은 어떤
 > v0.14 paper trading 테이블은 보존.
 >
 > **헤더 갱신**: DB_SCHEMA.md 헤더의 누적 테이블 수는 **38** (v0.15 Phase B 에서 +1).
+
+## 39. approval_audit_logs (v0.15 Phase D)
+
+Approval Workflow 의 immutable append-only 감사 로그. ApprovalService 가 모든
+state 전이 / kill-switch block 시점에 한 행씩 추가한다. **수정 / 삭제 API
+0건** — `ApprovalAuditLogRepository` 가 `append` / `list_by_candidate` /
+`list_recent` 만 노출. 평문 IP / user-agent 저장 0건 — `ip_hash` /
+`user_agent_hash` 는 SHA256 hex (64 chars) 만 저장 (v0.8 LoginAuditLog 정책 승계).
+
+| 컬럼 | 설명 |
+|---|---|
+| id | PK autoincrement |
+| candidate_id | FK → order_candidates.id `ON DELETE CASCADE`, NOT NULL, index |
+| event_type | String(32) NOT NULL index — 8종: `CREATED / RISK_CHECKED / RISK_REJECTED / APPROVED / REJECTED / EXPIRED / EXECUTED_PAPER / KILL_SWITCH_BLOCKED` |
+| user_id | FK → users.id nullable — 시스템 이벤트 (TTL expire / kill switch) 는 NULL |
+| reason | String(256) nullable — REJECTED / RISK_REJECTED / EXPIRED 사유 (256자 자동 truncate) |
+| details_json | JSON nullable — whitelist 형태 (`policy_version` / `violation_rule_ids` / `virtual_order_id` / `deduplicated`). forbidden 키 14종 (`api_key / token / secret / access_token / jwt_secret / broker_order_id / kis_order_id / real_account / real_order_id / account_number / raw_text / body / full_text / source_file_path`) repository 단계에서 거부 |
+| ip_hash | String(64) nullable — SHA256 hex (`hash_for_audit`). 평문 IP 저장 0건 |
+| user_agent_hash | String(64) nullable — SHA256 hex. 평문 UA 저장 0건 |
+| created_at | DateTime(timezone=True) NOT NULL index, default `utc_now`. v0.8 LoginAuditLog 처럼 immutable — `updated_at` 부재 |
+
+**Index**: `candidate_id`, `event_type`, `created_at`,
+`(candidate_id, event_type)` (`ix_approval_audit_logs_candidate_event`).
+
+**금지 컬럼 0건 (회귀 단언)**: `broker_order_id` / `kis_order_id` /
+`real_account` / `real_order_id` / `api_key` / `token` / `secret`.
+
+**Cascade**: OrderCandidate 삭제 시 자동 drop (DB FK ON DELETE CASCADE).
+
+**Append-only 정책**: Repository 의 public 메서드 명에 `update / delete /
+remove / set_event / edit / patch / mutate` 키워드가 0건이라는 단언이
+`tests/integration/test_approval_audit_log.py::test_repository_has_no_mutation_methods_beyond_append` 에 있다. 라우터 단계에서도 `GET /api/approvals/audit` 만 노출 — POST/PUT/PATCH/DELETE 0건.
+
+> **운영 환경 마이그레이션 (v0.15 Phase D)**: Alembic revision
+> `0008_approval_audit_logs` 가 1 테이블 + 4 인덱스를 생성한다.
+> `0007_order_candidates` 위에 layering — `alembic upgrade head` 한 번이면
+> 적용. `compare_metadata` diff 0건 (CI 강제). 다운그레이드
+> (`alembic downgrade 0007_order_candidates`) 는 `approval_audit_logs` 만
+> drop, OrderCandidate / v0.14 paper 테이블은 보존.
+>
+> **헤더 갱신**: DB_SCHEMA.md 헤더의 누적 테이블 수는 **39** (v0.15 Phase D 에서 +1).

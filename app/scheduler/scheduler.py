@@ -15,6 +15,7 @@ from functools import partial
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.scheduler.jobs import (
@@ -25,6 +26,7 @@ from app.scheduler.jobs import (
     JOB_NAME_COLLECT_NEWS,
     JOB_NAME_CREATE_PAPER_PNL_SNAPSHOT,
     JOB_NAME_EXECUTE_PAPER_ORDERS,
+    JOB_NAME_EXPIRE_PENDING_APPROVALS,
     JOB_NAME_POST_MARKET_HOLDING_CHECK,
     JOB_NAME_PRE_MARKET_HOLDING_CHECK,
     JOB_NAME_SEND_RECOMMENDATION_REPORT,
@@ -62,6 +64,14 @@ DEFAULT_SCHEDULE: dict[str, tuple[int, int]] = {
 }
 
 
+# v0.15 Phase D — interval-based jobs (every-N-minutes). Default-OFF via
+# TRADING_SAFETY_ENABLED + KILL_SWITCH_ENABLED so this is harmless when
+# the operator has not opted in.
+DEFAULT_INTERVAL_SCHEDULE: dict[str, int] = {
+    JOB_NAME_EXPIRE_PENDING_APPROVALS: 5,  # minutes
+}
+
+
 def _wrapped_runner(
     *,
     session_factory: sessionmaker[Session],
@@ -79,30 +89,63 @@ def build_scheduler(
     session_factory: sessionmaker[Session],
     timezone: str = "Asia/Seoul",
     schedule: dict[str, tuple[int, int]] | None = None,
+    interval_schedule: dict[str, int] | None = None,
 ) -> BackgroundScheduler:
     """Construct a configured BackgroundScheduler with the v0.1 jobs.
 
     The returned scheduler has NOT been started yet — callers (FastAPI lifespan
     or a CLI entry point) decide when to call ``.start()`` / ``.shutdown()``.
+
+    Two trigger families:
+      * ``schedule`` (cron, ``(hour, minute)``) — daily-cadence jobs.
+      * ``interval_schedule`` (every-N-minutes) — Phase D's
+        ``expire_pending_approvals`` (5-minute sweep).
     """
-    effective_schedule = schedule or DEFAULT_SCHEDULE
+    # Use explicit None check so an explicit empty {} override actually means
+    # "no jobs of this kind" -- distinguishes 'use defaults' from 'opt out'.
+    effective_cron = (
+        DEFAULT_SCHEDULE if schedule is None else schedule
+    )
+    effective_interval = (
+        DEFAULT_INTERVAL_SCHEDULE
+        if interval_schedule is None
+        else interval_schedule
+    )
     scheduler = BackgroundScheduler(timezone=timezone)
+
     for job_name in JOB_FUNCTIONS:
-        if job_name not in effective_schedule:
-            continue
-        hour, minute = effective_schedule[job_name]
-        runner = partial(
-            _wrapped_runner,
-            session_factory=session_factory,
-            job_name=job_name,
-        )
-        scheduler.add_job(
-            runner,
-            trigger=CronTrigger(hour=hour, minute=minute, timezone=timezone),
-            id=job_name,
-            name=job_name,
-            replace_existing=True,
-            misfire_grace_time=300,  # tolerate 5 min late firing
-            coalesce=True,            # drop intermediate misfires
-        )
+        if job_name in effective_cron:
+            hour, minute = effective_cron[job_name]
+            runner = partial(
+                _wrapped_runner,
+                session_factory=session_factory,
+                job_name=job_name,
+            )
+            scheduler.add_job(
+                runner,
+                trigger=CronTrigger(hour=hour, minute=minute, timezone=timezone),
+                id=job_name,
+                name=job_name,
+                replace_existing=True,
+                misfire_grace_time=300,  # tolerate 5 min late firing
+                coalesce=True,            # drop intermediate misfires
+            )
+        elif job_name in effective_interval:
+            interval_minutes = effective_interval[job_name]
+            runner = partial(
+                _wrapped_runner,
+                session_factory=session_factory,
+                job_name=job_name,
+            )
+            scheduler.add_job(
+                runner,
+                trigger=IntervalTrigger(
+                    minutes=interval_minutes, timezone=timezone
+                ),
+                id=job_name,
+                name=job_name,
+                replace_existing=True,
+                misfire_grace_time=60,
+                coalesce=True,
+            )
     return scheduler
