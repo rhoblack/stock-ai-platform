@@ -3,18 +3,18 @@
 > 본 문서는 **v1.0 Phase A 진행 시점** 기준으로 갱신되었다 (이전 마감 태그 `v0.16-final`).
 > 누적 cycle 의 게이트 baseline 과 v0.4–v1.0 신규 테스트 카테고리를 반영한다.
 
-## 1. 현재 회귀 게이트 (v1.0 Phase A 진행 중, 2026-05-09)
+## 1. 현재 회귀 게이트 (v1.0 Phase B 진행 중, 2026-05-09)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
-provider transport injection 3중 가드).
+provider transport injection + httpx.MockTransport 4중 가드).
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `python -m pytest -q` | **1942 passed** (v1.0 Phase A: 1905 → 1942, +38 — RUNBOOK_REAL_TRADING 키워드/존재 +23, paranoid default 재검증 +2, `validate_real_trading_operating_limits()` advisory helper +6, `can_attempt_real_order_settings()` × RUNBOOK §2 일관성 +1, Phase B scope guard +4, Alembic / pyproject 보존 +2) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **214 passed** (v0.16 Phase E baseline 그대로 — v1.0 Phase A 는 프런트 변경 0건) |
+| backend pytest | `python -m pytest -q` | **1995 passed** (v1.0 Phase B: 1942 → 1995, +53 — `HttpxKisOrderTransport` 53 신규 테스트: ABC 일치 1 / AST 가드 4 / repr·str·as_dict 자격증명 미노출 4 / place_order 8 / query_fill_status 10 / cancel_order 7 / raw response 미노출 2 / caplog 마스킹 2 / retry helper pure 4 / respx-mock 통합 1 / settings 경계 4 / broker __init__ re-export 1 / Phase C·D scope guard 2 / close 2). v1.0 Phase A baseline 1942 그대로 유지 |
+| frontend vitest | `cd frontend && npm run test -- --run` | **214 passed** (v0.16 Phase E baseline 그대로 — v1.0 Phase A·B 는 프런트 변경 0건) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
-| Playwright e2e | `cd frontend && npm run e2e` | **24 passed** (v0.16 baseline 그대로 — v1.0 Phase A 는 e2e 변경 0건) |
+| Playwright e2e | `cd frontend && npm run e2e` | **24 passed** (v0.16 baseline 그대로 — v1.0 Phase A·B 는 e2e 변경 0건) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
@@ -2945,6 +2945,114 @@ Phase B 진입 전 다음 4 종 모두 미존재:
 - API key / app_secret / access_token / account_number 평문 저장·로그 0 건
 - Phase B (`HttpxKisOrderTransport`) / Phase C (executor real path) / Phase D (fill sync real)
   미존재 단언 통과
+
+---
+
+## 6.52 v1.0 Phase B — HttpxKisOrderTransport (mock-only) 테스트
+
+### 6.52.1 대상 파일
+
+- `app/broker/kis_order_transport_real.py` (신규) — `HttpxKisOrderTransport` 첫 실 transport 구현체
+  + `_run_with_retries` pure helper + `PlaceClassification` / `FillClassification` /
+  `CancelClassification` enum
+- `app/broker/__init__.py` 갱신 — 4 신규 export
+- `app/config/settings.py` 갱신 — `kis_order_base_url` (paper VTS 기본) +
+  `kis_order_place_timeout_s=5.0` / `kis_order_query_timeout_s=10.0` /
+  `kis_order_cancel_timeout_s=5.0` + `__post_init__` 양수 검증
+- `tests/unit/test_kis_order_transport_real.py` (신규) — 53 건
+- `tests/unit/test_safety_settings.py` Phase A→B scope guard 전환
+
+### 6.52.2 ABC + 사용 패턴
+
+- `HttpxKisOrderTransport` 가 `KisOrderClientInterface` 를 명시 상속
+- 생성자 시그니처: `(*, settings=None, client=None, app_key=None, app_secret=None,
+  access_token=None, account_no=None, user_agent="...")` — `client=` 주입 시 lazy httpx import 만
+  사용 (테스트가 `httpx.Client(transport=httpx.MockTransport(...))` 주입)
+- `respx_mock`-based 통합 smoke 1 건 (`@respx.mock(base_url=_TEST_BASE)` 데코레이터)
+- 모든 53 테스트가 `httpx.MockTransport` 또는 `respx.mock()` 으로 outbound traffic 차단
+
+### 6.52.3 응답 분류 (5 / 6 / 5 종)
+
+**place_order — 5 분류:**
+- HTTP 200 + `rt_cd="0"` → `success=True`, `message="SUBMITTED: ..."`
+- HTTP 200 + `rt_cd!="0"` → `success=False`, `message="REJECTED: rt_cd=... msg1"`
+- HTTP 4xx → `message="REJECTED: KIS HTTP <code>"`
+- HTTP 5xx → `message="UNKNOWN: KIS HTTP <code> (server error)"`
+- `httpx.TimeoutException` → `message="TIMEOUT: ..."` (재시도 0건)
+- `httpx.HTTPError` (network) → `message="NETWORK_ERROR: ..."` (재시도 0건)
+- HTTP 200 + parse fail → `message="UNKNOWN: ..."`
+
+**query_fill_status — 6 분류 → 5 KIS canonical status 매핑:**
+- FULL → `status="FILLED"` / `success=True`
+- PARTIAL → `status="PARTIALLY_FILLED"` / `success=True`
+- NONE → `status="PENDING"` / `success=True`
+- REJECTED → `status="REJECTED"` / `success=False` (rjct_yn="Y")
+- CANCELED → `status="CANCELED"` / `success=False` (cncl_yn="Y")
+- UNKNOWN → `status="PENDING"` / `success=False` (rt_cd!=0 / parse fail / HTTP 4xx·5xx /
+  retry exhausted)
+
+**cancel_order — 5 분류:**
+- HTTP 200 + rt_cd=0 → `message="CANCELED: ..."`
+- HTTP 200 + rt_cd≠0 → `message="REJECTED: ..."`
+- HTTP 4xx → `message="REJECTED: KIS HTTP <code>"`
+- HTTP 5xx → `message="UNKNOWN: ..."`
+- TIMEOUT (재시도 후 exhausted) → `message="TIMEOUT: ..."`
+- NETWORK_ERROR (재시도 후 exhausted) → `message="NETWORK_ERROR: ..."`
+
+### 6.52.4 Retry 정책 (pure helper `_run_with_retries`)
+
+- `place_order`: `_PLACE_ORDER_MAX_RETRIES=0` — 1 호출 only. 중복 주문 위험 차단 (TIMEOUT / NETWORK_ERROR
+  발생 시 재발행 없음, 운영자가 RUNBOOK §5 절차로 수동 조회·매칭)
+- `query_fill_status`: `_QUERY_FILL_MAX_RETRIES=2` — 최대 1+2=3 호출. transient transport
+  failure (TimeoutException / HTTPError) 만 재시도. HTTP 4xx/5xx 는 즉시 정의된 결과 반환
+- `cancel_order`: `_CANCEL_ORDER_MAX_RETRIES=2` — 최대 1+2=3 호출. transient transport failure 만
+  재시도 (KIS 서버 측은 idempotent — 이미 취소된 주문은 business code 로 REJECTED 반환)
+- pure helper 단위 테스트 4 종 (success-no-retry / retry-until-success / cap-at-max / zero-retries)
+
+### 6.52.5 마스킹 / 자격증명 정책
+
+- 평문 저장·로그 금지: `kis-app-key-XYZ123` / `kis-app-secret-XYZ123ABCDEF` /
+  `kis-access-token-XYZ123` / `123456789012` (account_no) — `__repr__` / `__str__` /
+  `as_dict()` 모두 검증
+- `as_dict()` 화이트리스트: `{base_url, account_no_masked, user_agent}` 3 키만
+- `__repr__` 에 `****<last4>` 형태 account_no
+- 헤더 자격증명은 KIS 서버에 정상 전달되지만 caplog 에는 0건 노출 — `caplog.set_level(DEBUG)` 단언으로 검증
+- `install_sensitive_qs_filter("httpx")` 가 `__init__` 에서 idempotent 호출되어 httpx 의 request
+  로그 라인이 자동 마스킹
+
+### 6.52.6 raw response 차단
+
+- 시크릿 마커 (`raw-secret-this-must-not-leak-99999`) 를 KIS mock 응답 추가 필드에 주입 후
+  result `repr()` + `as_dict()` 어디에도 미노출 단언 (place_order + query_fill_status 양쪽)
+- `KisOrderResult.__slots__` 가 정확히 `{"success", "order_no", "message"}` 3 필드인 것을 단언
+  (스키마 확장 시 회귀 알림)
+- broker_order_no 는 result `order_no` 필드로 평문 노출되지만 — 상위 계층 (Phase C executor) 에서
+  SHA-256 해싱 후 `RealOrder.broker_order_no_hash` 로 저장. 본 transport 는 평문 그대로 반환
+  (해싱 책임은 호출 계층)
+
+### 6.52.7 AST + 모듈 import 가드
+
+- 모듈-레벨 `import httpx` 0건 (lazy `__init__` 내부만) — 단위 테스트가 source AST 의 top-level
+  import 만 walk 하여 단언
+- `requests` / `urllib` 0건 — 전체 AST walk
+- `app.providers.kis` / `app.data.collectors.kis_client` 0건 — read-only 데이터 layer 와 구조적 분리
+
+### 6.52.8 Settings 경계
+
+- `kis_order_place_timeout_s` / `_query_timeout_s` / `_cancel_timeout_s` 양수 단언
+  (parametrize 3 fields × 0 / -1 = 6 ValueError 케이스)
+- 기본값 (5.0 / 10.0 / 5.0) 단언
+
+### 6.52.9 회귀 기준
+
+- backend pytest **1942 → 1995 passed (+53)** — 회귀 0 건 (Phase A 1942 baseline 보존)
+- Alembic head: `0010_real_fills` 변경 0 건 / 41 테이블 그대로
+- DB 모델 변경 0 건 / API 라우터 변경 0 건 / 프런트 변경 0 건
+- 신규 pip 의존성 0 건 — `httpx` (production 기존) / `respx` (dev 기존) 그대로
+- 실 KIS API 호출 0 건 / 외부 네트워크 호출 0 건 — `httpx.MockTransport` + `respx` 100% 가드
+- API key / app_secret / access_token / account_number 평문 저장·로그 0 건
+- raw KIS response 저장·반환 0 건 — whitelist 필드만 immutable dataclass 로 재투영
+- Phase C (executor real path) / Phase D (fill sync real) 미존재 단언 유지
 
 ---
 

@@ -79,6 +79,44 @@ Sync 만 포함; W 는 본 프로젝트 명시 금지 정책 위반으로 기각
 가장 중요한 게이트는 운영 진입 체크리스트 명문화 — Phase B 의 실 transport 진입 전에 운영자 책임 /
 면책 / dry-run 4 주 운영 검증 / 자본 한도 정책이 모두 잠겨 있어야 한다.
 
+### v1.0 Phase B 완료 (2026-05-09)
+
+- `app/broker/kis_order_transport_real.py` (신규, ≈540 lines) — `HttpxKisOrderTransport`
+  (`KisOrderClientInterface` 첫 실 구현체) + `PlaceClassification` / `FillClassification` /
+  `CancelClassification` enum + `_run_with_retries` pure retry helper + `_RetryAttempt` 내부
+  sentinel
+- 응답 분류:
+  - `place_order` 5종 — SUBMITTED / REJECTED (rt_cd≠"0" 또는 4xx) / TIMEOUT / NETWORK_ERROR /
+    UNKNOWN (5xx / parse 실패). 재시도 **0건** (중복 주문 위험)
+  - `query_fill_status` 6종 (FULL / PARTIAL / NONE / REJECTED / CANCELED / UNKNOWN) → 데이터클래스
+    `KisFillStatusResult.status` 5종 (FILLED / PARTIALLY_FILLED / PENDING / REJECTED / CANCELED)
+    매핑. 재시도 최대 **2회** (TimeoutException / NetworkError 만)
+  - `cancel_order` 5종 — CANCELED / REJECTED / TIMEOUT / NETWORK_ERROR / UNKNOWN. 재시도 최대 **2회**
+- 마스킹: `mask_sensitive_order_payload()` (v0.16) + `install_sensitive_qs_filter("httpx")` (v0.11) +
+  `__repr__` / `as_dict` 자격증명 미노출 + caplog 단언으로 헤더 평문 미노출 검증. account_no 는
+  `****<last4>` 형태만 표시
+- raw KIS response 0건 — whitelist 필드만 immutable 데이터클래스 (`KisOrderResult` /
+  `KisFillStatusResult` / `KisCancelResult`) 로 재투영
+- `app/broker/__init__.py`: 4 신규 export (`HttpxKisOrderTransport` + 3 classification enum)
+- `app/config/settings.py` 4 신규 settings (`kis_order_base_url` 기본 paper VTS endpoint /
+  `kis_order_place_timeout_s=5.0` / `kis_order_query_timeout_s=10.0` /
+  `kis_order_cancel_timeout_s=5.0`). `__post_init__` 양수 검증 추가. 신규 인증 settings 추가 0건 —
+  기존 `KIS_APP_KEY` / `KIS_APP_SECRET` / `KIS_ACCOUNT_NO` 재사용
+- `tests/unit/test_kis_order_transport_real.py` (신규) 53 건: ABC 일치 / AST 가드 4종 / repr·str·as_dict
+  자격증명 미노출 4종 / place_order 8종 / query_fill_status 10종 / cancel_order 7종 / raw response 미노출 2종 /
+  caplog 마스킹 2종 / retry helper pure 단위 4종 / respx-mock 통합 / settings 경계 / broker __init__ re-export /
+  Phase C/D scope guard / close 2종
+- `tests/unit/test_safety_settings.py` Phase A → Phase B scope guard 전환:
+  `test_v10_phase_b_httpx_kis_order_transport_module_present` (assertion 반전) +
+  `kis_order_client.py` 여전히 httpx-free 단언 유지 + Phase C / Phase D scope guard 4 종 유지
+- AST 가드: 모듈-레벨 `import httpx` 0건 (lazy `__init__` 내부만) / `requests` 0건 / `urllib` 0건 /
+  `app.providers.kis` 0건 / `app.data.collectors.kis_client` 0건
+- respx + httpx.MockTransport 100% — 실 KIS endpoint 호출 0건 (53 테스트 모두 mock transport / respx route)
+- **실제 게이트: pytest 1942 → 1995 passed (+53)** / 회귀 0건 / Alembic head `0010_real_fills` 변경 0건 /
+  DB 모델 변경 0건 / API 라우터 변경 0건 / 프런트 변경 0건 / 신규 pip 의존성 0건 (`httpx` /
+  `respx` 모두 기존) / 실 KIS API 호출 0건 / 외부 네트워크 호출 0건 / API key / app_secret /
+  access_token / account_number 평문 저장·로그·응답 0건 / raw KIS response 저장·반환 0건
+
 ### v1.0 Phase A 완료 (2026-05-09)
 
 - `RUNBOOK_REAL_TRADING.md` (신규, 12KB) §1~9 — 실거래 활성화 전제 9 항목 / `.env` 활성화 5 단계 /

@@ -1,15 +1,17 @@
 # Architecture
 
-> 본 문서는 **v0.16 마감 시점** 기준으로 갱신된다 (마감 태그 `v0.16-final`).
-> v0.16 5 Phase 모두 마감 — Phase A (RealTradingSettings 5종 + can_attempt_real_order_settings) →
-> Phase B (`KisOrderClientInterface` ABC + `FakeKisOrderTransport` + AST 가드) →
-> Phase C (`RealOrder` 40번째 + `RealFill` 41번째 + Alembic 0009/0010) →
-> Phase D (`RealOrderExecutor` 8-gate + `FillSyncService` mock) →
-> **Phase E (15번째 프런트 화면 `/real-orders` + GET API 2종 + 4 게이트 최종 확인)**.
-> 누적 게이트: backend pytest **1905** / frontend vitest **214** / Playwright
-> e2e **24** / build 그린. Alembic head: `0010_real_fills` (41 테이블).
+> 본 문서는 **v1.0 Phase B 진행 시점** 기준으로 갱신된다 (이전 마감 태그 `v0.16-final`,
+> 현재 태그 `v1.0-operating-checklist`). v0.16 5 Phase 마감 + v1.0 Phase A·B 완료.
 >
-> **v0.16 Real Order Skeleton 흐름 (dry-run 전용):**
+> v1.0 Phase A (운영 진입 체크리스트 + final safety gates) → **Phase B (`HttpxKisOrderTransport`
+> 첫 실 transport 구현체, mock-only 테스트)** → Phase C (RealOrderExecutor real path) →
+> Phase D (Fill Sync actual transport + idempotent RealFill) → Phase E (UI status + RUNBOOK 최종).
+>
+> 누적 게이트 (v1.0 Phase B 시점): backend pytest **1995** / frontend vitest **214** /
+> Playwright e2e **24** / build 그린. Alembic head: `0010_real_fills` (41 테이블, v1.0 동안
+> 변경 0건 예정).
+>
+> **v0.16 Real Order Skeleton 흐름 (dry-run 전용, 현재 production 경로):**
 >
 > `OrderCandidate (APPROVED)` → `RealOrderExecutor.execute(candidate_id)` →
 > **8 안전 게이트** (①APPROVED 상태 ②중복 가드 ③kill_switch=False
@@ -20,10 +22,43 @@
 > (항상 FILLED) → `RealFill(fill_status=FULL)` DB 저장 →
 > `GET /api/real-orders` → 15번째 화면 `/real-orders` read-only 표시.
 >
-> **실 KIS HTTP 호출 0건** — `FakeKisOrderTransport` 단독 사용.
-> `KisHttpOrderTransport` 미구현 (v0.17+ scope, 컴플라이언스/보안 검토 선행 필수).
+> **v1.0 Phase B — `HttpxKisOrderTransport` 첫 실 transport 구현체 (mock-only 테스트):**
+>
+> `app/broker/kis_order_transport_real.py` — `KisOrderClientInterface` 의 첫 실
+> 구현체. lazy `httpx` import (모듈 최상단 import 0건) + `respx` / `httpx.MockTransport`
+> 100% — 53 단위 테스트가 mock transport 또는 respx route 사용, 실 KIS endpoint 호출 0건.
+> Phase B 는 **executor 실 경로 wiring 0건** — `RealOrderExecutor` 는 여전히 `dry_run=True`
+> + `FakeKisOrderTransport` 만 사용 (Phase C 가 wiring). `HttpxKisOrderTransport` 는
+> 독립 모듈로 존재하며 운영자가 `REAL_TRADING_ENABLED=true` + `KIS_ORDER_ENABLED=true` +
+> `REAL_ORDER_DRY_RUN=false` 모두 명시 활성화 + Phase C real path 도입 후에만 도달 가능.
+>
+> **Retry / Timeout 정책 (`HttpxKisOrderTransport`):**
+>
+> | 메서드 | timeout | retry | 사유 |
+> |---|---|---|---|
+> | `place_order` | 5s | **0** | 중복 주문 위험 — TIMEOUT/NETWORK_ERROR 발생 시 운영자 수동 매칭 |
+> | `query_fill_status` | 10s | 최대 2 | idempotent — transient transport failure 만 재시도 |
+> | `cancel_order` | 5s | 최대 2 | idempotent — KIS 가 이미 취소된 주문에 대해 business code 반환 |
+>
+> **응답 분류 (whitelist 필드만 — raw response 저장·반환 0건):**
+>
+> - `place_order` 5종: SUBMITTED / REJECTED / TIMEOUT / NETWORK_ERROR / UNKNOWN
+> - `query_fill_status` 6종 (FULL / PARTIAL / NONE / REJECTED / CANCELED / UNKNOWN) →
+>   `KisFillStatusResult.status` 5 KIS canonical (FILLED / PARTIALLY_FILLED / PENDING /
+>   REJECTED / CANCELED) 매핑
+> - `cancel_order` 5종: CANCELED / REJECTED / TIMEOUT / NETWORK_ERROR / UNKNOWN
+>
+> **마스킹 / 자격증명 정책:**
+>
+> `mask_sensitive_order_payload()` (v0.16) + `install_sensitive_qs_filter("httpx")` (v0.11) +
+> `__repr__` / `as_dict()` 자격증명 미노출. caplog 단언으로 헤더가 KIS 서버에 도달은 성공하지만
+> 로그 평문 노출 0건. account_no 는 `****<last4>` 형태만 노출. broker_order_no 는 result
+> `order_no` 필드로 평문 반환 — 상위 계층 (Phase C executor) 이 SHA-256 해싱 후 `RealOrder.broker_order_no_hash` 로 저장.
+>
+> `KisHttpOrderTransport` (legacy 명명) 은 더 이상 미구현 표기 아님 — `HttpxKisOrderTransport` 가 그 역할.
 > `broker_order_no_hash` = SHA-256 hex 만 저장 (KIS 주문번호 평문 저장 0건).
-> httpx / requests / urllib import 0건 (AST 가드, executor + fill sync + real_order_routes 모두).
+> httpx / requests / urllib import 0건 (AST 가드, executor + fill sync + real_order_routes 모두 +
+> `kis_order_client.py` skeleton). `kis_order_transport_real.py` 만 lazy `httpx` import (1회, `__init__` 내부).
 >
 > **v0.15 Phase E** 가 추가한 프런트엔드:
 > `frontend/src/api/approval.ts` (7 fetch) → `frontend/src/hooks/useApprovals.ts`

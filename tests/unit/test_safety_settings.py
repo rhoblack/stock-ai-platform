@@ -938,59 +938,59 @@ def test_v10_can_attempt_only_with_all_runbook_section_2_keys_open() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_v10_phase_a_httpx_kis_order_transport_module_absent() -> None:
-    """Phase B (KIS real transport) is not yet implemented in Phase A."""
+def test_v10_phase_b_httpx_kis_order_transport_module_present() -> None:
+    """v1.0 Phase B introduces kis_order_transport_real.py — verify it exists."""
     from pathlib import Path
 
     broker_dir = Path(__file__).resolve().parents[2] / "app" / "broker"
     real_transport = broker_dir / "kis_order_transport_real.py"
-    assert not real_transport.exists(), (
-        "kis_order_transport_real.py must be deferred to v1.0 Phase B "
-        f"(found at {real_transport})"
+    assert real_transport.exists(), (
+        "kis_order_transport_real.py must exist after v1.0 Phase B "
+        f"(expected at {real_transport})"
     )
 
 
-def test_v10_phase_a_kis_order_client_does_not_define_httpx_transport() -> None:
-    """Even within the existing kis_order_client.py, HttpxKisOrderTransport
-    is not yet a concrete class — Phase A only adds runbook + settings
-    helpers."""
+def test_v10_phase_b_kis_order_client_does_not_define_httpx_transport() -> None:
+    """``HttpxKisOrderTransport`` lives in kis_order_transport_real, NOT in
+    kis_order_client. The skeleton module remains httpx-free even after
+    Phase B introduces the concrete real-transport class."""
     import importlib
 
     module = importlib.import_module("app.broker.kis_order_client")
     assert not hasattr(module, "HttpxKisOrderTransport"), (
-        "HttpxKisOrderTransport must not exist before v1.0 Phase B"
+        "HttpxKisOrderTransport must live in app.broker.kis_order_transport_real, "
+        "NOT in app.broker.kis_order_client"
     )
 
 
-def test_v10_phase_a_no_real_order_executor_real_path() -> None:
+def test_v10_phase_c_no_real_order_executor_real_path() -> None:
     """RealOrderExecutor real path (Phase C) is not yet implemented.
 
     The Phase D / v0.16 dry-run executor exists, but it must not yet expose
     a method or branch named ``real_path`` / ``execute_real`` etc. We assert
     that the executor module — which already exists — does NOT export an
-    HttpxKisOrderTransport-bound symbol.
+    HttpxKisOrderTransport-bound symbol or real-path method.
     """
     import importlib
 
     module = importlib.import_module("app.broker.real_order_executor")
-    # Phase A scope guard: no public symbol named after the real transport
-    forbidden = ("HttpxKisOrderTransport", "execute_real", "real_path_execute")
+    forbidden = ("execute_real", "real_path_execute")
     for name in forbidden:
         assert not hasattr(module, name), (
-            f"v1.0 Phase A must not introduce {name} on RealOrderExecutor; "
+            f"v1.0 Phase B must not introduce {name} on RealOrderExecutor; "
             f"that belongs to Phase C"
         )
 
 
-def test_v10_phase_a_no_fill_sync_real_transport_helper() -> None:
+def test_v10_phase_d_no_fill_sync_real_transport_helper() -> None:
     """FillSyncService real-transport helper (Phase D) is not yet present."""
     import importlib
 
     module = importlib.import_module("app.broker.fill_sync_service")
-    forbidden = ("sync_fills_real", "HttpxKisOrderTransport")
+    forbidden = ("sync_fills_real",)
     for name in forbidden:
         assert not hasattr(module, name), (
-            f"v1.0 Phase A must not introduce {name} on FillSyncService; "
+            f"v1.0 Phase B must not introduce {name} on FillSyncService; "
             f"that belongs to Phase D"
         )
 

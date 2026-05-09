@@ -451,6 +451,43 @@ class Settings:
         ),
     )
 
+    # v1.0 Phase B -- KIS real-order transport (HttpxKisOrderTransport).
+    #
+    # These settings configure the HTTP transport layer for the FIRST real
+    # KisOrderClientInterface implementation. They are CONFIGURATION ONLY —
+    # the transport is still NEVER reached unless KIS_ORDER_ENABLED=true AND
+    # REAL_TRADING_ENABLED=true AND REAL_ORDER_DRY_RUN=false (paranoid
+    # defaults from v0.16 still hold). KIS_ORDER_BASE_URL defaults to the
+    # paper-trading endpoint so an accidental enable lands on the safer
+    # mock server, never on the real-money API.
+    #
+    # Timeouts deliberately differ per call:
+    #   * place_order  : 5s — short, paired with retry=0 (duplicate-order risk)
+    #   * query_fill   : 10s — longer, idempotent → retry up to 2x
+    #   * cancel_order : 5s — idempotent → retry up to 2x
+    #
+    # No new credential settings are introduced — app_key / app_secret /
+    # account_no continue to flow through the existing KIS_APP_KEY /
+    # KIS_APP_SECRET / KIS_ACCOUNT_NO Settings (declared above) and are
+    # never logged or stored as plaintext (see mask_sensitive_order_payload
+    # in app.broker.kis_order_client and SensitiveQueryStringFilter in
+    # app.config.logging).
+    kis_order_base_url: str = field(
+        default_factory=lambda: os.getenv(
+            "KIS_ORDER_BASE_URL",
+            "https://openapivts.koreainvestment.com:29443",
+        ),
+    )
+    kis_order_place_timeout_s: float = field(
+        default_factory=lambda: _as_float(os.getenv("KIS_ORDER_PLACE_TIMEOUT_S"), 5.0),
+    )
+    kis_order_query_timeout_s: float = field(
+        default_factory=lambda: _as_float(os.getenv("KIS_ORDER_QUERY_TIMEOUT_S"), 10.0),
+    )
+    kis_order_cancel_timeout_s: float = field(
+        default_factory=lambda: _as_float(os.getenv("KIS_ORDER_CANCEL_TIMEOUT_S"), 5.0),
+    )
+
     feature_real_order_execution: bool = field(
         default_factory=lambda: _as_bool(os.getenv("FEATURE_REAL_ORDER_EXECUTION"), False),
     )
@@ -508,6 +545,24 @@ class Settings:
             raise ValueError(
                 f"max_real_order_amount ({self.max_real_order_amount}) must be "
                 f"<= max_real_daily_order_amount ({self.max_real_daily_order_amount})"
+            )
+        # v1.0 Phase B -- KIS order transport timeouts must be positive.
+        # A 0 / negative timeout would either block forever or make every
+        # request fail before transmission, so we hard-reject at construction.
+        if self.kis_order_place_timeout_s <= 0:
+            raise ValueError(
+                f"kis_order_place_timeout_s must be > 0 "
+                f"(got {self.kis_order_place_timeout_s})"
+            )
+        if self.kis_order_query_timeout_s <= 0:
+            raise ValueError(
+                f"kis_order_query_timeout_s must be > 0 "
+                f"(got {self.kis_order_query_timeout_s})"
+            )
+        if self.kis_order_cancel_timeout_s <= 0:
+            raise ValueError(
+                f"kis_order_cancel_timeout_s must be > 0 "
+                f"(got {self.kis_order_cancel_timeout_s})"
             )
 
     @property

@@ -262,13 +262,17 @@ v1.0-final 태그 + GitHub Release 발행 시점에 운영자가 명시적으로
 
 ### 8.1 코드 / 회귀 게이트
 
-- [ ] backend pytest 전체 통과 (Phase E 종료 시점 ≈ 2025+)
-- [ ] frontend vitest 전체 통과 (≈ 219+)
+- [ ] backend pytest 전체 통과 (Phase E 종료 시점 ≈ 2025+ — Phase B 시점 1995 통과)
+- [ ] frontend vitest 전체 통과 (≈ 219+ — Phase B 시점 214 그대로)
 - [ ] frontend build 그린 (`tsc --noEmit && vite build`)
-- [ ] Playwright e2e 전체 통과 (≈ 25+)
-- [ ] `respx` mock 100% — 실 KIS 호출 0 건 (테스트 / CI)
-- [ ] AST 가드 — `HttpxKisOrderTransport` 외에 직접 `httpx.Client` 호출 0 건
+- [ ] Playwright e2e 전체 통과 (≈ 25+ — Phase B 시점 24 그대로)
+- [ ] **`respx` + `httpx.MockTransport` mock-only 테스트 정책** — Phase B 의 53 신규
+      `HttpxKisOrderTransport` 단위 테스트는 모두 mock transport 또는 respx route 만 사용,
+      실 KIS endpoint 호출 0 건 (Phase B AST 가드 + caplog 단언으로 검증)
+- [ ] AST 가드 — `kis_order_transport_real.py` 외에 직접 `httpx.Client` 호출 0 건. 본 모듈도
+      모듈-레벨 `import httpx` 0 건 (lazy `__init__` 내부만, AST top-level walk 로 단언)
 - [ ] AST 가드 — `from app.providers.kis` 직접 import 0 건 (`app/broker/`)
+- [ ] AST 가드 — `requests` / `urllib` import 0 건 (`app/broker/`)
 - [ ] Alembic head: `0010_real_fills` (v1.0 에서 변경 0 건, 41 테이블 그대로)
 
 ### 8.2 보안 / 비밀값
