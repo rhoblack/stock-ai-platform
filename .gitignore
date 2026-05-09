@@ -1,4 +1,5 @@
 .env
+.env_org
 .env.local
 .venv/
 *.db
