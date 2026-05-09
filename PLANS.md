@@ -4768,3 +4768,601 @@ execute(candidate, session, settings) → ExecutorResult
 - **approval_required=True 유지** — 자동 승인 0건
 - **신규 pip 의존성 0건** — stdlib + 기존 의존성만
 - **DART/RSS/Prometheus/Provider Data Ingestion/Score Policy/Paper Trading default OFF 유지**
+
+---
+
+## PLAN-0017: v1.0 Small Approval Trading Release (5 Phase)
+
+### 기준선
+
+- 시작 태그: `v0.16-final` (HEAD `2d262d5`)
+- 회귀 게이트: pytest **1905** / vitest **214** / e2e **24** / build 그린
+- Alembic head: `0010_real_fills` (누적 41 테이블)
+- 누적 자산: RealTradingSettings 5종 + `KisOrderClientInterface` ABC + `FakeKisOrderTransport` +
+  `RealOrder`/`RealFill` ORM + `RealOrderExecutor` 8-gate (dry-run 전용) +
+  `FillSyncService` mock + 15 번째 화면 `/real-orders` (read-only)
+
+### 목표
+
+**"Small Approval Trading Release"** — v0.1~v0.16 의 누적 안전 인프라 위에서 **소액·승인 기반
+실 KIS 주문의 첫 실행**을 가능하게 한다. v1.0 의 본질은 "실 transport 가 끼워졌고, 모든 게이트가
+통과될 때만 소액·1건씩 실주문이 가능하다" 이며, **자동 진입은 없다** — 운영자가 `.env` 에서 명시 활성화
++ 사용자가 화면에서 명시 승인 + Pre-trade risk + KillSwitch + 일일/회당 한도가 모두 통과될 때 1건씩만
+나간다. FULL_AUTO / SMALL_AUTO / 사용자 승인 없는 주문은 v1.0 에서도 **0건 유지**.
+
+### v1.0 시나리오 비교
+
+| 항목 | Scenario X (권장) | Scenario Y | Scenario Z | Scenario W |
+|---|---|---|---|---|
+| **내용** | 소액 승인 실주문 + KIS 실 transport + RealOrderExecutor real path + Fill Sync 최소 구현 | KIS 실 transport + dry-run 유지, 실주문은 v1.1 이연 | X + Reconciliation (계좌/체결 비교) 까지 포함 보수적 운영 안정화 | X + SMALL_AUTO 자동매매까지 포함 공격적 시나리오 |
+| **가치** | 매우 높음 — v0.14~v0.16 누적 인프라가 처음으로 실거래에 닿는다. v1.0 마일스톤의 본의 | 중 — transport 만 검증되고 실거래 미진입. v0.16-final 과 운영 가치 차이 작음 | 매우 높음 — 실거래 + 감사 무결성 동시 확보, 다만 1 사이클 비용 과다 | 매우 높음이지만 **금지 항목** — SMALL_AUTO 는 사용자 승인 없는 주문 |
+| **난이도** | 중-높음 — httpx + respx + 실 transport timeout/retry + executor real path + Fill Sync 델타 idempotency | 중 — transport 만 추가, executor·fill 은 dry-run 유지 | 매우 높음 — Reconciliation 은 KIS 잔고/체결 조회 + mismatch 분류 + 차단 정책까지 묶음 | 매우 높음 + **컴플라이언스 위반** — 본 프로젝트 범위 외 |
+| **위험** | 중 — 실 KIS 호출 첫 도입. 한도/킬스위치/승인 게이트가 첫 운영. 위반 시 비용 실 | 낮음 — 실주문 0건 유지 | 중-높음 — Reconciliation 첫 도입은 알람 노이즈/오탐 가능 | **매우 높음** — 자동 진입 1건이라도 발생 시 컴플라이언스 사고 |
+| **외부 의존성** | KIS 실 API (운영자 .env 에서 명시 활성화 시에만; 테스트는 `respx`/`MockTransport` 0 호출) | KIS 실 API 코드만 작성, 호출 0건 | KIS 실 API + 잔고 / 체결 조회 (테스트 mock) | KIS 실 API + 자동 트리거 + 시세/시그널 자동 분기 |
+| **DB / Alembic 영향** | **0건 권장** — 기존 `real_orders`/`real_fills` 스키마 (`broker_order_no_hash` 등) 충분. Idempotency 는 sum(quantity) 델타 비교로 처리 | 0건 | 1~2건 — `reconciliation_runs` + `reconciliation_mismatches` 신규 | 1~2건 — `auto_trade_runs` 등 신규 |
+| **컴플라이언스 리스크** | 중 — 실주문이 처음 발생하므로 운영자 책임/면책/자본 한도 명문화 필수 (Phase A) | 매우 낮음 — 실주문 0건 | 중 — 실주문 + reconciliation. 동시 도입 부담 | **매우 높음** — 사용자 승인 없는 주문 = 본 프로젝트 명시 금지 |
+| **장애 대응 난이도** | 중 — 1 주문/1 비교 단위로 격리. KillSwitch · `KIS_ORDER_ENABLED` 한 번에 차단 가능 | 낮음 — 실주문 0건 | 중-높음 — mismatch 발생 시 차단 정책 + 경보 라우팅까지 동시 도입 | 매우 높음 — 자동 트리거가 끼어 있으면 차단 시점이 늦다 |
+| **v1.0 채택** | ✅ **핵심 채택** | ❌ 기각 — v1.0 마일스톤을 "실주문 첫 실행" 으로 정의했으므로 dry-run 만 유지 시 v1.0 가치 부족. transport 는 X 의 Phase B 로 편입 | ⚠️ **부분 흡수** — Reconciliation 은 v1.1 로 이연. v1.0 Phase D 에는 idempotent Fill Sync 만 포함 | ❌ **기각** — 본 프로젝트 명시 금지 정책 위반 (사용자 승인 없는 주문 / FULL_AUTO / SMALL_AUTO 모두 0건) |
+
+### v1.0 채택 결론
+
+채택: **Scenario X (핵심) — Small Approval Trading Release**
+
+- **Scenario Y 기각 사유**: v1.0 의 본질은 "첫 실주문". transport 만 추가되고 실주문 진입이 없으면
+  v0.16-final 과 운영 가치 차이가 작다. transport 는 X 의 Phase B 로 흡수.
+- **Scenario Z 부분 흡수**: Reconciliation 은 가치가 크지만 1 사이클에 묶기에 위험·복잡도 과다. v1.1 로
+  이연하고, v1.0 Phase D 에는 **idempotent Fill Sync (델타 비교 기반)** 만 포함하여 다음 사이클의
+  Reconciliation 이 그대로 위에 쌓일 수 있도록 한다.
+- **Scenario W 기각 사유**: SMALL_AUTO 는 본 프로젝트 명시 금지 정책 (사용자 승인 없는 주문 / 자동
+  진입 / FULL_AUTO 0건). v1.0 도 "1 후보 = 1 사용자 승인 = 1 실주문" 원칙을 유지한다.
+- **Reconciliation v1.1 진입 전제**: v1.0 운영 4 주 + 실주문 ≥10 건 + mismatch 0 건 또는 분류 가능한
+  형태로 누적된 후 사이클 진입.
+
+### 범위 (5 Phase)
+
+- Phase A — Real trading operating checklist + final safety gates (`v1.0-operating-checklist`)
+- Phase B — KIS real order transport (`HttpxKisOrderTransport`) with mock-only tests (`v1.0-kis-real-transport`)
+- Phase C — RealOrderExecutor real path behind strict gates (`v1.0-real-order-executor-real`)
+- Phase D — Fill Sync actual transport + idempotent RealFill update (`v1.0-fill-sync-real`)
+- Phase E — Runbook / UI status polish / RELEASE_NOTES + `v1.0-final`
+
+### 제외 범위 (v1.0 에서 절대 하지 않을 것)
+
+- ❌ FULL_AUTO 자동매매 — Future Backlog 그대로
+- ❌ SMALL_AUTO 자동매매 — Future Backlog 그대로
+- ❌ 사용자 승인 없는 주문 — 1 후보 = 1 승인 = 1 주문 원칙 유지
+- ❌ 무제한 / 고빈도 주문 — `MAX_REAL_ORDER_AMOUNT` / `MAX_REAL_DAILY_ORDER_AMOUNT` / 1 주문 1 후보 강제
+- ❌ `REAL_TRADING_ENABLED=true` / `KIS_ORDER_ENABLED=true` / `REAL_ORDER_DRY_RUN=false` **기본 ON 금지** —
+  paranoid default 그대로 유지, 실거래는 운영자가 `.env` 에서 명시 활성화
+- ❌ `approval_required=False` — 자동 승인 0건
+- ❌ Kill switch ON 상태에서 주문
+- ❌ raw KIS response 저장 — `RealOrder` / `RealFill` 모든 필드에서 금지 (v0.16 정책 그대로)
+- ❌ API key / secret / app_key / app_secret / account_number 평문 저장·로그·응답 노출 — `broker_order_no_hash` 만 (v0.16 정책 그대로)
+- ❌ Reconciliation — v1.1 이연
+- ❌ 레버리지 / 파생상품 / 신용 / 공매도 — 본 프로젝트 범위 외
+- ❌ 다중 사용자 SaaS / RBAC / OAuth — v1.x+ 후보
+- ❌ LLM 직접 주문 실행 — 본 프로젝트 명시 금지 정책 그대로
+- ❌ ScoringEngine 본 weight 변경 — v0.13 ProviderScorePolicy 위에 변경 0건 유지
+- ❌ 실거래 default ON — 운영자 명시 활성화 시에만 진입 가능
+
+### 소액 승인 기반 실주문 범위 (cycle-wide)
+
+실 KIS 주문 진입 조건 (AND 전체 충족 — v0.16 PLAN-0016 의 9-조건 + v1.0 추가 게이트):
+
+1. `TRADING_SAFETY_ENABLED=true`
+2. `KILL_SWITCH_ENABLED=false`
+3. `REAL_TRADING_ENABLED=true`
+4. `KIS_ORDER_ENABLED=true`
+5. `REAL_ORDER_DRY_RUN=false`
+6. `OrderCandidate.status == APPROVED` (사용자 명시 승인)
+7. `PreTradeRiskEngine.evaluate()` **재검사** 통과 (Executor 진입 시 다시 호출)
+8. `candidate.price * quantity ≤ MAX_REAL_ORDER_AMOUNT` (회당 한도)
+9. 일일 누적 + 본 후보 ≤ `MAX_REAL_DAILY_ORDER_AMOUNT` (일일 한도)
+10. **(v1.0 추가)** `RealOrder` 중복 가드 — 동일 `order_candidate_id` 에서 비-FAILED `RealOrder` 가
+    이미 존재하면 진입 차단 (재실행 방지)
+11. **(v1.0 추가)** KIS transport 가용성 — `HttpxKisOrderTransport` factory 가 `httpx.Client` 생성
+    가능 (timeout/retry 정책 적용 후에도 첫 핸드셰이크 실패 시 즉시 차단)
+12. **(v1.0 추가)** 시간 게이트 (옵션, default OFF) — 시장 시간 외 차단은 v1.1 PreTradeRiskEngine
+    신규 룰로 이연 (v1.0 에서는 운영자 수동 책임)
+
+위 12 게이트 중 어느 하나라도 false → `ExecutorResult(blocked=True, reason=<gate_name>)` 반환 후
+`RealOrder` 미생성 (또는 `is_dry_run=True` 로 분기). v0.16 의 8-gate executor 가 v1.0 에서 **10-gate
++ 분기 (dry-run vs real)** 로 확장된다.
+
+### KIS 실주문 transport 범위 (Phase B)
+
+신규 파일 `app/broker/kis_order_transport_real.py` (또는 `kis_order_client.py` 내 `HttpxKisOrderTransport`
+클래스 추가):
+
+- **클래스**: `HttpxKisOrderTransport(KisOrderClientInterface)` — `KisOrderClientInterface` 의 3 메서드
+  실 구현 (`place_order` / `query_fill_status` / `cancel_order`)
+- **HTTP 클라이언트**: `httpx.Client` (lazy import + factory 자동 주입 패턴 — v0.11 `HttpxDartTransport`
+  와 동일 패턴; respx 가 mock 가능하게)
+- **재사용 전략**: 기존 `app/providers/kis/*` 데이터 클라이언트는 read-only (시세/일봉) 전용 — 주문 API
+  는 별도 endpoint·인증 흐름이므로 **신규 transport 분리** 권장. 인증 토큰 발급은 기존 토큰 매니저
+  재사용 가능 여부 v0.16 마감 시점 코드 확인 후 Phase B 진입 시 결정
+- **Timeout 정책**: connect 5s / read 10s / write 5s (기본). `KIS_ORDER_TIMEOUT_*` env 로 override
+- **Retry 정책**: place_order 는 **재시도 0건** (중복 주문 위험) — 응답 수신 실패 시 즉시 FAILED + 운영자
+  수동 확인 권장. query_fill_status / cancel_order 는 idempotent 이므로 최대 2회 재시도
+- **Circuit breaker**: v0.10 `call_with_resilience` 패턴 재사용 검토 — 단, place_order 는 회로 차단
+  대상에서 **제외** (재시도 0건 정책과 일관). query_fill_status / cancel_order 만 회로 차단 적용
+- **민감 필드 마스킹**: app_key / app_secret / access_token / account_number / cano /
+  acnt_prdt_cd 등 KIS 주문 payload 의 모든 비밀값을 `mask_sensitive_order_payload()` (v0.16 helper) 로
+  마스킹 — 로그·응답·DB 모두에서 평문 0건 (`SensitiveQueryStringFilter` v0.11 패턴 재사용)
+- **저장 정책**: KIS 응답의 `order_no` 는 SHA-256 (`broker_order_no_hash`) 으로만 저장 — 평문 저장 0건.
+  raw response 저장 0건 (status_code / 정상화된 status 만 저장)
+- **에러 분류**: 5 종 (`SUBMITTED` / `REJECTED` / `TIMEOUT` / `NETWORK_ERROR` / `UNKNOWN`) —
+  KIS 응답 코드별 매핑 + 모든 분류는 enum/literal 로 고정
+- **테스트**: `respx` 100% mock — 실 KIS 호출 0건 (AST 가드 + monkeypatch 가드 병행). v0.11 의
+  `HttpxDartTransport` 테스트 27 케이스 패턴 참고
+
+### RealOrderExecutor real path 범위 (Phase C)
+
+기존 `RealOrderExecutor` (v0.16 8-gate dry-run 전용) 에 **real path 분기 추가**:
+
+- **분기점**: 게이트 8 (PreTradeRiskEngine) 통과 후 `settings.real_order_dry_run` 분기
+  - `True` → 기존 dry-run 경로 (`FakeKisOrderTransport.place_order` → `RealOrder(is_dry_run=True, status=DRY_RUN)`) 그대로
+  - `False` → **신규 real path** (`HttpxKisOrderTransport.place_order` → `RealOrder(is_dry_run=False, status=SUBMITTED)`)
+- **신규 게이트 (v0.16 8-gate → v1.0 10-gate)**:
+  - 게이트 9: 동일 `order_candidate_id` 에서 비-FAILED `RealOrder` 중복 가드
+  - 게이트 10: `HttpxKisOrderTransport` factory 가용성
+- **승인 후보 → RealOrder 연결**: `OrderCandidate(status=APPROVED)` 의 `id` 를 `RealOrder.order_candidate_id`
+  로 attach (v0.16 schema 그대로). `OrderCandidate` 에 추가 status 추가 0건 — `EXECUTED_PAPER` / `APPROVED`
+  유지, 실주문 진입 후 후보 status 는 `APPROVED` 로 고정 (실주문 결과는 `RealOrder.status` 로만 추적)
+- **저장 정책**: `RealOrder(is_dry_run=False, status=PENDING)` 으로 먼저 저장 → KIS 호출 → 응답 반영
+  `update_status(SUBMITTED|REJECTED|FAILED)` + `broker_order_no_hash` set. 호출 전 저장 = 응답 누락 시
+  운영자 수동 확인 가능
+- **실패 처리**: `HttpxKisOrderTransport` 가 예외 raise 시 `RealOrder(status=FAILED, error_message=...)`
+  + `ApprovalAuditLog.append(event_type='REAL_ORDER_FAILED', candidate_id=..., details={...})` 1 행
+  추가 — append-only 보존
+- **dry-run fallback**: 실 transport 가 미구성 / `KIS_ORDER_ENABLED=false` 일 때 `is_dry_run=True` 경로
+  자동 fallback (현재 동작 유지)
+- **AST 가드 변경**: v0.16 의 "실 KIS 호출 0건 단언" 은 v1.0 에서 **"`HttpxKisOrderTransport` 외에는
+  실 KIS 호출 0건"** 으로 정밀화. 테스트는 `respx` mock 만, 실 호출 0건은 그대로 유지
+
+### Fill Sync 실제 조회 범위 (Phase D)
+
+기존 `FillSyncService` (v0.16 mock 전용) 에 **실 transport 연결 + idempotent 업데이트 추가**:
+
+- **transport 주입**: `FillSyncService(transport: KisOrderClientInterface)` — `HttpxKisOrderTransport`
+  주입 가능. dry-run RealOrder 는 transport 호출 없이 항상 NONE 반환 (v0.16 동작 유지)
+- **상태 처리**: KIS 체결 조회 응답을 5 종으로 분류
+  - `FULL` — `filled_qty == ordered_qty` → `RealOrder.status = FILLED`
+  - `PARTIAL` — `0 < filled_qty < ordered_qty` → `RealOrder.status = PARTIAL_FILLED`
+  - `NONE` — `filled_qty == 0` → status 유지 (`SUBMITTED` 그대로)
+  - `REJECTED` — KIS 가 거부 → `RealOrder.status = REJECTED`
+  - `CANCELED` — 운영자/시스템 취소 → `RealOrder.status = CANCELLED`
+- **Idempotency 정책 (Alembic 0건 핵심)**:
+  - 신규 RealFill 행 생성 여부는 **델타 비교**로 결정
+  - `existing_total = sum(RealFill.fill_quantity for r in real_order.fills)`
+  - `kis_total = response.filled_qty`
+  - `delta = kis_total - existing_total`
+  - `delta > 0` → `RealFill(fill_quantity=delta, fill_price=response.avg_price, fill_time=response.last_fill_time, fill_type=FULL|PARTIAL)` 1 행 생성
+  - `delta == 0` → 신규 행 생성 0건 (반복 호출 안전)
+  - `delta < 0` → 데이터 이상 → `ApprovalAuditLog.append(event_type='FILL_SYNC_NEGATIVE_DELTA', ...)` 후 raise
+- **저장 정책**: KIS 응답의 individual fill 식별자 / fill_no / 거래시각 raw 등은 저장 0건 — 정규화된
+  fill_price/fill_quantity/fill_time/fill_type 만 (v0.16 schema 그대로)
+- **호출 트리거**: v1.0 에서는 **수동 호출** 만 (`POST /api/real-orders/{id}/sync`) — 자동 폴링 잡은
+  v1.1 후보. 운영자가 화면에서 명시 트리거 (자동 진입 0건 정책과 일관)
+- **테스트**: `respx` 100% mock — 5 분기 + idempotent 재호출 + delta 음수 감지 + transport timeout 대응
+
+### Reconciliation 포함 여부
+
+**제외: v1.1 이연**
+
+이유:
+- v1.0 한 사이클에 KIS 실 transport + executor real path + Fill Sync 실 + Reconciliation 까지 묶으면
+  난이도/위험/검증 부담 과다
+- Reconciliation 은 mismatch 발생 시 **차단 정책** (실주문 차단)·**경보 라우팅** 동반 — v1.0 에서는
+  KillSwitch 수동 차단으로 충분
+- v1.0 의 `RealOrder` / `RealFill` 실 데이터 누적 후 v1.1 에서 자연스럽게 진입 (v0.16 → v1.0 의 패턴
+  반복)
+- v1.1 진입 전제: v1.0 운영 4 주 + 실주문 ≥10 건 + mismatch 0 건 또는 분류 가능한 형태로 누적
+
+### 운영 Runbook 범위 (Phase A + Phase E)
+
+신규 문서 `INTEGRATION_RUNBOOK.md` 또는 `RUNBOOK_REAL_TRADING.md` (논의 후 결정 — Phase A 에서 1
+파일로 통합) 에 다음 절 추가:
+
+- **§ 1. 실거래 활성화 절차** — `.env` 에서 `REAL_TRADING_ENABLED=true` / `KIS_ORDER_ENABLED=true` /
+  `REAL_ORDER_DRY_RUN=false` 순차 활성화 + 활성화 전 체크리스트 (v0.15 KillSwitch 점검 / v0.16
+  dry-run 4 주 운영 검증 / 한도 정책 명문화 / 운영자 책임 면책 명문화 등)
+- **§ 2. 비상 중지 절차** — `.env` `KILL_SWITCH_ENABLED=true` 즉시 활성화 → 모든 mutation API 503 →
+  진행 중 RealOrder 는 `cancel_order` 수동 호출 절차
+- **§ 3. Kill switch 사용 절차** — KillSwitch ON/OFF 시점 / 적용 범위 / KillSwitch ON 상태에서
+  RealOrder mutation 0건 보장 단언 (v0.15 정책 그대로)
+- **§ 4. 주문 실패 대응** — `RealOrder.status=FAILED` 발생 시 운영자 액션 (KIS HTS 에서 수동 조회
+  → 일치하면 수동 `update_status(SUBMITTED)` 또는 `update_status(REJECTED)` → audit 1 행) +
+  로그 분석 절차 (마스킹된 logs 확인, raw 저장 없음)
+- **§ 5. 체결 불일치 대응** — Fill Sync `delta < 0` 발생 시 / `RealOrder.status` 와 KIS 잔고 차이 발생
+  시 (v1.0 에서는 수동 비교) → KillSwitch ON → 운영자 분석
+- **§ 6. dry-run rollback 절차** — `.env` `REAL_ORDER_DRY_RUN=true` 활성화 → 즉시 dry-run 경로로
+  복귀. 진행 중 RealOrder 영향 없음 (status 변경 없음)
+- **§ 7. GitHub Release / 운영 체크리스트** — RELEASE_NOTES_v1.0.md + Tag `v1.0-final` + 운영 진입
+  체크리스트 (10~15 항목)
+
+### Alembic revision 필요 여부
+
+**0건 — 기존 schema 재사용**
+
+이유:
+- v0.16 `real_orders` schema 가 실주문에 필요한 필드를 모두 가지고 있음 — `is_dry_run` /
+  `broker_order_no_hash` / `status` (PENDING/SUBMITTED/FILLED/PARTIAL_FILLED/CANCELLED/REJECTED/FAILED) /
+  `error_message` / 인덱스 모두 활용 가능
+- v0.16 `real_fills` schema 도 fill_price/fill_quantity/fill_time/fill_type 충분
+- Idempotency 는 **델타 비교 기반** 으로 처리 — 별도 unique constraint 불필요
+- `submitted_at` / `filled_at` timestamps 는 v1.1 후보 (현재는 `created_at` / `updated_at` 으로 충분)
+
+대안 (옵션, v1.0 에서는 미채택):
+- `0011_real_order_v1_fields.py` — `submitted_at` / `filled_at` nullable timestamps + `kis_request_id_hash`
+  (idempotency key) — **v1.1 에서 재검토**
+
+### v1.1+ 후보
+
+- **Reconciliation (v1.1 핵심)** — 내부 `RealOrder` / `RealFill` vs KIS 잔고/체결 비교 + mismatch 감지
+  + mismatch 발생 시 KillSwitch 자동 활성화 + `reconciliation_runs` / `reconciliation_mismatches` 신규
+  테이블 (Alembic 1~2 건)
+- **PreTradeRiskEngine 신규 룰 (v1.1 후보)** — 호가 jump 검사 / 시장 시간 외 차단 / 종목당 일일 한도 /
+  연속 실패 종목 차단
+- **자동 Fill Sync 폴링 잡 (v1.1 후보)** — 현재 v1.0 에서는 수동. `SUBMITTED` 상태 RealOrder 가 N 분
+  이상 갱신 없으면 자동 sync — `KIS_ORDER_ENABLED=true` 시에만
+- **`submitted_at` / `filled_at` timestamps + idempotency key (v1.1 후보)** — Alembic 1 건
+- **`RealOrder` 운영 화면 actionable CTA (v1.1 후보)** — "Sync Fill" 버튼 / "Cancel" 버튼. v1.0 에서는
+  read-only 유지 + 운영자 CLI 만
+- **운영 모니터링 통합 (v1.x 후보)** — `RealOrder` 상태 변화 → Prometheus metric / Grafana panel /
+  Telegram 알림 (DRY_RUN 정책 검토)
+- **다중 사용자 / RBAC / OAuth (v1.x+ 후보)** — 단일 운영자 → 권한 분리 (운영자 / 감사자 / 관리자)
+- **ScoringEngine 본 weight 보강 (v1.x 후보)** — v0.13 ProviderScorePolicy 데이터 누적 6 개월+ 후
+
+---
+
+### Phase A — Real trading operating checklist + final safety gates
+
+**목표:** 실주문 진입 전 운영 체크리스트와 최종 안전 게이트를 문서화한다. 코드 변경은 가능한 한 0건에
+가깝게 — settings 검증 강화와 Runbook 작성 중심.
+
+**수정할 파일:**
+
+- `INTEGRATION_RUNBOOK.md` 또는 `RUNBOOK_REAL_TRADING.md` (신규/병합) — § 1~7 (위 "운영 Runbook 범위" 절 참조)
+- `RELEASE_NOTES_v1.0.md` 초안 시작 — 매 phase 마다 누적 갱신
+- `app/config/settings.py` — `MAX_REAL_ORDER_AMOUNT` / `MAX_REAL_DAILY_ORDER_AMOUNT` 상한 검증 강화
+  (v0.16 의 `__post_init__` 검증 위에 v1.0 안전 한계 추가 — 예: `MAX_REAL_ORDER_AMOUNT > 1_000_000` →
+  warning 로그). 신규 필드 추가 0건
+- `tests/unit/test_safety_settings.py` — 운영 체크리스트 게이트 단위 테스트 ~10 건 추가
+  (paranoid default 재확인 / 운영자 한도 명시 활성화 시 동작 / 한도 위반 시 ValueError 등)
+
+**수정하지 않을 파일:**
+
+- DB 모델 / Alembic / API 라우터 / 프런트 / broker / risk — Phase A 는 settings + 문서만
+
+**단계:**
+
+1. `RUNBOOK_REAL_TRADING.md` (또는 `INTEGRATION_RUNBOOK.md` 갱신) 작성 — § 1~7 + 운영 진입 체크리스트
+2. `app/config/settings.py` 에 v1.0 추가 검증 (한계 상한 warning + 운영자 명시 활성화 감지 로직 — 신규
+   필드 추가 없이 기존 `__post_init__` 보강만)
+3. 단위 테스트 ~10 건 — paranoid default 재확인 / 운영자 명시 활성화 / 한도 검증 / Phase B scope guard
+4. `RELEASE_NOTES_v1.0.md` Phase A 절 작성
+
+**테스트:**
+
+- `test_safety_settings.py`: paranoid default 그대로 / `REAL_TRADING_ENABLED=true` + `KIS_ORDER_ENABLED=true` +
+  `REAL_ORDER_DRY_RUN=false` 모두 명시 시 settings 가능 / `MAX_REAL_ORDER_AMOUNT > 1_000_000` warning /
+  Phase B scope guard (`HttpxKisOrderTransport` 미존재 / Alembic 10 revisions 정확)
+
+**완료 기준:**
+
+- `RUNBOOK_REAL_TRADING.md` § 1~7 완성 + 운영 진입 체크리스트
+- `app/config/settings.py` 신규 필드 추가 0건 (검증 보강만)
+- pytest += ~10 / 회귀 0건
+- Alembic revision 0건 / DB 모델 변경 0건 / API 라우터 0건 / 프런트 0건
+- 외부 네트워크 호출 0건 / KIS 호출 0건
+
+**위험 요소:**
+
+- Runbook 의 "활성화 절차" 가 너무 단순하면 운영자가 dry-run 단계를 건너뛸 위험 — 활성화 전제 (v0.16
+  dry-run 4 주 운영 / 한도 명문화 / 면책 명문화) 를 체크리스트에 명시적으로 분리
+
+**태그:** `v1.0-operating-checklist`
+
+---
+
+### Phase B — KIS real order transport with mock-only tests
+
+**목표:** `KisOrderClientInterface` 의 첫 실 구현체 `HttpxKisOrderTransport` 추가. 실 KIS 호출 0건
+(테스트는 100% `respx` mock).
+
+**수정할 파일:**
+
+- `app/broker/kis_order_client.py` 또는 `app/broker/kis_order_transport_real.py` (신규 파일 권장 —
+  명확한 경계) — `HttpxKisOrderTransport(KisOrderClientInterface)` 신규
+- `app/broker/__init__.py` — export 갱신 (`HttpxKisOrderTransport` 추가)
+- `app/config/settings.py` — KIS 주문 endpoint URL / timeout 설정 (`KIS_ORDER_BASE_URL` /
+  `KIS_ORDER_TIMEOUT_CONNECT` / `KIS_ORDER_TIMEOUT_READ` / `KIS_ORDER_TIMEOUT_WRITE` 4종, 기본 5/10/5s)
+- `tests/unit/test_kis_order_transport_real.py` (신규) — `respx` mock 기반 ~30 건
+- `tests/unit/test_kis_order_client.py` — Phase C scope guard 갱신 (transport_real 존재 허용)
+
+**수정하지 않을 파일:**
+
+- DB 모델 / Alembic / API 라우터 / 프런트 / executor / risk / fill_sync — Phase B 는 transport 만
+
+**단계:**
+
+1. `HttpxKisOrderTransport` 클래스 신규 — `place_order` / `query_fill_status` / `cancel_order` 3 메서드 실 구현
+2. lazy `httpx.Client` import + factory 자동 주입 패턴 (v0.11 `HttpxDartTransport` 와 동일)
+3. timeout 정책 (5/10/5s) + place_order 재시도 0건 + query/cancel 재시도 최대 2회
+4. `mask_sensitive_order_payload()` (v0.16 helper) 호출 — app_key / app_secret / access_token /
+   account_number 모두 마스킹
+5. KIS 응답 status_code → `KisOrderResult` 매핑 (5 종 분류: SUBMITTED / REJECTED / TIMEOUT / NETWORK_ERROR / UNKNOWN)
+6. broker_order_no SHA-256 → `broker_order_no_hash` (v0.16 helper 재사용)
+7. `respx` 100% mock 테스트 — happy path / timeout / 5xx / 4xx / 응답 누락 / 마스킹 / AST 가드
+
+**테스트:**
+
+- `respx.mock`: place_order 200 / 4xx (REJECTED) / 5xx (UNKNOWN) / timeout / network error / 응답 JSON 미정합
+- query_fill_status: FULL / PARTIAL / NONE / REJECTED / CANCELED 5 분기
+- cancel_order: 성공 / 실패
+- 마스킹: app_key / app_secret / access_token / account_number 모두 ****6 자리 + ******* 형태로 변환
+- AST 가드: `HttpxKisOrderTransport` 파일 내 raw `httpx.Client(...)` 직접 생성은 lazy factory 만 (1 회)
+- monkeypatch 가드: 실 KIS endpoint 호출 0건 (test 종료 시 `respx` 가 모든 route 를 검증)
+- Phase C scope guard: `RealOrderExecutor.real_path` 미존재 / `real_order_executor.py` 의 dry-run 경로
+  그대로
+
+**완료 기준:**
+
+- `HttpxKisOrderTransport` 3 메서드 구현 + respx mock 100%
+- 실 KIS 호출 0건 (AST + monkeypatch 가드)
+- pytest += ~30
+- Alembic revision 0건 / DB 모델 0건 / API 라우터 0건 / 프런트 0건
+- 신규 pip 의존성 0건 — `respx` 는 v0.11 에서 이미 dev-only 로 추가됨
+
+**위험 요소:**
+
+- KIS 주문 API endpoint URL / 인증 흐름 / payload schema 는 운영자 KIS 라이선스 검토 후 확정 — Phase B
+  진입 시 실 endpoint 1 개 (place_order) 만 우선 구현하고 query/cancel 은 endpoint 확정 후 추가 가능
+- place_order 재시도 0건 정책은 중복 주문 위험을 막지만, 응답 손실 시 운영자 수동 확인 필요 — Runbook
+  § 4 에 절차 명시
+- 인증 토큰 만료 시 자동 refresh 는 v0.1 KisClient 의 토큰 매니저 재사용 검토. 별도 구현 시 별도
+  Phase B.1 으로 분리 가능
+
+**태그:** `v1.0-kis-real-transport`
+
+---
+
+### Phase C — RealOrderExecutor real path behind strict gates
+
+**목표:** v0.16 `RealOrderExecutor` (8-gate dry-run 전용) 에 **real path 분기** 추가 — `REAL_ORDER_DRY_RUN=false`
+일 때 `HttpxKisOrderTransport` 호출 + `RealOrder(is_dry_run=False)` 저장.
+
+**수정할 파일:**
+
+- `app/broker/real_order_executor.py` — `execute(candidate, settings, transport, ...)` 의 게이트 7 (real_order_dry_run)
+  분기에 real path 추가. 게이트 9 (중복 가드) / 게이트 10 (transport 가용성) 신규 추가
+- `app/broker/__init__.py` — export 갱신 (변경 없을 수도 있음)
+- `tests/unit/test_real_order_executor.py` — real path 케이스 ~25 건 추가 (10-gate × 분기)
+- `tests/integration/test_real_order_executor_integration.py` (신규 또는 v0.16 통합 테스트 갱신) —
+  real path 통합 ~10 건
+
+**수정하지 않을 파일:**
+
+- DB 모델 / Alembic / API 라우터 / 프런트 / risk / fill_sync — Phase C 는 executor 만
+
+**단계:**
+
+1. `execute()` 시그니처 확장: 기존 `transport: KisOrderClientInterface = FakeKisOrderTransport()` 를
+   유지하되 default 가 `FakeKisOrderTransport` 인지 `HttpxKisOrderTransport` 인지 settings 기반 선택
+   (factory 패턴 권장)
+2. 게이트 9 (중복 가드): `RealOrderRepository.exists_non_failed_for_candidate(candidate.id)` → True 시
+   `ExecutorResult(blocked=True, reason='DUPLICATE_REAL_ORDER')`
+3. 게이트 10 (transport 가용성): `transport.health_check()` 또는 첫 핸드셰이크 실패 시
+   `ExecutorResult(blocked=True, reason='TRANSPORT_UNAVAILABLE')`
+4. 게이트 7 분기:
+   - `settings.real_order_dry_run=True` → 기존 dry-run 경로 (FakeTransport → `is_dry_run=True`)
+   - `settings.real_order_dry_run=False` → real path:
+     - `RealOrder(is_dry_run=False, status=PENDING)` 먼저 저장
+     - `HttpxKisOrderTransport.place_order(candidate)` 호출
+     - 응답에 따라 `update_status(SUBMITTED|REJECTED|FAILED)` + `broker_order_no_hash` set
+     - 실패 시 `ApprovalAuditLog.append(event_type='REAL_ORDER_FAILED', ...)` 1 행
+5. `ExecutorResult` schema 그대로 (`blocked: bool` / `reason: str | None` / `real_order: RealOrder | None` /
+   `is_dry_run: bool`)
+
+**테스트:**
+
+- `respx.mock` + `FakeKisOrderTransport` 두 모드 분리 테스트
+- real path: settings 모두 활성화 + `respx` mock SUBMITTED → `RealOrder(is_dry_run=False, status=SUBMITTED)` /
+  `broker_order_no_hash` set
+- real path REJECTED: KIS 4xx → `RealOrder(status=REJECTED)` + audit 1 행
+- real path FAILED: KIS timeout → `RealOrder(status=FAILED)` + audit 1 행
+- 게이트 9 차단: 동일 candidate 에서 비-FAILED RealOrder 존재 → `DUPLICATE_REAL_ORDER`
+- 게이트 10 차단: transport 핸드셰이크 실패 → `TRANSPORT_UNAVAILABLE`
+- dry-run fallback: `KIS_ORDER_ENABLED=false` → FakeTransport 자동 분기 (기존 동작 유지)
+- AST 가드: `RealOrderExecutor` 파일 내 `from app.providers.kis` import 0건 / 직접 `httpx.Client` 0건
+- 회귀: v0.16 8-gate 모두 통과 (10-gate 가 8-gate 의 superset)
+
+**완료 기준:**
+
+- 10-gate 모두 통과 / dry-run vs real 분기 정확
+- pytest += ~35 (단위 25 + 통합 10)
+- Alembic revision 0건 / API 라우터 0건 / 프런트 0건
+- 실 KIS 호출 0건 (`respx` mock + monkeypatch 가드)
+
+**위험 요소:**
+
+- real path 진입 시 `RealOrder` 저장 → KIS 호출 → 응답 반영 순서가 깨지면 (예: KIS 호출 후 저장 시도 +
+  세션 commit 실패) **응답 손실 + DB 미기록** 사태 가능. 호출 전 저장 + 명시적 commit + 호출 후
+  update 패턴 필수 + 통합 테스트로 증명
+- 중복 가드는 race condition 위험 — DB level unique constraint 가 없으므로 application level + KillSwitch
+  로 보강. v1.1 에서 unique index 도입 검토
+- 게이트 10 (transport 가용성) 의 health_check 가 실 KIS 를 호출하면 의미 없음 — connect-only health 또는
+  factory init 만으로 판정
+
+**태그:** `v1.0-real-order-executor-real`
+
+---
+
+### Phase D — Fill Sync actual transport + idempotent RealFill update
+
+**목표:** v0.16 `FillSyncService` (mock 전용) 에 **실 transport 연결 + 델타 기반 idempotent 업데이트**
+추가. `POST /api/real-orders/{id}/sync` 라우터 신규 (read-only 정책 첫 위반 → 명시적 mutation 1건 추가).
+
+**수정할 파일:**
+
+- `app/broker/fill_sync_service.py` — 실 transport 호출 + 델타 계산 + RealFill 1 행 생성 (delta>0 일 때만)
+- `app/api/real_order_routes.py` — `POST /api/real-orders/{id}/sync` 신규 (KillSwitch + TradingSafety +
+  AUTH 3중 게이트, v0.15 패턴)
+- `app/api/schemas.py` — `RealOrderSyncResponse` 신규
+- `tests/unit/test_fill_sync_service.py` — 델타 시나리오 ~25 건 추가
+- `tests/integration/test_fill_sync_integration.py` (신규) — `respx` mock + DB 통합 ~10 건
+- `tests/integration/test_real_order_api.py` 또는 신규 `test_real_order_sync_api.py` — `POST /sync` 통합 ~10 건
+
+**수정하지 않을 파일:**
+
+- DB 모델 / Alembic — schema 변경 0건 (v0.16 그대로 사용)
+- 프런트 — Phase E 에서 sync 버튼 추가 (Phase D 는 backend 만)
+- broker / executor — Phase C 에서 완성 후 그대로
+
+**단계:**
+
+1. `FillSyncService.sync_fills(real_order_id, session)` 갱신:
+   - `transport.query_fill_status(broker_order_no)` 호출
+   - 5 분기 (FULL / PARTIAL / NONE / REJECTED / CANCELED) → `RealOrder.status` 갱신
+   - 델타 계산: `existing_total = sum(fills.fill_quantity)`, `kis_total = response.filled_qty`,
+     `delta = kis_total - existing_total`
+   - `delta > 0` → `RealFill(fill_quantity=delta, ...)` 1 행 생성
+   - `delta == 0` → 신규 행 0건 (idempotent)
+   - `delta < 0` → audit 1 행 + raise
+2. dry-run RealOrder 는 transport 호출 없이 NONE 반환 (v0.16 동작 유지)
+3. `POST /api/real-orders/{id}/sync` 라우터 — KillSwitch + TradingSafety + AUTH 3중 게이트, FillSyncService
+   호출 + 결과 반환
+4. `RealOrderSyncResponse` schema — `real_order_status` / `fills_added` / `fills_total` / `synced_at` /
+   `forbidden 응답 필드 0건` (api_key / secret / account_number / raw_response 0건)
+
+**테스트:**
+
+- `FillSyncService` 단위:
+  - FULL fill (delta = ordered_qty) → RealFill 1 행 + RealOrder.status=FILLED
+  - PARTIAL fill (delta = 0.5 × ordered_qty) → RealFill 1 행 + RealOrder.status=PARTIAL_FILLED
+  - NONE → RealFill 0 행 + RealOrder.status 유지
+  - REJECTED → RealFill 0 행 + RealOrder.status=REJECTED
+  - CANCELED → RealFill 0 행 + RealOrder.status=CANCELLED
+  - 반복 호출 idempotent (delta=0)
+  - delta < 0 → audit 1 행 + raise
+  - dry-run RealOrder → transport 호출 0건 + NONE
+- `POST /api/real-orders/{id}/sync` 통합:
+  - 503 KillSwitch / 503 TradingSafety off / 401 AUTH / 404 / 200 happy / 409 dry-run sync
+  - mutation method 405 (DELETE / PUT)
+- AST 가드: `fill_sync_service.py` 의 직접 `httpx.Client` 호출 0건
+
+**완료 기준:**
+
+- 5 분기 + idempotent + delta < 0 모두 검증
+- pytest += ~45 (단위 25 + 통합 20)
+- Alembic revision 0건 / DB 모델 0건 / 프런트 0건
+- 실 KIS 호출 0건 (`respx` mock)
+- mutation 라우터 1 건 신규 (`POST /api/real-orders/{id}/sync`) — KillSwitch + TradingSafety + AUTH 3중 게이트
+
+**위험 요소:**
+
+- 델타 비교는 KIS 가 fill_qty 를 정확히 반환할 때만 동작 — KIS 가 partial sync 응답을 누적이 아닌
+  증분으로 반환하면 로직 변경 필요. KIS docs 확인 후 Phase D 진입
+- `delta < 0` 발생 시 raise 정책은 현재 보수적. 운영 중 실제 발생 시 KillSwitch 자동 활성화 정책으로
+  강화 검토 (v1.1)
+- mutation 라우터 1 건 신규 추가는 v0.15 read-only 정책에서 첫 변경 — `test_auth_security.py` mutating
+  endpoint count 갱신 필수 (현재 +1)
+
+**태그:** `v1.0-fill-sync-real`
+
+---
+
+### Phase E — Runbook / UI status polish / v1.0-final release
+
+**목표:** v1.0 운영 준비 마감 — Runbook 최종 확정 + 15 번째 화면 `/real-orders` 에 real-mode 인지 배너
+추가 + Sync 버튼 (read-only → light mutation 한정) + RELEASE_NOTES_v1.0 + 4 게이트 확인.
+
+**수정할 파일:**
+
+backend 마무리:
+- `app/api/real_order_routes.py` — Phase D 의 `POST /sync` 만 (추가 변경 없음)
+
+frontend (15 번째 화면 강화):
+- `frontend/src/pages/RealOrders/index.tsx` — `RealTradingModeBanner` 추가 (`is_dry_run` 모드 vs real 모드 시각 구분),
+  `RealOrderDetail` 에 "Sync Fill" 버튼 + `useSyncRealOrder` hook (mutation 1건)
+- `frontend/src/api/realOrders.ts` — `syncRealOrder` 함수 추가
+- `frontend/src/hooks/useRealOrders.ts` — `useSyncRealOrder` mutation hook 추가 (real-orders namespace invalidate)
+- `frontend/src/components/layout/Sidebar.tsx` — footer "v1.0 Small Approval Trading Release" 갱신
+- `frontend/src/tests/RealOrders.test.tsx` — Sync 버튼 / banner / mutation hook 테스트 +5 건
+- `frontend/src/tests/mswServer.ts` — sync mock 추가
+- `frontend/e2e/dashboard.spec.ts` — `/real-orders` 에서 SafetyBanner + sync 버튼 (KillSwitch ON 일 때 disabled) 단언
+
+문서:
+- `RELEASE_NOTES_v1.0.md` 신규 — Phase A~E 산출물 + 최종 게이트 + v1.0 안전 정책 + 운영 진입 체크리스트 +
+  v1.1 후보
+- `README.md` v1.0-final 배너 / 기능 목록 / 누적 사이클 표 / 회귀 기준선 갱신
+- `PROJECT_STATUS.md` § 0 v1.0 마감 선언 (v1.0 시작 선언 → 마감 선언으로 갱신)
+- `ROADMAP.md` v1.0 행 ✅ 마감 + v1.1+ Backlog 정리
+- `TASKS.md` / `ARCHITECTURE.md` / `TESTING.md` / `API_SPEC.md` / `INTEGRATION_RUNBOOK.md` 갱신
+- `RUNBOOK_REAL_TRADING.md` (Phase A 신규) 최종 확정 — 운영 진입 체크리스트 잠금
+
+**UI 정책:**
+
+- `RealTradingModeBanner`:
+  - `REAL_ORDER_DRY_RUN=true` → "DRY-RUN 모드 (실주문 0건)" 회색 배지
+  - `REAL_ORDER_DRY_RUN=false` + `KIS_ORDER_ENABLED=true` + `REAL_TRADING_ENABLED=true` →
+    "REAL TRADING 활성 (소액)" 빨강 배지 + 한도 정보 표시
+  - 기타 → "전이 상태" 노랑 배지 + 누락된 게이트 명시
+- "Sync Fill" 버튼:
+  - `KillSwitch ON` 시 disabled
+  - dry-run RealOrder 에서는 disabled (transport 호출 없이 NONE 반환)
+  - 클릭 시 `POST /api/real-orders/{id}/sync` → 결과 토스트
+- forbidden DOM 토큰: "place real order" / "자동매매" / FULL_AUTO / SMALL_AUTO 0건 그대로
+- "실주문 실행" 버튼: 여전히 0건 — 실주문은 `/approvals` 에서 후보 승인을 통해서만 trigger
+
+**완료 기준:**
+
+- vitest += ~5 (sync button / banner / mutation hook)
+- e2e: 24 → 25 (sync button presence + KillSwitch disabled 단언, 신규 시나리오 1 건)
+- frontend build 그린
+- 최종 4 게이트: pytest / vitest / e2e / build 모두 그린
+- `RELEASE_NOTES_v1.0.md` + `RUNBOOK_REAL_TRADING.md` 모두 완성
+- 실 KIS 호출 0건 / 자동매매 / FULL_AUTO / SMALL_AUTO 코드 0건
+
+**위험 요소:**
+
+- "Sync Fill" 버튼은 read-only 정책의 첫 mutation — DOM 가드 / e2e 단언 / `test_auth_security.py` 정합성
+  확인 필수
+- `RealTradingModeBanner` 가 settings API 를 소비하는데, 기존 `GET /api/settings` 가 `MAX_REAL_ORDER_AMOUNT`
+  를 반환하지 않으면 신규 응답 필드 추가 필요 — Phase E 진입 시 우선 확인. 추가 시 forbidden field 가드
+  유지
+
+**태그:** `v1.0-final`
+
+---
+
+### v1.0 핵심 정책 (cycle-wide)
+
+- **paranoid default 5종 유지** — `REAL_TRADING_ENABLED=false` / `KIS_ORDER_ENABLED=false` /
+  `REAL_ORDER_DRY_RUN=true` / `MAX_REAL_ORDER_AMOUNT=100_000` / `MAX_REAL_DAILY_ORDER_AMOUNT=1_000_000`
+- **paranoid default 4종 유지 (v0.15 그대로)** — `KILL_SWITCH_ENABLED=true` / `TRADING_SAFETY_ENABLED=false` /
+  `APPROVAL_REQUIRED=true` / `PAPER_TRADING_ENABLED=false`
+- **실 KIS 호출은 `HttpxKisOrderTransport` 만** — 모든 테스트에서 `respx` mock + monkeypatch 가드
+- **API key / secret / app_key / app_secret / access_token / account_number 평문 저장·로그·응답 0건** —
+  `mask_sensitive_order_payload()` + SHA-256 (`broker_order_no_hash`) 만
+- **raw KIS response 저장 0건** — `RealOrder` / `RealFill` 모든 필드에서 금지 (v0.16 정책 그대로)
+- **KillSwitch + PreTradeRiskEngine 재검사 필수** — Executor 진입 시 항상 재검사 (v0.16 정책 그대로)
+- **사용자 승인 없는 주문 0건** — `OrderCandidate(status=APPROVED)` 만 RealOrderExecutor 진입
+- **1 후보 = 1 사용자 승인 = 1 실주문** — 자동 진입 0건 / FULL_AUTO / SMALL_AUTO 0건 (v0.1~v0.16 일관)
+- **소액 / 일일 한도** — `MAX_REAL_ORDER_AMOUNT` (회당) + `MAX_REAL_DAILY_ORDER_AMOUNT` (일일 누적)
+  강제. 위반 시 차단
+- **중복 주문 가드** — 동일 `order_candidate_id` 에서 비-FAILED `RealOrder` 가 이미 존재하면 진입 차단
+- **mutation 라우터 1 건 신규** — `POST /api/real-orders/{id}/sync` 만. 그 외 read-only 정책 유지.
+  KillSwitch + TradingSafety + AUTH 3중 게이트
+- **Alembic revision 0건** — 기존 schema 재사용 (delta-based idempotency)
+- **신규 pip 의존성 0건** — `respx` (v0.11 부터 dev-only) / `httpx` (기존 의존성) 만
+- **Reconciliation 0건** — v1.1 이연
+- **자동 폴링 잡 0건** — Fill Sync 는 수동 트리거만 (`POST /sync`). 자동 폴링 잡은 v1.1 후보
+- **DART/RSS/Prometheus/Provider Data Ingestion/Score Policy/Paper Trading default OFF 유지**
+
+> **v1.1+ 경계**: v1.0 의 `HttpxKisOrderTransport` + `RealOrderExecutor` real path + idempotent
+> Fill Sync 가 v1.1 의 직접 기반이 된다. v1.1 에서는 Reconciliation (`reconciliation_runs` /
+> `reconciliation_mismatches` 신규 테이블, Alembic 1~2건) + 자동 Fill Sync 폴링 잡 + PreTradeRiskEngine
+> 신규 룰 (호가 jump / 시장 시간 외 차단) 도입. **SMALL_AUTO / FULL_AUTO 는 v1.1 에서도 0건 유지** —
+> 본 프로젝트 명시 금지 정책.
