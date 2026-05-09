@@ -1,7 +1,10 @@
 # API_SPEC.md
 
-> 본 문서는 **v1.0 Phase D 진행 시점** 기준이다 (이전 마감 태그 `v0.16-final`,
-> 현재 태그 `v1.0-real-order-executor-real`).
+> 본 문서는 **v1.0 마감 시점** 기준이다 (마감 태그 `v1.0-final`, 2026-05-09).
+> v1.0 Phase E 가 `GET /api/settings` 응답에 5 신규 bool 필드 (`trading_safety_enabled` /
+> `kill_switch_enabled` / `real_trading_enabled` / `kis_order_enabled` / `real_order_dry_run`) 를
+> 추가했다 — secret / api_key / account_no 평문 노출 0 건 유지. Frontend 의 `RealTradingModeBanner`
+> + `SyncFillButton` 이 이 5 bool 을 소비한다.
 >
 > **v1.0 Phase D 신규 엔드포인트 (mutation 1건 추가, 합계 15 → 16):**
 >

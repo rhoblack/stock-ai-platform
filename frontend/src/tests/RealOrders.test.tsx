@@ -1,4 +1,5 @@
 // v0.16 Phase E — RealOrders page vitest suite.
+// v1.0 Phase E — adds RealTradingModeBanner + Sync Fill button tests.
 //
 // All tests use MSW handlers. The default mswServer returns empty lists so
 // the empty state renders naturally. Per-test overrides use `server.use(...)`.
@@ -84,17 +85,17 @@ describe('RealOrdersPage', () => {
     expect(screen.getByTestId('real-orders-safety-banner')).toBeDefined()
   })
 
-  // 2. Safety banner text
+  // 2. Safety banner text — v1.0 Phase E uses uppercase "DRY-RUN" mode label.
   it('safety banner contains required dry-run notice', async () => {
     renderWithProviders(<RealOrdersPage />)
     await waitFor(() => {
-      expect(screen.getByTestId('real-orders-safety-banner').textContent).toContain(
-        'dry-run',
-      )
+      const text = screen.getByTestId('real-orders-safety-banner').textContent ?? ''
+      // The new banner copies "DRY-RUN 모드에서는 실제 KIS 주문이 실행되지 않습니다".
+      expect(text.toLowerCase()).toContain('dry-run')
     })
-    expect(screen.getByTestId('real-orders-safety-banner').textContent).toContain(
-      '실제 KIS 주문은 실행되지 않습니다',
-    )
+    expect(
+      screen.getByTestId('real-orders-safety-banner').textContent,
+    ).toContain('실제 KIS 주문이 실행되지 않습니다')
   })
 
   // 3. Empty state
@@ -263,18 +264,362 @@ describe('RealOrdersPage', () => {
     }
   })
 
-  // 13. API calls are read-only GET only (no POST/PUT/DELETE in hooks)
-  it('useRealOrders hook only performs GET requests', async () => {
-    // Verify hooks are read-only by checking there are no mutation hooks exported
-    const { useRealOrders, useRealOrderDetail } = await import('@/hooks/useRealOrders')
-    expect(typeof useRealOrders).toBe('function')
-    expect(typeof useRealOrderDetail).toBe('function')
-    // No mutation hook should exist
+  // 13. v1.0 Phase D — only the SOLE mutation hook (useSyncRealOrder) is exported.
+  it('useRealOrders module exposes ONLY useSyncRealOrder as a mutation', async () => {
     const hooks = await import('@/hooks/useRealOrders')
     const exportedKeys = Object.keys(hooks)
-    const mutationKeys = exportedKeys.filter(
-      k => k.startsWith('useCreate') || k.startsWith('useUpdate') || k.startsWith('useDelete'),
+    expect(exportedKeys).toContain('useRealOrders')
+    expect(exportedKeys).toContain('useRealOrderDetail')
+    expect(exportedKeys).toContain('useSyncRealOrder')
+    // Forbidden mutation hooks — would indicate accidental "create real order"
+    // / "delete real order" surface that v1.0 must not expose.
+    const forbiddenMutationPrefixes = ['useCreate', 'useUpdate', 'useDelete']
+    for (const key of exportedKeys) {
+      for (const prefix of forbiddenMutationPrefixes) {
+        expect(key.startsWith(prefix)).toBe(false)
+      }
+    }
+  })
+
+  // ===========================================================================
+  // v1.0 Phase E — RealTradingModeBanner + Sync Fill button
+  // ===========================================================================
+
+  // Build a canonical settings response used by every Phase E banner test.
+  const PARANOID_SETTINGS = {
+    app_env: 'test',
+    app_name: 'stock_ai_platform',
+    timezone: 'Asia/Seoul',
+    log_level: 'INFO',
+    telegram_enabled: false,
+    telegram_bot_token: 'fake****test',
+    telegram_chat_id: '12****90',
+    kis_app_key: 'PSnm****Zqry',
+    kis_app_secret: 'XxC8****4yc=',
+    kis_account_no: '5015****1-01',
+    kis_use_paper: true,
+    scheduler_enabled: false,
+    feature_real_order_execution: false,
+    feature_full_auto: false,
+    feature_paper_trading: false,
+    feature_backtest: false,
+    feature_custom_ai_training: false,
+    trading_safety_enabled: false,
+    kill_switch_enabled: true,
+    real_trading_enabled: false,
+    kis_order_enabled: false,
+    real_order_dry_run: true,
+  }
+
+  // 14. Banner renders with all 5 safety bool flags as labelled badges.
+  it('RealTradingModeBanner renders all 5 safety flag badges', async () => {
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-trading-flags')).toBeDefined()
+    })
+    // Each flag badge surfaces its env-var name as readable text.
+    expect(
+      screen.getByTestId('real-trading-flag-TRADING_SAFETY_ENABLED'),
+    ).toBeDefined()
+    expect(
+      screen.getByTestId('real-trading-flag-KILL_SWITCH_ENABLED'),
+    ).toBeDefined()
+    expect(
+      screen.getByTestId('real-trading-flag-REAL_TRADING_ENABLED'),
+    ).toBeDefined()
+    expect(
+      screen.getByTestId('real-trading-flag-KIS_ORDER_ENABLED'),
+    ).toBeDefined()
+    expect(
+      screen.getByTestId('real-trading-flag-REAL_ORDER_DRY_RUN'),
+    ).toBeDefined()
+  })
+
+  // 15. Paranoid defaults → mode = "KILL SWITCH ON" (kill_switch=true).
+  it('mode badge shows KILL SWITCH ON under paranoid defaults', async () => {
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      const badge = screen.getByTestId('real-trading-mode-badge')
+      expect(badge.textContent).toContain('KILL SWITCH ON')
+    })
+  })
+
+  // 16. DRY-RUN mode (kill_switch=false, safety=true, dry_run=true).
+  it('mode badge shows DRY-RUN when kill switch off + dry_run on', async () => {
+    server.use(
+      http.get('*/api/settings', () =>
+        HttpResponse.json({
+          ...PARANOID_SETTINGS,
+          kill_switch_enabled: false,
+          trading_safety_enabled: true,
+          real_trading_enabled: false,
+          kis_order_enabled: false,
+          real_order_dry_run: true,
+        }),
+      ),
     )
-    expect(mutationKeys).toHaveLength(0)
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      const badge = screen.getByTestId('real-trading-mode-badge')
+      expect(badge.textContent).toContain('DRY-RUN')
+    })
+  })
+
+  // 17. REAL TRADING ENABLED mode (every gate open).
+  it('mode badge shows REAL TRADING ENABLED when all gates open', async () => {
+    server.use(
+      http.get('*/api/settings', () =>
+        HttpResponse.json({
+          ...PARANOID_SETTINGS,
+          kill_switch_enabled: false,
+          trading_safety_enabled: true,
+          real_trading_enabled: true,
+          kis_order_enabled: true,
+          real_order_dry_run: false,
+        }),
+      ),
+    )
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      const badge = screen.getByTestId('real-trading-mode-badge')
+      expect(badge.textContent).toContain('REAL TRADING ENABLED')
+    })
+  })
+
+  // 18. Sync Fill button visible inside detail panel.
+  const SUBMITTED_ORDER = {
+    ...DRY_RUN_ORDER,
+    id: 42,
+    status: 'SUBMITTED' as const,
+    dry_run: false,
+    fake_order_no: null,
+  }
+
+  it('Sync Fill button is visible in the order detail panel', async () => {
+    server.use(
+      http.get('*/api/real-orders', () =>
+        HttpResponse.json({ items: [SUBMITTED_ORDER], total: 1, limit: 100, offset: 0 }),
+      ),
+      http.get('*/api/real-orders/:id', () =>
+        HttpResponse.json({ order: SUBMITTED_ORDER, fills: [] }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-row-42')).toBeDefined()
+    })
+    await user.click(screen.getByTestId('real-order-row-42'))
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-sync-button')).toBeDefined()
+    })
+    expect(
+      screen.getByTestId('real-order-sync-button').textContent,
+    ).toContain('체결 동기화')
+  })
+
+  // 19. Sync Fill disabled for DRY_RUN order.
+  it('Sync Fill button is disabled for DRY_RUN order', async () => {
+    server.use(
+      http.get('*/api/real-orders', () =>
+        HttpResponse.json({ items: [DRY_RUN_ORDER], total: 1, limit: 100, offset: 0 }),
+      ),
+      http.get('*/api/real-orders/:id', () =>
+        HttpResponse.json({ order: DRY_RUN_ORDER, fills: [] }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-row-1')).toBeDefined()
+    })
+    await user.click(screen.getByTestId('real-order-row-1'))
+    await waitFor(() => {
+      const btn = screen.getByTestId('real-order-sync-button') as HTMLButtonElement
+      expect(btn.disabled).toBe(true)
+    })
+    expect(
+      screen.getByTestId('real-order-sync-disabled-reason').textContent,
+    ).toContain('DRY_RUN')
+  })
+
+  // 20. Sync Fill disabled when KILL_SWITCH_ENABLED=true.
+  it('Sync Fill button is disabled when kill switch is ON', async () => {
+    // Default settings already have kill_switch=true → confirm SUBMITTED order is blocked.
+    server.use(
+      http.get('*/api/real-orders', () =>
+        HttpResponse.json({ items: [SUBMITTED_ORDER], total: 1, limit: 100, offset: 0 }),
+      ),
+      http.get('*/api/real-orders/:id', () =>
+        HttpResponse.json({ order: SUBMITTED_ORDER, fills: [] }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-row-42')).toBeDefined()
+    })
+    await user.click(screen.getByTestId('real-order-row-42'))
+    await waitFor(() => {
+      const btn = screen.getByTestId('real-order-sync-button') as HTMLButtonElement
+      expect(btn.disabled).toBe(true)
+    })
+    expect(
+      screen.getByTestId('real-order-sync-disabled-reason').textContent,
+    ).toContain('KILL_SWITCH_ENABLED')
+  })
+
+  // 21. Sync Fill happy path → success message rendered.
+  it('Sync Fill happy path shows success message', async () => {
+    server.use(
+      http.get('*/api/settings', () =>
+        HttpResponse.json({
+          ...PARANOID_SETTINGS,
+          kill_switch_enabled: false,
+          trading_safety_enabled: true,
+          real_trading_enabled: false,  // intentionally off — sync API does NOT require it
+          kis_order_enabled: false,
+          real_order_dry_run: false,
+        }),
+      ),
+      http.get('*/api/real-orders', () =>
+        HttpResponse.json({ items: [SUBMITTED_ORDER], total: 1, limit: 100, offset: 0 }),
+      ),
+      http.get('*/api/real-orders/:id', () =>
+        HttpResponse.json({ order: SUBMITTED_ORDER, fills: [] }),
+      ),
+      http.post('*/api/real-orders/:orderId/sync', () =>
+        HttpResponse.json({
+          real_order_id: 42,
+          real_order_status: 'FILLED',
+          fill_status: 'FULL',
+          fills_added: 1,
+          fills_total: 10,
+          synced_at: '2026-05-09T01:00:00Z',
+          message: 'sync ok: FULL (delta=10, new fill recorded)',
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-row-42')).toBeDefined()
+    })
+    await user.click(screen.getByTestId('real-order-row-42'))
+    const btn = await waitFor(() => {
+      const b = screen.getByTestId('real-order-sync-button') as HTMLButtonElement
+      expect(b.disabled).toBe(false)
+      return b
+    })
+    await user.click(btn)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-sync-success')).toBeDefined()
+    })
+    expect(
+      screen.getByTestId('real-order-sync-success').textContent,
+    ).toContain('FULL')
+  })
+
+  // 22. Sync Fill 503 (mutation rejected) shows error message.
+  it('Sync Fill 503 disabled response shows error message', async () => {
+    server.use(
+      http.get('*/api/settings', () =>
+        HttpResponse.json({
+          ...PARANOID_SETTINGS,
+          kill_switch_enabled: false,
+          trading_safety_enabled: true,
+          real_order_dry_run: false,
+        }),
+      ),
+      http.get('*/api/real-orders', () =>
+        HttpResponse.json({ items: [SUBMITTED_ORDER], total: 1, limit: 100, offset: 0 }),
+      ),
+      http.get('*/api/real-orders/:id', () =>
+        HttpResponse.json({ order: SUBMITTED_ORDER, fills: [] }),
+      ),
+      // Default mswServer already returns 503; explicit override here for clarity.
+      http.post('*/api/real-orders/:orderId/sync', () =>
+        HttpResponse.json({ detail: 'safety disabled' }, { status: 503 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-row-42')).toBeDefined()
+    })
+    await user.click(screen.getByTestId('real-order-row-42'))
+    const btn = await waitFor(() =>
+      screen.getByTestId('real-order-sync-button') as HTMLButtonElement,
+    )
+    await user.click(btn)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-sync-error')).toBeDefined()
+    })
+  })
+
+  // 23. Phase E forbidden CTA scan — verify no automation/order labels appear.
+  it('Phase E renders the safe-only Sync Fill label and no forbidden CTA', async () => {
+    server.use(
+      http.get('*/api/real-orders', () =>
+        HttpResponse.json({ items: [SUBMITTED_ORDER], total: 1, limit: 100, offset: 0 }),
+      ),
+      http.get('*/api/real-orders/:id', () =>
+        HttpResponse.json({ order: SUBMITTED_ORDER, fills: [] }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-row-42')).toBeDefined()
+    })
+    await user.click(screen.getByTestId('real-order-row-42'))
+    await waitFor(() => {
+      expect(screen.getByTestId('real-order-sync-button')).toBeDefined()
+    })
+    const buttons = document.querySelectorAll('button, [role="button"], a')
+    const forbiddenCtas = [
+      '실주문 실행',
+      '주문 전송',
+      'place real order',
+      '자동매매',
+      'FULL_AUTO',
+      'SMALL_AUTO',
+    ]
+    for (const btn of Array.from(buttons)) {
+      const text = btn.textContent ?? ''
+      for (const phrase of forbiddenCtas) {
+        expect(text).not.toContain(phrase)
+      }
+    }
+  })
+
+  // 24. Settings response forbidden substring scan — extended for v1.0.
+  it('Phase E does not surface KIS app key / secret / account_no plaintext', async () => {
+    server.use(
+      http.get('*/api/settings', () =>
+        HttpResponse.json({
+          ...PARANOID_SETTINGS,
+          // Even if backend leaks plaintext, frontend must not surface it.
+          kis_app_key: 'PLAINTEXT-APP-KEY-99999',
+          kis_app_secret: 'PLAINTEXT-APP-SECRET-99999',
+          kis_account_no: 'PLAINTEXT-ACCOUNT-NO-99999',
+        }),
+      ),
+      http.get('*/api/real-orders', () =>
+        HttpResponse.json({ items: [SUBMITTED_ORDER], total: 1, limit: 100, offset: 0 }),
+      ),
+    )
+    renderWithProviders(<RealOrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('real-orders-page')).toBeDefined()
+    })
+    const pageText = document.body.textContent ?? ''
+    for (const forbidden of [
+      'PLAINTEXT-APP-KEY-99999',
+      'PLAINTEXT-APP-SECRET-99999',
+      'PLAINTEXT-ACCOUNT-NO-99999',
+    ]) {
+      expect(pageText).not.toContain(forbidden)
+    }
   })
 })

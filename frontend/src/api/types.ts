@@ -229,6 +229,13 @@ export interface SettingsResponse {
   feature_paper_trading: boolean
   feature_backtest: boolean
   feature_custom_ai_training: boolean
+  // v1.0 Phase E — bool-only safety status (no secret payload).
+  // Used by RealTradingModeBanner and to gate the manual Sync Fill button.
+  trading_safety_enabled: boolean
+  kill_switch_enabled: boolean
+  real_trading_enabled: boolean
+  kis_order_enabled: boolean
+  real_order_dry_run: boolean
 }
 
 // ----- /api/holdings -----
@@ -1212,4 +1219,32 @@ export interface RealOrdersResponse {
 export interface RealOrderDetailResponse {
   order: RealOrder
   fills: RealFill[]
+}
+
+// v1.0 Phase D — POST /api/real-orders/{id}/sync request + response shapes.
+// Forbidden response substrings (verified by vitest + e2e):
+//   broker_order_no / api_key / app_secret / access_token / kis_account_no /
+//   raw_response / raw_text / source_file_path / real_account / account_number.
+// kis_order_no in the request body is plaintext that flows through the
+// transport in-memory only — the backend never persists or echoes it.
+export interface RealOrderSyncRequest {
+  kis_order_no?: string | null
+}
+
+export type RealOrderFillStatus =
+  | 'FULL'
+  | 'PARTIAL'
+  | 'NONE'
+  | 'REJECTED'
+  | 'CANCELED'
+  | 'FAILED'
+
+export interface RealOrderSyncResponse {
+  real_order_id: number
+  real_order_status: RealOrderStatus
+  fill_status: RealOrderFillStatus
+  fills_added: number
+  fills_total: number
+  synced_at: string
+  message: string
 }

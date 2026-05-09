@@ -799,6 +799,12 @@ const SETTINGS_SAFE = {
   feature_paper_trading: false,
   feature_backtest: false,
   feature_custom_ai_training: false,
+  // v1.0 Phase E — paranoid defaults for safety status flags.
+  trading_safety_enabled: false,
+  kill_switch_enabled: true,
+  real_trading_enabled: false,
+  kis_order_enabled: false,
+  real_order_dry_run: true,
 }
 
 const VALIDATION_REPORT_EMPTY = {
@@ -926,8 +932,12 @@ const APPROVAL_DISABLED_503 = {
 }
 
 // v0.16 Phase E — Real Orders read-only e2e fixture.
-// GETs return empty; no POST/mutation handlers (read-only API).
+// v1.0 Phase D — adds POST /sync (default 503 — paranoid SAFETY=disabled).
 const REAL_ORDERS_EMPTY = { items: [], total: 0, limit: 100, offset: 0 }
+const REAL_ORDER_SYNC_DISABLED_503 = {
+  detail:
+    'real-order sync is disabled — set TRADING_SAFETY_ENABLED=true in operator-private .env to opt in',
+}
 
 const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; method?: string }> = [
   { pattern: /\/health$/, payload: HEALTH },
@@ -989,7 +999,9 @@ const HANDLERS: Array<{ pattern: RegExp; payload: unknown; status?: number; meth
   { pattern: /\/api\/approvals\/\d+\/approve$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
   { pattern: /\/api\/approvals\/\d+\/reject$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
   { pattern: /\/api\/approvals\/\d+\/expire$/, payload: APPROVAL_DISABLED_503, status: 503, method: 'POST' },
-  // v0.16 Phase E — Real Orders (read-only; no POST/mutation handlers).
+  // v0.16 Phase E — Real Orders (read-only).
+  // v1.0 Phase D — POST /sync default = 503 (TRADING_SAFETY_ENABLED=false paranoid).
+  { pattern: /\/api\/real-orders\/\d+\/sync$/, payload: REAL_ORDER_SYNC_DISABLED_503, status: 503, method: 'POST' },
   { pattern: /\/api\/real-orders\/\d+$/, payload: { detail: 'not found' }, status: 404 },
   { pattern: /\/api\/real-orders(\?|$)/, payload: REAL_ORDERS_EMPTY },
 ]

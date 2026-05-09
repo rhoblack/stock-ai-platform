@@ -131,6 +131,12 @@ export const handlers = [
       feature_paper_trading: false,
       feature_backtest: false,
       feature_custom_ai_training: false,
+      // v1.0 Phase E — paranoid defaults for the safety status fields.
+      trading_safety_enabled: false,
+      kill_switch_enabled: true,
+      real_trading_enabled: false,
+      kis_order_enabled: false,
+      real_order_dry_run: true,
     }),
   ),
 
@@ -459,6 +465,18 @@ export const handlers = [
     HttpResponse.json(
       { detail: `real order ${params.orderId} not found` },
       { status: 404 },
+    ),
+  ),
+  // v1.0 Phase D — POST /api/real-orders/{id}/sync default = 503 (TRADING_SAFETY_ENABLED=false).
+  // The default mirrors the paranoid backend gate; happy-path tests override
+  // via ``server.use(...)`` to assert the success branch.
+  http.post('*/api/real-orders/:orderId/sync', () =>
+    HttpResponse.json(
+      {
+        detail:
+          'real-order sync is disabled — set TRADING_SAFETY_ENABLED=true in operator-private .env to opt in',
+      },
+      { status: 503 },
     ),
   ),
 

@@ -1,15 +1,16 @@
 # Architecture
 
-> 본 문서는 **v1.0 Phase D 진행 시점** 기준으로 갱신된다 (이전 마감 태그 `v0.16-final`,
-> 현재 태그 `v1.0-real-order-executor-real`). v0.16 5 Phase 마감 + v1.0 Phase A·B·C·D 완료.
+> 본 문서는 **v1.0 마감 시점** 기준으로 갱신된다 (마감 태그 `v1.0-final`, 2026-05-09).
+> v0.16 5 Phase 마감 + v1.0 Phase A·B·C·D·E 모두 완료.
 >
 > v1.0 Phase A (운영 진입 체크리스트) → Phase B (`HttpxKisOrderTransport`) → Phase C
-> (RealOrderExecutor 10-gate + real path 분기) → **Phase D (FillSyncService 델타 idempotent +
-> POST /sync API)** → Phase E (UI status + RUNBOOK 최종).
+> (RealOrderExecutor 10-gate + real path 분기) → Phase D (FillSyncService 델타 idempotent +
+> POST /sync API) → **Phase E (`/real-orders` 강화 — RealTradingModeBanner + 수동 Sync Fill 버튼 +
+> RELEASE_NOTES / RUNBOOK / 4 게이트 마감)**.
 >
-> 누적 게이트 (v1.0 Phase D 시점): backend pytest **2082** / frontend vitest **214** /
-> Playwright e2e **24** / build 그린. Alembic head: `0010_real_fills` (41 테이블, v1.0 동안
-> 변경 0건 예정). mutating endpoint count: 15 → **16** (real-orders 1 추가).
+> 마감 게이트 (v1.0-final): backend pytest **2082** / frontend vitest **225** /
+> Playwright e2e **25** / build 그린. Alembic head: `0010_real_fills` (41 테이블, v1.0 동안 변경 0건).
+> mutating endpoint count: 15 → **16** (real-orders 1 추가).
 >
 > **v0.16 Real Order Skeleton 흐름 (dry-run 전용, 현재 production 경로):**
 >

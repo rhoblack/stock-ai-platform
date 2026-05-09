@@ -721,6 +721,7 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
   })
 
   // -------- v0.16 Phase E — Real Orders read-only --------
+  // -------- v1.0 Phase E — RealTradingModeBanner + Sync Fill button --------
 
   test('Real Orders page shows safety banner and empty state, never leaks KIS fields', async ({
     page,
@@ -728,6 +729,24 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
     await page.goto('/real-orders')
     await expect(page.getByTestId('real-orders-page')).toBeVisible()
     await expect(page.getByTestId('real-orders-safety-banner')).toBeVisible()
+    // v1.0 Phase E — banner shows the 5 safety flag badges + a mode badge.
+    await expect(page.getByTestId('real-trading-flags')).toBeVisible()
+    await expect(page.getByTestId('real-trading-mode-badge')).toBeVisible()
+    await expect(
+      page.getByTestId('real-trading-flag-TRADING_SAFETY_ENABLED'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('real-trading-flag-KILL_SWITCH_ENABLED'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('real-trading-flag-REAL_TRADING_ENABLED'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('real-trading-flag-KIS_ORDER_ENABLED'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('real-trading-flag-REAL_ORDER_DRY_RUN'),
+    ).toBeVisible()
     // Default e2e fixture returns empty → empty placeholder
     await expect(page.getByTestId('real-orders-empty')).toBeVisible()
 
@@ -739,6 +758,9 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
       'kis_app_secret',
       'kis_account_no',
       'broker_order_no_hash',
+      'broker_order_no',
+      'broker_order_id',
+      'kis_order_id',
       'raw_response',
       'source_file_path',
       'real_account',
@@ -780,6 +802,107 @@ test.describe('v0.2 Phase F — dashboard happy paths (9 screens, mocked API)', 
       'raw_text',
     ]) {
       expect(merged).not.toContain(forbidden)
+    }
+  })
+
+  test('Real Orders page renders Sync Fill button and respects paranoid disabled gate', async ({
+    page,
+  }) => {
+    // Override the GET /api/real-orders + detail responses to surface a
+    // SUBMITTED non-dry-run order so the detail panel renders the Sync
+    // Fill button. The default safety settings (kill_switch=true) keep
+    // the button disabled — verifies the v1.0 Phase E gate end-to-end.
+    await page.route('**/api/real-orders?**', route =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              id: 99,
+              candidate_id: 1,
+              symbol: '005930',
+              side: 'BUY',
+              quantity: 10,
+              order_type: 'MARKET',
+              limit_price: null,
+              estimated_amount: '750000',
+              status: 'SUBMITTED',
+              dry_run: false,
+              fake_order_no: null,
+              request_id: null,
+              error_code: null,
+              error_message: null,
+              submitted_at: '2026-05-09T01:00:00',
+              created_at: '2026-05-09T00:55:00',
+              updated_at: '2026-05-09T00:55:00',
+            },
+          ],
+          total: 1,
+          limit: 100,
+          offset: 0,
+        }),
+      }),
+    )
+    await page.route('**/api/real-orders/99', route =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          order: {
+            id: 99,
+            candidate_id: 1,
+            symbol: '005930',
+            side: 'BUY',
+            quantity: 10,
+            order_type: 'MARKET',
+            limit_price: null,
+            estimated_amount: '750000',
+            status: 'SUBMITTED',
+            dry_run: false,
+            fake_order_no: null,
+            request_id: null,
+            error_code: null,
+            error_message: null,
+            submitted_at: '2026-05-09T01:00:00',
+            created_at: '2026-05-09T00:55:00',
+            updated_at: '2026-05-09T00:55:00',
+          },
+          fills: [],
+        }),
+      }),
+    )
+
+    await page.goto('/real-orders')
+    await expect(page.getByTestId('real-orders-page')).toBeVisible()
+
+    // Click the row to open the detail panel.
+    await page.getByTestId('real-order-row-99').click()
+    await expect(page.getByTestId('real-orders-detail')).toBeVisible()
+
+    // Sync Fill button must exist with the safe label "체결 동기화".
+    const syncBtn = page.getByTestId('real-order-sync-button')
+    await expect(syncBtn).toBeVisible()
+    await expect(syncBtn).toContainText('체결 동기화')
+
+    // Under paranoid defaults (kill_switch=true) the button is disabled.
+    await expect(syncBtn).toBeDisabled()
+    await expect(
+      page.getByTestId('real-order-sync-disabled-reason'),
+    ).toContainText('KILL_SWITCH_ENABLED')
+
+    // Forbidden CTA copy must not appear on this page either.
+    for (const phrase of [
+      '실주문 실행',
+      '주문 전송',
+      'place real order',
+      '자동매매',
+      'FULL_AUTO',
+      'SMALL_AUTO',
+    ]) {
+      await expect(
+        page.locator('button, [role="button"], a').filter({ hasText: phrase }),
+      ).toHaveCount(0)
     }
   })
 

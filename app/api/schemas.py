@@ -808,6 +808,15 @@ class SettingsResponse(_BaseSchema):
     feature_paper_trading: bool
     feature_backtest: bool
     feature_custom_ai_training: bool
+    # v1.0 Phase E — Safety status flags (bool-only, no secret payload).
+    # Frontend uses these to render the RealTradingModeBanner and to gate
+    # the manual Sync Fill button. Adding bool fields only — no API key,
+    # account number, or other sensitive value is exposed.
+    trading_safety_enabled: bool
+    kill_switch_enabled: bool
+    real_trading_enabled: bool
+    kis_order_enabled: bool
+    real_order_dry_run: bool
 
 
 # ---------------------------------------------------------------------------

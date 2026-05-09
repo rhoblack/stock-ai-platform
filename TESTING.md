@@ -3,7 +3,7 @@
 > 본 문서는 **v1.0 Phase A 진행 시점** 기준으로 갱신되었다 (이전 마감 태그 `v0.16-final`).
 > 누적 cycle 의 게이트 baseline 과 v0.4–v1.0 신규 테스트 카테고리를 반영한다.
 
-## 1. 현재 회귀 게이트 (v1.0 Phase D 진행 중, 2026-05-09)
+## 1. 현재 회귀 게이트 (v1.0-final 마감, 2026-05-09)
 
 모든 사이클에서 4 게이트가 그린 상태로 유지된다. 외부 API / 텔레그램 / 주문은
 어떤 테스트에서도 실제로 호출되지 않는다 (`respx` + `httpx.Client` monkeypatch +
@@ -11,10 +11,10 @@ provider transport injection + httpx.MockTransport + `_StubTransport` + `_Script
 
 | 게이트 | 명령 | 현재 baseline |
 |---|---|---|
-| backend pytest | `python -m pytest -q` | **2082 passed** (v1.0 Phase D: 2040 → 2082, +42 — FillSyncService 델타 idempotent + 6 분류 + audit 24 / 통합 (respx+DB) 7 / API POST /sync HTTP 10 / Phase D scope guard 5 / mutation count 갱신; 기존 v0.16 fill sync 테스트는 v1.0 semantics 에 맞춰 갱신) |
-| frontend vitest | `cd frontend && npm run test -- --run` | **214 passed** (v0.16 Phase E baseline 그대로 — v1.0 Phase A·B·C·D 모두 프런트 변경 0건) |
+| backend pytest | `python -m pytest -q` | **2082 passed** (v1.0 마감 시점 — Phase A 1942 / Phase B 1995 / Phase C 2040 / Phase D 2082. Phase E 는 backend 변경 최소 — `SettingsResponse` 5 bool 추가만, 기존 테스트 회귀 0건) |
+| frontend vitest | `cd frontend && npm run test -- --run` | **225 passed** (v1.0 Phase E: 214 → 225, +11 — RealTradingModeBanner 5 flag + 4 mode badge + Sync Fill 버튼 4 disabled 케이스 + mutation happy/error + forbidden CTA + plaintext) |
 | frontend build | `cd frontend && npm run build` | 그린 (`tsc --noEmit && vite build`) |
-| Playwright e2e | `cd frontend && npm run e2e` | **24 passed** (v0.16 baseline 그대로 — v1.0 Phase A·B·C·D 모두 e2e 변경 0건) |
+| Playwright e2e | `cd frontend && npm run e2e` | **25 passed** (v1.0 Phase E: 24 → 25, +1 — Sync Fill 버튼 paranoid disabled gate e2e) |
 
 GitHub Actions CI 가 main / PR 양쪽에서 위 4 게이트를 자동 검증한다 (실 KIS /
 Telegram 호출 0건). 자세한 CI 정의는 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).

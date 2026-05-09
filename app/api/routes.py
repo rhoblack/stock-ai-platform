@@ -1688,4 +1688,10 @@ def get_settings_endpoint(
         feature_paper_trading=settings.feature_paper_trading,
         feature_backtest=settings.feature_backtest,
         feature_custom_ai_training=settings.feature_custom_ai_training,
+        # v1.0 Phase E — bool-only safety status (no secrets).
+        trading_safety_enabled=settings.trading_safety_enabled,
+        kill_switch_enabled=settings.kill_switch_enabled,
+        real_trading_enabled=settings.real_trading_enabled,
+        kis_order_enabled=settings.kis_order_enabled,
+        real_order_dry_run=settings.real_order_dry_run,
     )

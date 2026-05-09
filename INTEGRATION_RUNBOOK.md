@@ -1,6 +1,13 @@
 # INTEGRATION_RUNBOOK.md
 
-> 본 문서는 **v0.16 마감 시점** 기준이다 (마감 태그 `v0.16-final`).
+> 본 문서는 **v1.0 마감 시점** 기준이다 (마감 태그 `v1.0-final`, 2026-05-09).
+>
+> **v1.0 실거래 운영 절차는 [`RUNBOOK_REAL_TRADING.md`](./RUNBOOK_REAL_TRADING.md) §1~9 를 참조한다.**
+> 본 문서는 v0.1~v0.16 의 read-only / dry-run / paper 운영 절차를 정리하며, 실 KIS 주문 활성화 절차
+> (§1 9 항목 전제 조건 → §2 5 단계 .env 활성화 → §6 체결 불일치 / §5 실패 대응 / §3 KillSwitch / §4
+> 비상중지 / §7 dry-run rollback / §8 GitHub Release 운영 체크리스트) 는 모두 별도 RUNBOOK 에서 관리한다.
+>
+> 이전 마감: v0.16-final (HEAD `2d262d5`).
 > v0.5 §10 (News) / §11 (Disclosure) / §12 (테마) +
 > v0.6 §13 (Fundamental CSV) / §14 (Earnings CSV) / §15 (read-only API) +
 > v0.7 §16 (백테스트 CLI + read-only API + 화면) +

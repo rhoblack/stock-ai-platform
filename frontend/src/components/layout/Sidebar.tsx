@@ -54,7 +54,7 @@ export function Sidebar() {
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold">Stock AI</span>
-          <span className="text-xs text-muted-foreground">v0.16 dashboard</span>
+          <span className="text-xs text-muted-foreground">v1.0 dashboard</span>
         </div>
       </div>
       <nav className="flex flex-col gap-1 px-3 pb-4 pt-2" aria-label="primary">
@@ -77,8 +77,8 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="mt-auto px-5 py-4 text-xs text-muted-foreground">
-        <p>v0.16 Real Order Integration Skeleton</p>
-        <p className="mt-1">실 KIS 주문 / 자동매매 미포함</p>
+        <p>v1.0 Small Approval Trading Release</p>
+        <p className="mt-1">소액·승인 기반 / 자동매매 미포함</p>
       </div>
     </aside>
   )

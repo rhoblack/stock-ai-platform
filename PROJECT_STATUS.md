@@ -7,26 +7,24 @@
 
 ---
 
-## 0. v1.0 시작 선언 — Small Approval Trading Release
+## 0. v1.0 마감 선언 — Small Approval Trading Release
 
-**v1.0 cycle 시작.** `v0.16-final` (HEAD `2d262d5`, pytest 1905 / vitest 214 / e2e 24 / build 그린)
-위에 **소액·승인 기반 첫 실 KIS 주문 실행** 을 목표로 하는 5 Phase 사이클을 시작한다. v0.1~v0.16 누적
-안전 인프라 (KillSwitch + TradingSafety + PreTradeRiskEngine 7 HARD 룰 + ApprovalAuditLog append-only +
-RealTradingSettings 5종 paranoid default + RealOrder/RealFill ORM + dry-run RealOrderExecutor 8-gate +
-FillSync mock + 15 번째 화면 `/real-orders` read-only) 위에 **`HttpxKisOrderTransport` (실 transport) +
-RealOrderExecutor real path (10-gate) + idempotent Fill Sync (델타 기반)** 을 도입한다.
-
-채택 시나리오: **Scenario X — Small Approval Trading Release**.
-(비교 후보: Y=transport 만 추가·실주문 v1.1 이연, Z=Reconciliation 까지 포함, W=SMALL_AUTO 까지
-포함하는 공격적 시나리오 — Z 의 Reconciliation 은 v1.1 로 이연하여 Phase D 에는 idempotent Fill
-Sync 만 포함; W 는 본 프로젝트 명시 금지 정책 위반으로 기각.)
+**v1.0 cycle 마감.** `v0.16-final` 위에 **소액·승인 기반 첫 실 KIS 주문 실행 경로** (HttpxKisOrderTransport +
+RealOrderExecutor real path 10-gate + 델타 기반 idempotent Fill Sync + `POST /api/real-orders/{id}/sync` 수동
+트리거 + `RealTradingModeBanner` + 수동 Sync Fill 버튼) 5 Phase 완료. 최종 마감 태그 `v1.0-final`.
+채택 시나리오: **Scenario X — Small Approval Trading Release**. 자동 진입 / FULL_AUTO / SMALL_AUTO /
+사용자 승인 없는 주문은 v1.0 에서도 **0건 유지**.
 
 - 시작 일자: **2026-05-09 (Asia/Seoul)**
-- 기준 태그: `v0.16-final` → **목표 마감 태그: `v1.0-final`**
+- 마감 일자: **2026-05-09 (Asia/Seoul)**
+- 기준 태그: `v0.16-final` (HEAD `2d262d5`) → **마감 태그: `v1.0-final`**
 - 기준 게이트: pytest **1905 passed** / vitest **214 passed** / e2e **24 passed** / build 그린
-- 목표 게이트: pytest **~2025** (+~120) / vitest **~219** (+~5) / e2e **25** (+1) / build 그린
-- Alembic head: `0010_real_fills` → **변경 0건 (41 테이블 그대로 유지)**
+- 최종 게이트: pytest **2082 passed** (+177) / vitest **225 passed** (+11) / e2e **25 passed** (+1) / build 그린
+- Alembic head: `0010_real_fills` (41 테이블, **v1.0 동안 변경 0건**)
+- mutating endpoint count: 15 → **16** (`POST /api/real-orders/{id}/sync` 1 추가)
 - 세부 계획: [`PLANS.md`](./PLANS.md) `PLAN-0017`
+- 릴리스 노트: [`RELEASE_NOTES_v1.0.md`](./RELEASE_NOTES_v1.0.md)
+- 운영 절차: [`RUNBOOK_REAL_TRADING.md`](./RUNBOOK_REAL_TRADING.md) §1~9
 
 ### v1.0 시나리오 채택 결론
 
@@ -35,19 +33,19 @@ Sync 만 포함; W 는 본 프로젝트 명시 금지 정책 위반으로 기각
 | 시나리오 | 내용 | 결정 |
 |---|---|---|
 | **X** | 소액 승인 실주문 + KIS 실 transport + RealOrderExecutor real path + Fill Sync 최소 구현 | ✅ **핵심 채택** |
-| Y | KIS transport + dry-run 유지, 실주문은 v1.1 이연 | ❌ 기각 — v1.0 의 본질은 "첫 실주문". transport 만 으로는 v0.16-final 과 운영 가치 차이 작음. transport 는 X Phase B 로 흡수 |
-| Z | Reconciliation 까지 포함한 보수적 운영 안정화 | ⚠️ **부분 흡수** — Reconciliation 은 v1.1 로 이연. v1.0 Phase D 에는 idempotent Fill Sync 만 포함하여 다음 사이클의 직접 기반 마련 |
-| W | SMALL_AUTO 까지 포함하는 공격적 시나리오 | ❌ **기각** — 본 프로젝트 명시 금지 정책 (사용자 승인 없는 주문 / 자동 진입 / FULL_AUTO / SMALL_AUTO 0건) 위반 |
+| Y | KIS transport + dry-run 유지, 실주문은 v1.1 이연 | ❌ 기각 |
+| Z | Reconciliation 까지 포함한 보수적 운영 안정화 | ⚠️ **부분 흡수** — Reconciliation 은 v1.1 이연 |
+| W | SMALL_AUTO 까지 포함하는 공격적 시나리오 | ❌ **기각** — 본 프로젝트 명시 금지 정책 위반 |
 
-### v1.0 Phase 목표
+### v1.0 Phase 완료 결과
 
-| Phase | 내용 | 예상 태그 | 목표 게이트 |
+| Phase | 내용 | 태그 | 결과 |
 |---|---|---|---|
-| A | Real trading operating checklist (`RUNBOOK_REAL_TRADING.md` § 1~7) + safety gates 보강 + settings `__post_init__` 강화 + 단위 테스트 +10 건 | `v1.0-operating-checklist` | pytest 1905→~1915 |
-| B | `HttpxKisOrderTransport` (KisOrderClientInterface 첫 실 구현체) + httpx lazy + timeout (5/10/5s) + retry 정책 (place=0, query/cancel=2) + 마스킹 + `respx` mock 100% +30 건 | `v1.0-kis-real-transport` | pytest ~1915→~1945 |
-| C | `RealOrderExecutor` real path (10-gate, dry-run vs real 분기) + `RealOrder(is_dry_run=False)` 저장 + audit 1 행 + DUPLICATE_REAL_ORDER / TRANSPORT_UNAVAILABLE 게이트 + 단위 25 + 통합 10 | `v1.0-real-order-executor-real` | pytest ~1945→~1980 |
-| D | `FillSyncService` 실 transport 연결 + 델타 기반 idempotent RealFill (Alembic 0건) + `POST /api/real-orders/{id}/sync` (KillSwitch + TradingSafety + AUTH 3중 게이트) + 단위 25 + 통합 20 | `v1.0-fill-sync-real` | pytest ~1980→~2025 |
-| E | 15 번째 화면 `/real-orders` 강화 (RealTradingModeBanner / Sync Fill 버튼) + RELEASE_NOTES_v1.0 + RUNBOOK 최종 + 4 게이트 확인 | `v1.0-final` | vitest 214→~219 / e2e 24→25 |
+| A | RUNBOOK_REAL_TRADING.md §1~9 + `validate_real_trading_operating_limits()` + paranoid default 재검증 +38 건 | `v1.0-operating-checklist` | ✅ pytest 1905→1942 |
+| B | `HttpxKisOrderTransport` 첫 실 구현체 + lazy httpx + retry (place=0/query·cancel=2) + 마스킹 + respx 100% +53 건 | `v1.0-kis-real-transport` | ✅ pytest 1942→1995 |
+| C | `RealOrderExecutor` 10-gate + real path 분기 + `_resolve_real_transport()` + `_execute_real()` + audit (REAL_ORDER_SUBMITTED/FAILED) +45 건 | `v1.0-real-order-executor-real` | ✅ pytest 1995→2040 |
+| D | `FillSyncService` 델타 기반 idempotent + 6 분류 + DRY_RUN skip + `POST /sync` + audit 3 종 +42 건 | `v1.0-fill-sync-real` | ✅ pytest 2040→2082 |
+| E | `/real-orders` 15번째 화면 강화 — `RealTradingModeBanner` + 수동 Sync Fill 버튼 + `useSyncRealOrder` mutation + Settings 5 bool 노출 + RELEASE_NOTES/RUNBOOK 마감 | `v1.0-final` | ✅ vitest 214→225 / e2e 24→25 |
 
 ### v1.0 핵심 정책 (cycle-wide)
 
@@ -72,12 +70,50 @@ Sync 만 포함; W 는 본 프로젝트 명시 금지 정책 위반으로 기각
 - **FULL_AUTO / SMALL_AUTO / 자동매매 0건** — 본 프로젝트 명시 금지 정책 그대로
 - **DART/RSS/Prometheus/Provider Data Ingestion/Score Policy/Paper Trading default OFF 유지**
 
-### v1.0 다음 첫 구현 작업
+### v1.0 마감 후 다음 작업 (v1.1)
 
-**Phase A 진입 권장.** 코드 변경은 settings `__post_init__` 검증 보강 + `RUNBOOK_REAL_TRADING.md`
-신규 작성 + 단위 테스트 ~10 건 추가 (Alembic / DB 모델 / API 라우터 / 프런트 모두 0건). 이번 cycle 의
-가장 중요한 게이트는 운영 진입 체크리스트 명문화 — Phase B 의 실 transport 진입 전에 운영자 책임 /
-면책 / dry-run 4 주 운영 검증 / 자본 한도 정책이 모두 잠겨 있어야 한다.
+**v1.1 진입 전 별도 보안·컴플라이언스 사이클 선행 필수.** v1.0 운영 4주+ + 실주문 ≥10건 누적 +
+mismatch 0건 또는 분류 가능한 형태로 누적된 후 Reconciliation 사이클 진입. 우선순위
+(`RELEASE_NOTES_v1.0.md` v1.1 후보 절):
+
+1. Reconciliation 엔진 (`reconciliation_runs` / `reconciliation_mismatches` Alembic 1~2건)
+2. 자동 Fill Sync 폴링 잡 (`KIS_ORDER_ENABLED=true` 시에만 동작)
+3. 운영 알림 (Prometheus + Grafana + Telegram)
+4. 실주문 실패 복구 고도화 (TIMEOUT/NETWORK_ERROR 자동 후속 sync)
+5. PreTradeRiskEngine 신규 룰 (호가 jump / 시장 시간 외 차단 / 종목당 일일 한도 / 연속 실패)
+
+**v1.0 Phase E 완료 (2026-05-09)** — 본 마감.
+
+### v1.0 Phase E 완료 (2026-05-09)
+
+- `app/api/schemas.py` `SettingsResponse` — 5 신규 bool 필드 추가 (`trading_safety_enabled` /
+  `kill_switch_enabled` / `real_trading_enabled` / `kis_order_enabled` / `real_order_dry_run`).
+  secret / api_key / account_no 평문 노출 0건 유지
+- `app/api/routes.py` `/api/settings` builder — 위 5 bool wiring 추가
+- `frontend/src/api/types.ts` — `SettingsResponse` 5 신규 bool +
+  `RealOrderSyncRequest` / `RealOrderSyncResponse` / `RealOrderFillStatus` 신규 타입
+- `frontend/src/api/realOrders.ts` — `syncRealOrder(orderId, body?)` 함수 추가 (apiPost 래퍼)
+- `frontend/src/hooks/useRealOrders.ts` — `useSyncRealOrder` mutation hook 추가
+  (real-orders namespace invalidate, retry: false)
+- `frontend/src/pages/RealOrders/index.tsx` —
+  - `RealTradingSafetyBanner` → `RealTradingModeBanner` 교체 (5 flag badge + 4 mode badge:
+    REAL TRADING ENABLED / DRY-RUN / KILL SWITCH ON / 전이 상태)
+  - `SyncFillButton` 신규 — 4 disabled 조건 (DRY_RUN / KILL_SWITCH / TRADING_SAFETY / terminal status) +
+    isPending spinner + success/error 메시지. 라벨은 "체결 동기화" / "Sync Fill" 만
+- `frontend/src/components/layout/Sidebar.tsx` — footer "v0.16 Real Order Integration Skeleton" →
+  "v1.0 Small Approval Trading Release", "v0.16 dashboard" → "v1.0 dashboard"
+- `frontend/src/tests/RealOrders.test.tsx` Phase E 테스트 +11 건 (banner 5 flag badge / mode 4 종 /
+  Sync 버튼 가시성 + disabled 4 케이스 / mutation happy / mutation 503 error / forbidden CTA / plaintext)
+- `frontend/src/tests/mswServer.ts` — `/api/settings` 5 bool + `POST /sync` 503 mock 추가
+- `frontend/e2e/fixtures/apiMocks.ts` — `SETTINGS_SAFE` 에 5 bool + `POST /sync` 503 핸들러
+- `frontend/e2e/dashboard.spec.ts` — Real Orders e2e 강화 + Sync Fill 버튼 e2e 1 건 신규 (24 → 25)
+- 문서 마감: `RELEASE_NOTES_v1.0.md` 본 마감 + `RUNBOOK_REAL_TRADING.md` v1.0-final 마커 + `README.md` /
+  `ROADMAP.md` / `TASKS.md` / `ARCHITECTURE.md` / `TESTING.md` / `API_SPEC.md` / `INTEGRATION_RUNBOOK.md` 갱신
+- **최종 게이트: backend pytest 2082 / frontend vitest 214 → 225 (+11) / e2e 24 → 25 (+1) / build 그린**
+- Alembic head: `0010_real_fills` 변경 0건 / DB 모델 변경 0건 / 신규 pip 의존성 0건 / 실 KIS 호출 0건 /
+  외부 네트워크 호출 0건 / forbidden CTA 0건 / 자격증명 평문 0건 / mutating endpoint count 15 → 16
+- v1.0 사이클 누적 산출물 (5 Phase): `v1.0-operating-checklist` → `v1.0-kis-real-transport` →
+  `v1.0-real-order-executor-real` → `v1.0-fill-sync-real` → **`v1.0-final`**
 
 ### v1.0 Phase D 완료 (2026-05-09)
 
