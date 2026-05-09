@@ -320,7 +320,12 @@ def test_mutating_endpoint_count_unchanged(session):
       POST   /api/approvals/{id}/reject
       POST   /api/approvals/{id}/expire
 
-    Total mutating: auth(2) + watchlist(6) + preferences(1) + paper(2) + approvals(4) = 15.
+    v1.0 Phase D adds (manual fill-sync trigger only -- the SOLE RealOrder
+    mutation; gates: AUTH + TRADING_SAFETY_ENABLED + KILL_SWITCH_OFF):
+      POST   /api/real-orders/{id}/sync        (manual fill sync)
+
+    Total mutating: auth(2) + watchlist(6) + preferences(1) + paper(2) +
+    approvals(4) + real-orders(1) = 16.
     POST /api/auth/register is not present (single-user, no self-registration).
     """
     from app.main import app as _app
@@ -330,9 +335,9 @@ def test_mutating_endpoint_count_unchanged(session):
         for r in _app.routes
         if hasattr(r, "methods") and r.methods & {"POST", "PUT", "PATCH", "DELETE"}
     ]
-    assert len(mutating) == 15, (
-        f"Expected 15 mutating endpoints (auth 2 + watchlist 6 + preferences 1 "
-        f"+ paper 2 + approvals 4), found {len(mutating)}: {mutating}"
+    assert len(mutating) == 16, (
+        f"Expected 16 mutating endpoints (auth 2 + watchlist 6 + preferences 1 "
+        f"+ paper 2 + approvals 4 + real-orders 1), found {len(mutating)}: {mutating}"
     )
 
 

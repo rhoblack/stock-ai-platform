@@ -1,10 +1,40 @@
 # API_SPEC.md
 
-> 본 문서는 **v0.16 마감 시점** 기준이다 (마감 태그 `v0.16-final`).
-> v0.16 Phase E 가 **Real Orders read-only API** 2 라우터 (GET 전용, POST/PUT/DELETE 0건) 를
-> 추가했고, 15번째 프런트 화면 `/real-orders` 에서 소비한다 (mutation 라우터 변경 0건 — 합계 15건 유지).
+> 본 문서는 **v1.0 Phase D 진행 시점** 기준이다 (이전 마감 태그 `v0.16-final`,
+> 현재 태그 `v1.0-real-order-executor-real`).
 >
-> **v0.16 Phase E 신규 엔드포인트:**
+> **v1.0 Phase D 신규 엔드포인트 (mutation 1건 추가, 합계 15 → 16):**
+>
+> - `POST /api/real-orders/{order_id}/sync` — RealOrder 의 KIS 체결 상태를 수동 트리거로
+>   sync. v1.0 의 SOLE RealOrder mutation 라우터.
+>   - **3중 게이트:** AUTH (`require_auth`, AUTH_ENABLED=true 시 401 if missing Bearer) +
+>     `TRADING_SAFETY_ENABLED=true` (else 503) + `KILL_SWITCH_ENABLED=false` (else 503).
+>   - `REAL_TRADING_ENABLED` / `KIS_ORDER_ENABLED` 는 **의도적으로 미강제** — 운영자가
+>     사고 후 sync 가능해야 함 (RUNBOOK §6 기준).
+>   - **요청 본문 (옵션):** `RealOrderSyncRequest { kis_order_no?: string }` — 운영자가
+>     KIS HTS 등에서 보유한 plaintext 주문번호를 in-memory 만 transport 에 전달.
+>     RealFill / RealOrder / audit / 응답 본문 어디에도 저장 0건.
+>   - **응답:** `RealOrderSyncResponse { real_order_id, real_order_status, fill_status,
+>     fills_added, fills_total, synced_at, message }`.
+>     - `fill_status`: `FULL` / `PARTIAL` / `NONE` / `REJECTED` / `CANCELED` / `FAILED` (6 분류).
+>     - `fills_added`: delta>0 시 1, idempotent 시 0.
+>     - `fills_total`: sync 후 RealFill quantity 누적합.
+>   - **금지 응답 substring 0건:** `api_key` / `app_secret` / `appsecret` / `access_token` /
+>     `kis_account_no` / `kis_app_key` / `kis_app_secret` / `broker_order_no` /
+>     `broker_order_id` / `kis_order_id` / `real_account` / `raw_text` / `raw_response` /
+>     `full_text` / `source_file_path` / `jwt_secret`.
+>   - **에러 코드:** 200 / 401 / 404 (order not found) / 405 (PUT/PATCH/DELETE) /
+>     503 (TRADING_SAFETY_DISABLED 또는 KILL_SWITCH_ON).
+>
+> **DRY_RUN RealOrder 정책:** sync 호출 시 transport 호출 0건으로 즉시 NONE 반환
+> (`message="sync skipped: DRY_RUN_ORDER_SKIPPED"`). v0.16 의 "FakeTransport 가 항상 FILLED
+> 반환" 동작은 v1.0 에서 의도적으로 폐지 — 실 KIS 의 fake order_no 충돌 위험 차단.
+>
+> **델타 기반 idempotency:** 반복 sync 호출은 `kis_total - existing_total = 0` 이면 신규
+> RealFill 행 0건 (idempotent). delta < 0 (KIS 가 내부 합계보다 작은 filled_quantity 보고) →
+> `ApprovalAuditLog(FILL_SYNC_NEGATIVE_DELTA)` 1행 + `fill_status="FAILED"` 반환 (RUNBOOK §6).
+>
+> **v0.16 Phase E read-only 엔드포인트 (변경 0건):**
 >
 > - `GET /api/real-orders?status=&candidate_id=&limit=&offset=` — RealOrder 목록 조회
 >   (read-only). status / candidate_id 필터. 기본 limit=100, offset=0. 응답 타입:
@@ -16,9 +46,9 @@
 >   금지 필드 동일. order not found → 404.
 >
 > **real_order_routes.py forbidden import (AST 회귀 단언):**
-> `httpx / requests / urllib / urllib3` 0건.
+> `httpx / requests / urllib / urllib3` 0건. transport 는 항상 DI.
 >
-> **mutation 라우터 변동:** v0.15 의 15건 유지 (v0.16 신규 mutation 0건).
+> **mutation 라우터 변동:** v0.15 마감 시 15건 → v1.0 Phase D 16건 (real-orders sync 1 추가).
 > 실 KIS / FULL_AUTO / SMALL_AUTO 라우터는 여전히 0건.
 >
 > 본 문서는 **v0.15 마감 시점** 기준이다 (마감 태그 `v0.15-final`).

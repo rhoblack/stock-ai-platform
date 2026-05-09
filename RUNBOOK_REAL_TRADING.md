@@ -228,11 +228,22 @@ candidate 를 EXPIRE 후 새 후보를 생성하는 방식만 허용. `RealOrder
 Fill Sync (`POST /api/real-orders/{id}/sync`) 결과의 델타 비교에서 **`delta < 0`** 이
 관측되었거나, KIS 잔고와 내부 `RealOrder` / `RealFill` 합계가 **일치하지 않을 때**.
 
+### 6.0 v1.0 Phase D Fill Sync 정책 요약 (운영자 참고)
+
+- `POST /api/real-orders/{order_id}/sync` 는 **수동 트리거 only** (자동 폴링 잡 0건 — v1.1)
+- 게이트: AUTH + TRADING_SAFETY_ENABLED + KILL_SWITCH_OFF (3중)
+- REAL_TRADING_ENABLED / KIS_ORDER_ENABLED 는 **미강제** — 사고 후에도 sync 가능
+- 요청 본문 옵션: `{kis_order_no: <plaintext>}` — KIS HTS 에서 운영자가 직접 가져온 평문
+  주문번호. transport 까지 in-memory 만 흐르고 어디에도 저장 0건
+- 응답 분류 6 종: `FULL` / `PARTIAL` / `NONE` / `REJECTED` / `CANCELED` / `FAILED`
+- 델타 idempotency: 반복 sync 시 `kis_total - existing_total = 0` 이면 신규 RealFill 행 0건
+- DRY_RUN RealOrder 는 transport 호출 없이 즉시 NONE skip — 실 KIS 의 fake order_no 충돌 차단
+
 ### 6.1 즉시 차단
 
 - § 4.1 의 비상 중지 절차 실행 — KillSwitch ON + KIS_ORDER_ENABLED=false + DRY_RUN=true
-- `ApprovalAuditLog.append('FILL_SYNC_NEGATIVE_DELTA', ...)` 또는
-  `('RECONCILIATION_MISMATCH', ...)` 1 행이 자동 기록되어 있는지 확인
+- `ApprovalAuditLog.append('FILL_SYNC_NEGATIVE_DELTA', ...)` (Phase D 자동) 또는
+  `('RECONCILIATION_MISMATCH', ...)` (v1.1) 1 행이 자동 기록되어 있는지 확인
 
 ### 6.2 분석
 

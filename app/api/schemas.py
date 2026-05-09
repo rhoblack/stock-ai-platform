@@ -1051,6 +1051,40 @@ class RealOrdersResponse(_BaseSchema):
     offset: int
 
 
+# v1.0 Phase D — POST /api/real-orders/{id}/sync response.
+#
+# Returned by the sole RealOrder mutation route in v1.0. Forbidden response
+# fields (regression-tested at the route layer): broker_order_no_hash, raw
+# response, plaintext order_no, account_number, secret/token/api_key.
+class RealOrderSyncRequest(_BaseSchema):
+    """Optional body for POST /api/real-orders/{id}/sync.
+
+    ``kis_order_no`` is the plaintext KIS order number that the operator
+    holds out-of-band (e.g. from KIS HTS). It is NEVER persisted — the
+    server passes it through to the transport in-memory and discards it
+    after the response is built.
+    """
+
+    kis_order_no: Optional[str] = None
+
+
+class RealOrderSyncResponse(_BaseSchema):
+    """Result of one manual fill sync trigger.
+
+    fill_status: FULL / PARTIAL / NONE / REJECTED / CANCELED / FAILED.
+    fills_added: 0 (idempotent / skip) or 1 (delta>0 produced a new RealFill).
+    fills_total: total internal RealFill quantity AFTER this sync.
+    """
+
+    real_order_id: int
+    real_order_status: str
+    fill_status: str
+    fills_added: int
+    fills_total: int
+    synced_at: datetime
+    message: str
+
+
 class PaperStatusResponse(BaseModel):
     """Generic OK acknowledgement (DELETE /api/paper/orders/{id})."""
 

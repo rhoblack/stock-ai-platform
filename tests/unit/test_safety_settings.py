@@ -980,16 +980,74 @@ def test_v10_phase_c_real_order_executor_real_path_present() -> None:
     )
 
 
-def test_v10_phase_d_no_fill_sync_real_transport_helper() -> None:
-    """FillSyncService real-transport helper (Phase D) is not yet present."""
-    import importlib
+def test_v10_phase_d_fill_sync_delta_idempotency_present() -> None:
+    """v1.0 Phase D introduces delta-based idempotency on FillSyncService.
 
-    module = importlib.import_module("app.broker.fill_sync_service")
-    forbidden = ("sync_fills_real",)
+    The delta logic is internal to ``sync_fills()`` (no separate public
+    method), but the helper ``RealFillRepository.total_filled_quantity``
+    must exist for callers/tests to inspect the existing total.
+    """
+    from app.data.repositories.real_fill import RealFillRepository
+
+    assert hasattr(RealFillRepository, "total_filled_quantity"), (
+        "v1.0 Phase D must add total_filled_quantity helper for delta-based idempotency"
+    )
+
+
+def test_v10_phase_d_audit_event_types_extended() -> None:
+    """v1.0 Phase D adds 3 fill-sync event types to the audit whitelist."""
+    from app.data.repositories.approval_audit_log import VALID_EVENT_TYPES
+
+    assert "REAL_ORDER_FILL_SYNCED" in VALID_EVENT_TYPES
+    assert "REAL_ORDER_FILL_FAILED" in VALID_EVENT_TYPES
+    assert "FILL_SYNC_NEGATIVE_DELTA" in VALID_EVENT_TYPES
+
+
+def test_v10_phase_d_sync_route_registered() -> None:
+    """v1.0 Phase D adds POST /api/real-orders/{id}/sync (the SOLE mutation
+    on the /api/real-orders/ prefix)."""
+    from app.main import app as _app
+
+    matching = [
+        (r.methods, r.path)
+        for r in _app.routes
+        if hasattr(r, "methods")
+        and r.methods & {"POST"}
+        and r.path == "/api/real-orders/{order_id}/sync"
+    ]
+    assert len(matching) == 1, (
+        f"Expected exactly 1 POST /api/real-orders/{{id}}/sync route, found {matching}"
+    )
+
+
+def test_v10_phase_d_no_auto_polling_scheduler_job() -> None:
+    """Auto-polling fill-sync jobs are deferred to v1.1."""
+    from app.scheduler import jobs as job_module
+
+    forbidden = (
+        "auto_sync_real_order_fills",
+        "poll_real_order_fills",
+        "fill_sync_polling",
+    )
     for name in forbidden:
-        assert not hasattr(module, name), (
-            f"v1.0 Phase B must not introduce {name} on FillSyncService; "
-            f"that belongs to Phase D"
+        assert not hasattr(job_module, name), (
+            f"v1.0 Phase D must not introduce {name} on scheduler — auto-polling is v1.1"
+        )
+
+
+def test_v10_phase_d_no_reconciliation_module_yet() -> None:
+    """Reconciliation is deferred to v1.1."""
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[2]
+    candidates = [
+        project_root / "app" / "broker" / "reconciliation_service.py",
+        project_root / "app" / "broker" / "reconciliation.py",
+        project_root / "app" / "reconciliation" / "__init__.py",
+    ]
+    for path in candidates:
+        assert not path.exists(), (
+            f"v1.0 Phase D must not introduce reconciliation module at {path}"
         )
 
 

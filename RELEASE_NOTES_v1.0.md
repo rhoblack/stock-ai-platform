@@ -315,10 +315,113 @@ RealOrderRepository 의 `_check_error_message()` 검증 통과 보장 (raise 없
 
 ---
 
-## Phase D — Fill Sync actual transport + idempotent RealFill update ⏳ (대기)
+## Phase D — Fill Sync actual transport + idempotent RealFill update ✅ (Phase 진행 중)
 
-상세: PLAN-0017 Phase D. 5 분류 (FULL/PARTIAL/NONE/REJECTED/CANCELED) + 델타 idempotency
-(Alembic 0 건) + `POST /api/real-orders/{id}/sync` 1 mutation.
+**목표 달성:** v0.16 mock-only `FillSyncService` → v1.0 **델타 기반 idempotent + 6 분류 + audit +
+DRY_RUN skip**. `POST /api/real-orders/{order_id}/sync` (v1.0 SOLE RealOrder mutation, mutating
+endpoint 합계 15 → 16). 실 KIS 호출 0건 (모든 통합 테스트는 `httpx.MockTransport` + DB).
+
+### D.1 신규 / 갱신 파일
+
+신규:
+- `tests/integration/test_fill_sync_integration.py` (7 건) — `httpx.MockTransport` + DB end-to-end
+- `tests/integration/test_real_order_sync_api.py` (10 건) — `POST /sync` HTTP 통합
+
+수정:
+- `app/broker/fill_sync_service.py` — v0.16 mock-only → v1.0 델타 기반 idempotent + 6 분류 + audit + DRY_RUN skip
+- `app/data/repositories/real_fill.py` — `total_filled_quantity(real_order_id)` 헬퍼 추가
+- `app/data/repositories/approval_audit_log.py` — `VALID_EVENT_TYPES` 3 종 추가
+- `app/api/real_order_routes.py` — `POST /api/real-orders/{order_id}/sync` 신규 mutation +
+  `_require_trading_safety_enabled` / `_require_kill_switch_off` helpers
+- `app/api/schemas.py` — `RealOrderSyncRequest` + `RealOrderSyncResponse` 신규
+- `tests/unit/test_fill_sync_service.py` — Phase D +24 + 기존 v0.16 테스트 갱신
+- `tests/unit/test_safety_settings.py` — Phase D scope guard 5 종 전환
+- `tests/integration/test_auth_security.py` — mutating endpoint count 15 → 16
+
+### D.2 6-class 분류
+
+| KIS 응답 | classification | RealOrder.status 전이 |
+|---|---|---|
+| `success=True, status=FILLED` | FULL | → FILLED |
+| `success=True, status=PARTIALLY_FILLED` | PARTIAL | → PARTIALLY_FILLED |
+| `success=True, status=PENDING` | NONE | (변경 없음) |
+| `success=False, status=PENDING` | FAILED | (변경 없음) |
+| `success=False, status=REJECTED` | REJECTED | → REJECTED |
+| `success=False, status=CANCELED` | CANCELED | → CANCELED |
+| transport raise | FAILED | (변경 없음) |
+
+### D.3 델타 기반 idempotency
+
+```
+existing_total = RealFillRepository.total_filled_quantity(real_order_id)
+kis_total      = _effective_kis_total(classification, response, total_qty)
+delta          = kis_total - existing_total
+
+delta > 0 → RealFill(quantity=delta, ...) 1행 + audit REAL_ORDER_FILL_SYNCED
+delta == 0 → 신규 행 0건 (idempotent) + audit REAL_ORDER_FILL_SYNCED
+delta < 0 → audit FILL_SYNC_NEGATIVE_DELTA + return FAILED, skipped_reason=NEGATIVE_DELTA
+```
+
+`_effective_kis_total()` 정책:
+- FULL → `max(filled_quantity, total_qty)` (FakeKisOrderTransport 호환)
+- PARTIAL → `filled_quantity`
+- NONE/REJECTED/CANCELED/FAILED → 0
+
+### D.4 DRY_RUN skip 정책
+
+DRY_RUN RealOrder 또는 `dry_run=True` 인 경우 **transport 호출 없이** 즉시 NONE 반환
+(`skipped_reason="DRY_RUN_ORDER_SKIPPED"`). v0.16 의 "FakeTransport 가 항상 FILLED 반환" 동작은
+의도적으로 폐지 — 실 transport (HttpxKisOrderTransport) 가 fake order_no 로 KIS 를 조회하면
+실 broker order_no 와 충돌할 위험을 차단. 단언 테스트 1 건이 `_BoomTransport` 로 transport 호출 0건
+강제 검증.
+
+### D.5 plaintext kis_order_no 정책
+
+`sync_fills(session, real_order_id, *, kis_order_no_plaintext=None)` 의 옵션 파라미터.
+운영자가 보유한 KIS 평문 주문번호를 in-memory 만 transport 에 전달 — `RealFill` / `RealOrder` /
+audit details / 응답 본문 어디에도 저장 0건 (단언 통합 테스트 2 건).
+
+### D.6 ApprovalAuditLog 연동
+
+- 3 신규 event_type: `REAL_ORDER_FILL_SYNCED` / `REAL_ORDER_FILL_FAILED` / `FILL_SYNC_NEGATIVE_DELTA`
+- audit details whitelist (모두 forbidden 13 종 미포함):
+  - `classification` (FULL / PARTIAL / NONE / REJECTED / CANCELED / FAILED)
+  - `dry_run` (boolean)
+  - `symbol` / `side`
+  - `delta` / `existing_total` / `kis_total` (negative-delta audit 만)
+  - `kis_status` (FAILED audit 만)
+
+### D.7 POST /api/real-orders/{order_id}/sync API
+
+- v1.0 의 SOLE RealOrder mutation 라우터
+- 게이트: AUTH + TRADING_SAFETY_ENABLED + KILL_SWITCH_OFF (v0.15 패턴)
+- REAL_TRADING_ENABLED / KIS_ORDER_ENABLED 의도적 미강제 (사고 후 sync 가능 — RUNBOOK §6)
+- `RealOrderSyncResponse` 7 필드 (real_order_id / real_order_status / fill_status / fills_added /
+  fills_total / synced_at / message). 응답 본문 forbidden substring 0건
+- 에러 코드: 200 / 401 / 404 / 405 (PUT/PATCH/DELETE) / 503 × 2 (TRADING_SAFETY_DISABLED, KILL_SWITCH_ON)
+
+### D.8 게이트
+
+- pytest **2040 → 2082 passed (+42)** / 회귀 0 건
+- Alembic head: `0010_real_fills` (변경 0 건, 41 테이블 그대로)
+- DB 모델 변경 0 건 / 프런트 변경 0 건
+- 신규 pip 의존성 0 건 (`httpx` / `respx` / stdlib 만)
+- 실 KIS API 호출 0 건 / 외부 네트워크 호출 0 건
+- API key / app_secret / access_token / account_no / plaintext order_no 평문 저장·로그·응답 0 건
+- raw KIS response 저장·반환 0 건
+- 자동 polling scheduler job 0 건 / Reconciliation 0 건 (모두 v1.1 이연)
+- mutating endpoint count: 15 → 16
+
+### D.9 안전 정책 (Phase D 잠금 — Phase E 전)
+
+- `POST /sync` 는 **수동 트리거 only** — 자동 폴링 잡 0건 (RUNBOOK §6.0)
+- DRY_RUN RealOrder 는 transport 호출 0건 — 실 KIS 의 fake order_no 충돌 차단
+- plaintext order_no 는 in-memory transport 통과만 — 모든 영속화 layer (DB / audit / 응답) 에서 0건
+- v1.0 paranoid default 9 종 그대로 유지
+
+### D.10 태그
+
+- `v1.0-fill-sync-real` (예상 — Phase D 종료 시점에 발행)
 
 ---
 

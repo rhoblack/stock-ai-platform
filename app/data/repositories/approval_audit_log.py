@@ -45,6 +45,20 @@ VALID_EVENT_TYPES: frozenset[str] = frozenset(
         #                         FAILED (operator follows RUNBOOK §5).
         "REAL_ORDER_SUBMITTED",
         "REAL_ORDER_FAILED",
+        # v1.0 Phase D — FillSyncService outcomes.
+        # REAL_ORDER_FILL_SYNCED  : query_fill_status returned a definitive
+        #                            answer (FULL / PARTIAL / NONE / REJECTED /
+        #                            CANCELED). delta-based RealFill written
+        #                            (delta>=0 only).
+        # REAL_ORDER_FILL_FAILED  : transport-level failure (success=False) or
+        #                            unrecognised classification (UNKNOWN). No
+        #                            RealFill row written; RealOrder.status
+        #                            preserved.
+        # FILL_SYNC_NEGATIVE_DELTA: KIS-side filled_quantity < internal sum.
+        #                            Data anomaly; operator follows RUNBOOK §6.
+        "REAL_ORDER_FILL_SYNCED",
+        "REAL_ORDER_FILL_FAILED",
+        "FILL_SYNC_NEGATIVE_DELTA",
     }
 )
 

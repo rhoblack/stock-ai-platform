@@ -4,8 +4,9 @@ RealFill rows record individual fill events against a RealOrder. Phase C
 defines the ORM skeleton only; no fills are ever written in this phase because
 no KIS HTTP calls exist yet.
 
-Phase D's RealOrderExecutor will call create() after receiving a confirmed fill
-from the KIS fill-status API.
+v0.16 Phase D's FillSyncService writes mock fill rows (FakeKisOrderTransport
+always returns FILLED). v1.0 Phase D adds delta-based idempotent updates so
+repeat sync calls never duplicate fill rows — see ``total_filled_quantity``.
 
 Hard safety constraints:
   * No raw KIS response storage -- no such parameter or method exists here.
@@ -17,7 +18,7 @@ Hard safety constraints:
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.data.repositories.base import BaseRepository
@@ -95,3 +96,22 @@ class RealFillRepository(BaseRepository[RealFill]):
     def list_recent(self, *, limit: int = 100) -> list[RealFill]:
         stmt = select(RealFill).order_by(RealFill.id.desc()).limit(limit)
         return list(self.session.execute(stmt).scalars().all())
+
+    # v1.0 Phase D — delta-based idempotency helper.
+    #
+    # FillSyncService computes ``delta = kis_total - existing_total`` and
+    # creates a single RealFill row with ``quantity=delta`` only when
+    # ``delta > 0``. Repeated sync calls with the same upstream KIS state
+    # therefore yield ``delta == 0`` and zero new rows. ``delta < 0`` is
+    # treated as a data anomaly (KIS-side reduction below internal record).
+    def total_filled_quantity(self, real_order_id: int) -> int:
+        """Return the sum of ``quantity`` across all RealFill rows for the order.
+
+        Returns 0 when no fills exist. The DB-level ``SUM`` keeps this
+        constant-time regardless of fill row count.
+        """
+        stmt = select(
+            func.coalesce(func.sum(RealFill.quantity), 0)
+        ).where(RealFill.real_order_id == real_order_id)
+        result = self.session.execute(stmt).scalar()
+        return int(result or 0)

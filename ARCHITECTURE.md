@@ -1,15 +1,15 @@
 # Architecture
 
-> 본 문서는 **v1.0 Phase C 진행 시점** 기준으로 갱신된다 (이전 마감 태그 `v0.16-final`,
-> 현재 태그 `v1.0-kis-real-transport`). v0.16 5 Phase 마감 + v1.0 Phase A·B·C 완료.
+> 본 문서는 **v1.0 Phase D 진행 시점** 기준으로 갱신된다 (이전 마감 태그 `v0.16-final`,
+> 현재 태그 `v1.0-real-order-executor-real`). v0.16 5 Phase 마감 + v1.0 Phase A·B·C·D 완료.
 >
-> v1.0 Phase A (운영 진입 체크리스트 + final safety gates) → Phase B (`HttpxKisOrderTransport`
-> 첫 실 transport 구현체, mock-only 테스트) → **Phase C (RealOrderExecutor 10-gate + real path 분기)** →
-> Phase D (Fill Sync actual transport + idempotent RealFill) → Phase E (UI status + RUNBOOK 최종).
+> v1.0 Phase A (운영 진입 체크리스트) → Phase B (`HttpxKisOrderTransport`) → Phase C
+> (RealOrderExecutor 10-gate + real path 분기) → **Phase D (FillSyncService 델타 idempotent +
+> POST /sync API)** → Phase E (UI status + RUNBOOK 최종).
 >
-> 누적 게이트 (v1.0 Phase C 시점): backend pytest **2040** / frontend vitest **214** /
+> 누적 게이트 (v1.0 Phase D 시점): backend pytest **2082** / frontend vitest **214** /
 > Playwright e2e **24** / build 그린. Alembic head: `0010_real_fills` (41 테이블, v1.0 동안
-> 변경 0건 예정).
+> 변경 0건 예정). mutating endpoint count: 15 → **16** (real-orders 1 추가).
 >
 > **v0.16 Real Order Skeleton 흐름 (dry-run 전용, 현재 production 경로):**
 >
@@ -65,9 +65,45 @@
 > 주입). plaintext KIS order_no 어디에도 저장·로그 0건 — `broker_order_no_hash` SHA-256 64자
 > 만 / audit details `broker_order_no_hash_prefix` 16자 만.
 >
+> **v1.0 Phase D — FillSyncService 델타 기반 idempotent 업데이트 + POST /sync API:**
+>
+> v0.16 Phase D mock-only FillSyncService → v1.0 Phase D delta-based idempotent + 6 분류 +
+> audit. DRY_RUN RealOrder 는 transport 호출 0건으로 skip (실 KIS fake order_no 충돌 차단).
+>
+> ```text
+> RealOrder (status=SUBMITTED) → FillSyncService.sync_fills(real_order_id, kis_order_no_plaintext?)
+>   ① RealOrder 존재 검사
+>   ② DRY_RUN skip (transport 호출 0건, NONE/DRY_RUN_ORDER_SKIPPED 반환)
+>   ③ 터미널 status (FILLED/CANCELED/REJECTED/FAILED) skip
+>   ④ transport.query_fill_status(plaintext or fake_order_no or pk)  [Phase B retry 정책 보존]
+>      예외 raise → audit REAL_ORDER_FILL_FAILED + return FAILED
+>   ⑤ _classify_fill_response → 6 분류:
+>        FAILED  → audit REAL_ORDER_FILL_FAILED + return
+>        REJECTED/CANCELED → status 전이 + audit REAL_ORDER_FILL_SYNCED + return
+>        FULL/PARTIAL/NONE → 델타 계산:
+>          existing_total = RealFillRepository.total_filled_quantity()
+>          kis_total      = _effective_kis_total(classification, response, total_qty)
+>          delta = kis_total - existing_total
+>          delta < 0 → audit FILL_SYNC_NEGATIVE_DELTA + return FAILED
+>          delta > 0 → RealFill(quantity=delta, ...) 1행 + status 전이 (FULL→FILLED, PARTIAL→PARTIALLY_FILLED)
+>          delta == 0 → 신규 행 0건 (idempotent)
+>          audit REAL_ORDER_FILL_SYNCED + return
+> ```
+>
+> **POST /api/real-orders/{order_id}/sync — v1.0 의 SOLE RealOrder mutation 라우터.**
+> AUTH + TRADING_SAFETY_ENABLED + KILL_SWITCH_OFF 3중 게이트 (v0.15 패턴). REAL_TRADING_ENABLED /
+> KIS_ORDER_ENABLED 미강제 (사고 후 sync 가능 정책 — RUNBOOK §6 기준). 응답 `RealOrderSyncResponse`
+> 7 필드 (real_order_id / real_order_status / fill_status / fills_added / fills_total / synced_at /
+> message). plaintext kis_order_no 응답 echo 0건. PUT/PATCH/DELETE 405.
+>
+> **자동 polling scheduler job 0건** — Phase D 는 수동 트리거 only. 자동 폴링은 v1.1 (Reconciliation 과
+> 함께). plaintext KIS order_no 정책: `sync_fills(kis_order_no_plaintext=...)` 옵션 파라미터로 운영자가
+> in-memory 만 transport 에 전달, RealFill / RealOrder / audit / 응답 본문 어디에도 저장 0건.
+>
 > Phase B `HttpxKisOrderTransport` 는 독립 모듈로 존재하며 운영자가 `REAL_TRADING_ENABLED=true` +
 > `KIS_ORDER_ENABLED=true` + `REAL_ORDER_DRY_RUN=false` 모두 명시 활성화 + Phase D ApprovalService
-> wiring 후에만 도달 가능.
+> wiring 후에만 실주문 path 도달 가능. Fill sync API 는 transport 만 wire 되면 (운영자가 명시 inject)
+> 동작 — `REAL_TRADING_ENABLED` 와 무관.
 >
 > **Retry / Timeout 정책 (`HttpxKisOrderTransport`):**
 >

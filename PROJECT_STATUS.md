@@ -79,6 +79,51 @@ Sync 만 포함; W 는 본 프로젝트 명시 금지 정책 위반으로 기각
 가장 중요한 게이트는 운영 진입 체크리스트 명문화 — Phase B 의 실 transport 진입 전에 운영자 책임 /
 면책 / dry-run 4 주 운영 검증 / 자본 한도 정책이 모두 잠겨 있어야 한다.
 
+### v1.0 Phase D 완료 (2026-05-09)
+
+- `app/broker/fill_sync_service.py` 갱신 — v0.16 mock-only → v1.0 **델타 기반 idempotent + 6 분류 +
+  audit + DRY_RUN skip**:
+  - `_classify_fill_response()` 6 분류 (FULL / PARTIAL / NONE / REJECTED / CANCELED / FAILED) —
+    Phase B `KisFillStatusResult` 의 status + success 조합 매핑
+  - `_effective_kis_total()` — FULL 분류는 `max(filled_quantity, total_qty)` (FakeKisOrderTransport
+    호환), PARTIAL 은 `filled_quantity`, 그 외 0
+  - `RealFillRepository.total_filled_quantity()` 헬퍼로 existing_total 계산
+  - delta>0 → `RealFill(quantity=delta, ...)` 1행 + audit `REAL_ORDER_FILL_SYNCED` /
+    delta=0 → 신규 행 0건 + audit / delta<0 → audit `FILL_SYNC_NEGATIVE_DELTA` + return FAILED
+  - DRY_RUN RealOrder → transport 호출 0건 skip (실 KIS fake order_no 충돌 차단)
+  - REJECTED/CANCELED → `RealOrder.status` 자동 전이 (FILLED/PARTIALLY_FILLED 도)
+  - transport 예외 → audit `REAL_ORDER_FILL_FAILED` 후 FAILED 반환 (caller 에 raise 안함)
+- `app/data/repositories/approval_audit_log.py` `VALID_EVENT_TYPES` 3 종 추가:
+  `REAL_ORDER_FILL_SYNCED` / `REAL_ORDER_FILL_FAILED` / `FILL_SYNC_NEGATIVE_DELTA`. forbidden
+  details keys 13 종 정책 변경 0건
+- `app/data/repositories/real_fill.py` — `total_filled_quantity(real_order_id)` 헬퍼 추가
+  (DB-level `func.sum()` aggregate)
+- `app/api/real_order_routes.py` 신규 mutation — `POST /api/real-orders/{order_id}/sync`:
+  AUTH + TRADING_SAFETY_ENABLED + KILL_SWITCH_OFF 3중 게이트 (v0.15 패턴). REAL_TRADING_ENABLED /
+  KIS_ORDER_ENABLED 는 의도적 미강제 (사고 후 sync 가능해야 함 — RUNBOOK §6)
+- `app/api/schemas.py` — `RealOrderSyncRequest` (옵션 plaintext) + `RealOrderSyncResponse`
+  (real_order_id / real_order_status / fill_status / fills_added / fills_total / synced_at / message)
+  신규. plaintext kis_order_no 응답 echo 0건 단언
+- `tests/unit/test_fill_sync_service.py` v1.0 Phase D 테스트 +24 건 (§11~§18) +
+  v0.16 테스트 갱신 (DRY_RUN 시드 → SUBMITTED 시드 + DRY_RUN skip 단언)
+- `tests/integration/test_fill_sync_integration.py` (신규) 7 건 — `httpx.MockTransport` + DB end-to-end:
+  FULL / PARTIAL→FULL / 반복 idempotent / negative delta / 5xx FAILED / plaintext never persisted /
+  CANCELED 전이
+- `tests/integration/test_real_order_sync_api.py` (신규) 10 건 — `POST /sync` HTTP:
+  200 happy / 200 idempotent / 200 DRY_RUN skip / 404 / 503 × 2 (safety/kill) / 401 AUTH /
+  405 × 3 (PUT/PATCH/DELETE) / plaintext body 미 echo / forbidden substring scan / route 등록
+- `tests/integration/test_auth_security.py` — mutating endpoint count 15 → **16** (real-orders 1 추가).
+  `_ALLOWED_ORDER_PREFIXES` 에 `/api/real-orders` 이미 포함
+- `tests/unit/test_safety_settings.py` Phase D scope guard 전환 — assertion 반전 +
+  audit event_types 확장 + sync route 등록 + no auto-polling job + no reconciliation module 단언 5 종
+- AST 가드: `fill_sync_service.py` 직접 `httpx.Client` 0건 / `httpx` import 0건 / `requests` /
+  `urllib` / `KisHttpOrderTransport` 직접 reference 0건. transport 는 항상 DI
+- **실제 게이트: pytest 2040 → 2082 passed (+42)** / 회귀 0건 / Alembic head `0010_real_fills` 변경 0건 /
+  DB 모델 변경 0건 / compare_metadata diff 0건 / 프런트 변경 0건 / 신규 pip 의존성 0건 /
+  실 KIS API 호출 0건 / 외부 네트워크 호출 0건 / raw KIS response 저장·반환 0건 / API key /
+  app_secret / access_token / account_no / plaintext order_no 평문 저장·로그·응답 0건 / 자동
+  polling job 0건 / Reconciliation 0건 / FULL_AUTO / SMALL_AUTO 0건
+
 ### v1.0 Phase C 완료 (2026-05-09)
 
 - `app/broker/real_order_executor.py` 갱신 — v0.16 8-gate dry-run 전용 → v1.0 **10-gate + dry-run vs
