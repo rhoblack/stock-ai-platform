@@ -145,6 +145,35 @@ class RealOrderRepository(BaseRepository[RealOrder]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
+    # v1.0 Phase C — duplicate guard helper.
+    #
+    # An "active" RealOrder is one whose status indicates the order is in
+    # flight or already terminal-success: DRY_RUN / CREATED / SUBMITTED /
+    # PARTIALLY_FILLED / FILLED. FAILED / REJECTED / CANCELED rows do NOT
+    # block re-execution — operators recover via RUNBOOK §5 (manual
+    # reconciliation) and a fresh attempt is allowed when the prior one
+    # was definitively unsuccessful.
+    _NON_FAILED_STATUSES: frozenset[str] = frozenset(
+        {"DRY_RUN", "CREATED", "SUBMITTED", "PARTIALLY_FILLED", "FILLED"}
+    )
+
+    def exists_non_failed_for_candidate(self, candidate_id: int) -> bool:
+        """Return True iff a non-failed RealOrder already exists for the candidate.
+
+        Used by RealOrderExecutor gate 2 (ALREADY_EXECUTED / DUPLICATE_REAL_ORDER)
+        so the executor enforces a strict 1-candidate-1-RealOrder invariant
+        across both the dry-run and real-path branches.
+        """
+        stmt = (
+            select(RealOrder.id)
+            .where(
+                RealOrder.candidate_id == candidate_id,
+                RealOrder.status.in_(self._NON_FAILED_STATUSES),
+            )
+            .limit(1)
+        )
+        return self.session.execute(stmt).first() is not None
+
     # -------- state transitions --------
 
     def update_status(self, order: RealOrder, *, new_status: str) -> RealOrder:

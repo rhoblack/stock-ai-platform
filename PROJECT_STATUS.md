@@ -79,6 +79,53 @@ Sync 만 포함; W 는 본 프로젝트 명시 금지 정책 위반으로 기각
 가장 중요한 게이트는 운영 진입 체크리스트 명문화 — Phase B 의 실 transport 진입 전에 운영자 책임 /
 면책 / dry-run 4 주 운영 검증 / 자본 한도 정책이 모두 잠겨 있어야 한다.
 
+### v1.0 Phase C 완료 (2026-05-09)
+
+- `app/broker/real_order_executor.py` 갱신 — v0.16 8-gate dry-run 전용 → v1.0 **10-gate + dry-run vs
+  real path 분기**:
+  - gate 4 신규 (TRADING_SAFETY_DISABLED — v0.15 layer 명시 검증, kill_switch ON 보다 뒤에 배치)
+  - gate 10 신규 (TRANSPORT_UNAVAILABLE — real path 진입 시 non-Fake transport 보장)
+  - `_resolve_real_transport(settings)` private helper — factory 우선 → 명시 주입된 non-Fake
+    transport → None (gate 10 차단). Fake transport 가 real path 도달 불가능
+  - real path: `RealOrder(dry_run=False, status=CREATED)` 선저장 + `session.flush()` (DB anchor 보장) →
+    `transport.place_order()` 1 회 호출 (Phase B retry=0 정책 보존) → 4 분류:
+    SUBMITTED → `mark_submitted(broker_order_no_hash=sha256(order_no))` /
+    REJECTED/TIMEOUT/NETWORK_ERROR/UNKNOWN → `mark_failed(error_code=cls, error_message=scrub(msg))`
+  - `_scrub()` helper — KIS msg 의 6 sensitive substring (api_key/appsecret/access_token/
+    authorization/account_no/secretkey) case-insensitive `***` 치환
+  - `RealOrderExecutor.__init__(transport=, real_transport_factory=)` — factory 옵션 추가, 기본 생성자는
+    여전히 Fake-only (v0.16 회귀 0 건)
+- `app/data/repositories/real_order.py` — `exists_non_failed_for_candidate(candidate_id) -> bool`
+  헬퍼 추가 (`_NON_FAILED_STATUSES = {DRY_RUN, CREATED, SUBMITTED, PARTIALLY_FILLED, FILLED}`).
+  raw 저장 메서드 추가 0 건
+- `app/data/repositories/approval_audit_log.py` — `VALID_EVENT_TYPES` 에 `REAL_ORDER_SUBMITTED` /
+  `REAL_ORDER_FAILED` 2 종 추가. `_FORBIDDEN_DETAILS_KEYS` 13 종 (api_key / token / secret /
+  access_token / jwt_secret / broker_order_id / kis_order_id / real_account / real_order_id /
+  account_number / raw_text / body / full_text / source_file_path) 정책 변경 0 건
+- real path audit 기록 — SUBMITTED/FAILED 직후 `ApprovalAuditLog.append()` 1 행. whitelist details:
+  `classification` / `dry_run` / `symbol` / `side` / `quantity` / `broker_order_no_hash_prefix` (16자
+  hex, plaintext 0건). 실패 시에도 audit 1 행 보장
+- `tests/unit/test_real_order_executor.py` v1.0 Phase C 테스트 +37 건 (§16~§26): gate 4 + gate
+  ordering / gate 10 4 종 / real path SUBMITTED 3 종 / non-SUBMITTED 4 분기 parametrize / audit 4 종 /
+  repo helper 7 종 / scrubbing / anchor row before KIS call / AST 가드 2 종 / constructor 2 종 /
+  Phase D scope guard
+- `tests/integration/test_real_order_executor_integration.py` (신규) 8 건 — `respx` mock + DB
+  통합: SUBMITTED end-to-end / 4xx REJECTED / 5xx UNKNOWN / TIMEOUT / business-error / anchor row /
+  duplicate blocks / dry-run + real coexistence
+- `tests/unit/test_safety_settings.py` Phase C scope guard 전환 (assertion 반전 — `_execute_real` /
+  `_resolve_real_transport` 존재 단언)
+- AST 가드: `real_order_executor.py` 직접 `httpx.Client` 0 건 / `httpx` import 0 건 / `requests` /
+  `urllib` / `app.providers.kis` / `app.broker.kis_order_transport_real` 직접 import 0 건 — transport
+  는 DI 만 (`KisOrderClientInterface` 인자로 주입)
+- plaintext KIS order_no 저장·반환·로그 0 건 — `RealOrder` 어떤 컬럼에도 plaintext 미존재.
+  `broker_order_no_hash` = SHA-256 64자 hex. `ExecutorResult.message` 도 hash-only / status-only
+- raw KIS response 저장·반환 0 건 — Phase B `KisOrderResult` (whitelist 3 필드: success/order_no/
+  message) 만 받아서 분류 후 폐기
+- **실제 게이트: pytest 1995 → 2040 passed (+45)** / 회귀 0건 / Alembic head `0010_real_fills`
+  변경 0 건 / DB 모델 변경 0 건 / API 라우터 변경 0 건 / 프런트 변경 0 건 / 신규 pip 의존성 0 건
+  / 실 KIS API 호출 0 건 / 외부 네트워크 호출 0 건 / API key / app_secret / access_token /
+  account_number / plaintext order_no 평문 저장·로그 0 건 / FULL_AUTO / SMALL_AUTO 0 건
+
 ### v1.0 Phase B 완료 (2026-05-09)
 
 - `app/broker/kis_order_transport_real.py` (신규, ≈540 lines) — `HttpxKisOrderTransport`

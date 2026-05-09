@@ -37,6 +37,31 @@
 > ⚠️ **9 항목 중 하나라도 ✅ 가 아니면, 다음 절 §2 의 `.env` 활성화는 진행하지
 > 않는다.** v0.16 의 dry-run 경로로 복귀하여 부족한 항목을 보강한 뒤 재시도한다.
 
+### §1.10 v1.0 Phase C real-path 10-gate 체인 (참고)
+
+`RealOrderExecutor.execute()` 가 `real_order_dry_run=False` 시 통과해야 하는 10-gate. 본 절의 § 1
+9 전제 조건 (사람) 과는 별개로, 코드 레벨에서 **실주문 1 건마다** 통과되어야 하는 안전 검증.
+
+| # | gate | 차단 reason | 데이터 소스 |
+|---|---|---|---|
+| 1 | candidate found + APPROVED | `CANDIDATE_NOT_FOUND` / `NOT_APPROVED` | DB |
+| 2 | non-failed RealOrder 부재 | `DUPLICATE_REAL_ORDER` (real) / `ALREADY_EXECUTED` (dry) | DB |
+| 3 | `kill_switch_enabled=False` | `KILL_SWITCH_ON` | Settings |
+| 4 | `trading_safety_enabled=True` (v1.0 신규) | `TRADING_SAFETY_DISABLED` | Settings |
+| 5 | `real_trading_enabled=True` | `REAL_TRADING_DISABLED` | Settings |
+| 6 | `kis_order_enabled=True` | `KIS_ORDER_DISABLED` | Settings |
+| 7 | 회당 한도 통과 | `AMOUNT_EXCEEDS_PER_ORDER_CAP` | Settings + candidate |
+| 8 | KST 일일 누적 통과 | `AMOUNT_EXCEEDS_DAILY_CAP` | DB aggregate |
+| 9 | `PreTradeRiskEngine.evaluate()` | `RISK_REJECTED` | DB |
+| 10 | non-Fake transport 가용 (real path only, v1.0 신규) | `TRANSPORT_UNAVAILABLE` | DI |
+
+dry-run 은 ①~⑨ 만, real path 는 ①~⑩ 모두. Gate ordering 은 빠른 (Settings) → 느린 (DB) → 가장
+비싼 (RiskEngine) 순서이므로 cost-aware short-circuit. 게이트 모두 통과 후:
+
+- dry-run → `FakeKisOrderTransport.place_order()` → `RealOrder(dry_run=True, status=DRY_RUN)`
+- real → `RealOrder(dry_run=False, status=CREATED)` 선저장 + `flush()` → 실 transport place_order →
+  분류 → SUBMITTED 또는 FAILED + ApprovalAuditLog 1 행
+
 ---
 
 ## §2. `.env` 활성화 절차
@@ -176,11 +201,19 @@ KIS 4xx / 응답 누락** 4 가지로 분류된다 (v1.0 Phase B `KisOrderResult
 
 ### 5.2 분기 처리
 
+v1.0 Phase C real path 는 KIS 응답을 5 분류 (SUBMITTED / REJECTED / TIMEOUT / NETWORK_ERROR /
+UNKNOWN) 로 매핑하고, 비-SUBMITTED 4 분류 모두 `RealOrder.status=FAILED` + `error_code=<classification>` +
+`ApprovalAuditLog(event_type='REAL_ORDER_FAILED', details={classification, dry_run, symbol, side, quantity})`
+1 행을 자동 기록한다. 운영자가 보강할 분기는 다음과 같다.
+
 | 상황 | 처리 |
 |---|---|
-| KIS HTS 에 해당 주문이 **존재하지 않음** | 응답 손실 또는 4xx 거부. `RealOrder.status` 그대로 FAILED 유지. 동일 candidate 에 대해 신규 RealOrder 생성은 **자동 차단** (게이트 9 중복 가드) — 운영자 결정으로 candidate 를 EXPIRE 후 신규 후보 생성 |
-| KIS HTS 에 해당 주문이 **체결됨 / 미체결로 존재** | 응답 손실. 운영자가 직접 `RealOrder.status` 를 `SUBMITTED` 또는 `FILLED` 로 수동 갱신 + `ApprovalAuditLog.append('REAL_ORDER_RECONCILED_MANUAL', ...)` 1 행. KIS 잔고 일치 확인 후 정상 운영 복귀 |
-| KIS HTS 에 **취소 처리됨** | `RealOrder.status='CANCELLED'` 로 수동 갱신 + audit 1 행 |
+| `RealOrder.error_code='REJECTED'` (HTTP 200 + rt_cd≠0 또는 4xx) | KIS 가 정의된 답을 줌. 신규 후보가 필요하면 candidate 를 EXPIRE 후 새로 만들 것. RealOrder 행은 그대로 FAILED 보존 |
+| `RealOrder.error_code='TIMEOUT'` 또는 `NETWORK_ERROR` (응답 손실 가능) | KIS HTS 에서 **수동 조회**. 주문이 존재하지 않으면 `RealOrder.status=FAILED` 유지 + 운영자가 candidate 를 EXPIRE 후 신규 후보 작성. 주문이 존재하면 운영자 콘솔에서 `RealOrder.status` 를 적절히 수동 갱신 (`mark_submitted` / `update_status`) + audit 행 1 건 추가 |
+| `RealOrder.error_code='UNKNOWN'` (HTTP 5xx 또는 parse 실패) | 운영자 KIS HTS 매칭 + 위와 동일한 수동 절차 |
+| KIS HTS 에 해당 주문이 **존재하지 않음** | RealOrder 그대로 FAILED 유지. 동일 candidate 신규 RealOrder 생성은 자동 차단 — 게이트 2 (DUPLICATE_REAL_ORDER) 가 non-failed 활성 RealOrder 를 막음. 단 RealOrder 가 FAILED 상태이면 재시도가 자동 허용됨 (테스트로 보장) |
+| KIS HTS 에 해당 주문이 **체결됨 / 미체결로 존재** | 응답 손실. 운영자가 직접 `RealOrder.status` 를 `SUBMITTED` 또는 `FILLED` 로 수동 갱신 + `ApprovalAuditLog.append('REAL_ORDER_RECONCILED_MANUAL', ...)` 1 행 (Phase D 또는 v1.1 에서 정식 event_type 추가 예정 — v1.0 에서는 임시 운영 용어). KIS 잔고 일치 확인 후 정상 운영 복귀 |
+| KIS HTS 에 **취소 처리됨** | `RealOrder.status='CANCELED'` 로 수동 갱신 + audit 1 행 |
 
 ### 5.3 재시도 정책
 

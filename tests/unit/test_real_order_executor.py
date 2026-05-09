@@ -414,17 +414,22 @@ def test_dry_run_order_has_no_sensitive_fields(session):
 
 
 # ---------------------------------------------------------------------------
-# 11. Non-dry-run blocked in Phase D
+# 11. Non-dry-run with default (Fake-only) executor → TRANSPORT_UNAVAILABLE
+#     (was REAL_ORDER_NOT_IMPLEMENTED_IN_PHASE_D before v1.0 Phase C; the
+#     blocked_reason changed when the real path landed.)
 # ---------------------------------------------------------------------------
 
 
-def test_non_dry_run_blocked_in_phase_d(session):
+def test_non_dry_run_with_fake_transport_blocks(session):
+    """Default constructor produces a Fake-only executor. With real_order_dry_run=
+    False, gates 1-9 still pass (settings allow it) but gate 10 (TRANSPORT_UNAVAILABLE)
+    fires because the real path refuses to use a Fake transport."""
     _, cid = _seed_approved_candidate(session)
-    executor = RealOrderExecutor()
+    executor = RealOrderExecutor()  # default → FakeKisOrderTransport only
     settings = _make_settings(real_order_dry_run=False)
     result = executor.execute(session, candidate_id=cid, settings=settings)
     assert result.success is False
-    assert result.blocked_reason == "REAL_ORDER_NOT_IMPLEMENTED_IN_PHASE_D"
+    assert result.blocked_reason == "TRANSPORT_UNAVAILABLE"
     assert result.dry_run is False
 
 
@@ -532,3 +537,612 @@ def test_phase_e_real_orders_frontend_exists():
     assert real_orders_pages != [], (
         "RealOrders frontend page must exist after Phase E"
     )
+
+
+# ===========================================================================
+# v1.0 Phase C — 10-gate executor + dry-run vs real path branch
+# ===========================================================================
+
+
+import hashlib  # noqa: E402
+
+import httpx  # noqa: E402  -- mock-only via httpx.MockTransport
+
+from app.broker.kis_order_client import (  # noqa: E402
+    FakeKisOrderTransport,
+    KisCancelResult,
+    KisFillStatusResult,
+    KisOrderClientInterface,
+    KisOrderResult,
+)
+from app.data.repositories.approval_audit_log import (  # noqa: E402
+    ApprovalAuditLogRepository,
+    VALID_EVENT_TYPES,
+)
+
+
+# ---------------------------------------------------------------------------
+# Phase C helpers
+# ---------------------------------------------------------------------------
+
+
+class _StubTransport(KisOrderClientInterface):
+    """Programmable KisOrderClientInterface for unit-testing the real branch.
+
+    Each call counter is incremented so we can assert place_order is invoked
+    exactly once (Phase B retry=0 is preserved end-to-end). Callers set
+    ``next_place_result`` to drive the executor branch.
+    """
+
+    def __init__(self, *, next_place_result: KisOrderResult) -> None:
+        self.next_place_result = next_place_result
+        self.place_calls = 0
+        self.query_calls = 0
+        self.cancel_calls = 0
+
+    def place_order(self, request) -> KisOrderResult:
+        self.place_calls += 1
+        return self.next_place_result
+
+    def query_fill_status(self, order_no: str) -> KisFillStatusResult:
+        self.query_calls += 1
+        return KisFillStatusResult(
+            success=True, order_no=order_no, filled_quantity=0,
+            remaining_quantity=0, status="PENDING", message="stub",
+        )
+
+    def cancel_order(self, order_no: str) -> KisCancelResult:
+        self.cancel_calls += 1
+        return KisCancelResult(
+            success=True, order_no=order_no, message="stub cancel",
+        )
+
+
+def _make_real_settings(**overrides) -> Settings:
+    """Settings tuned for the real path: every gate set to allow execution.
+
+    Overrides apply on top of the all-open base.
+    """
+    base = dict(
+        kill_switch_enabled=False,
+        trading_safety_enabled=True,
+        real_trading_enabled=True,
+        kis_order_enabled=True,
+        real_order_dry_run=False,
+        max_real_order_amount=5_000_000,
+        max_real_daily_order_amount=50_000_000,
+        approval_required=True,
+        max_order_amount=5_000_000,
+        max_daily_order_amount=50_000_000,
+        max_position_ratio=0.80,
+        max_daily_loss_amount=5_000_000,
+        kis_account_no="TEST-ACCT-9012",
+    )
+    base.update(overrides)
+    return Settings(**base)
+
+
+def _kis_submitted(order_no: str = "0000123456") -> KisOrderResult:
+    return KisOrderResult(
+        success=True,
+        order_no=order_no,
+        message=f"SUBMITTED: 정상처리 order_no={order_no}",
+    )
+
+
+def _kis_rejected() -> KisOrderResult:
+    return KisOrderResult(
+        success=False,
+        order_no="",
+        message="REJECTED: rt_cd=1 주문 가능 수량 초과",
+    )
+
+
+def _kis_timeout() -> KisOrderResult:
+    return KisOrderResult(
+        success=False,
+        order_no="",
+        message="TIMEOUT: KIS place_order exceeded 5.0s",
+    )
+
+
+def _kis_network_error() -> KisOrderResult:
+    return KisOrderResult(
+        success=False,
+        order_no="",
+        message="NETWORK_ERROR: ConnectError",
+    )
+
+
+def _kis_unknown() -> KisOrderResult:
+    return KisOrderResult(
+        success=False,
+        order_no="",
+        message="UNKNOWN: KIS HTTP 503 (server error)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 16. Gate 4 — TRADING_SAFETY_DISABLED (NEW in v1.0)
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_gate4_trading_safety_disabled_blocks(session):
+    _, cid = _seed_approved_candidate(session)
+    executor = RealOrderExecutor()
+    settings = _make_settings(trading_safety_enabled=False)
+    result = executor.execute(session, candidate_id=cid, settings=settings)
+    assert result.success is False
+    assert result.blocked_reason == "TRADING_SAFETY_DISABLED"
+
+
+def test_phase_c_gate_ordering_kill_switch_before_safety(session):
+    """When BOTH kill_switch=True AND safety=False, kill_switch fires first."""
+    _, cid = _seed_approved_candidate(session)
+    executor = RealOrderExecutor()
+    settings = _make_settings(
+        kill_switch_enabled=True, trading_safety_enabled=False
+    )
+    result = executor.execute(session, candidate_id=cid, settings=settings)
+    assert result.blocked_reason == "KILL_SWITCH_ON"
+
+
+# ---------------------------------------------------------------------------
+# 17. Gate 10 — TRANSPORT_UNAVAILABLE (NEW in v1.0)
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_gate10_real_path_no_transport_blocks(session):
+    """Default executor + real_order_dry_run=False → TRANSPORT_UNAVAILABLE."""
+    _, cid = _seed_approved_candidate(session)
+    executor = RealOrderExecutor()  # FakeKisOrderTransport
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    assert result.success is False
+    assert result.blocked_reason == "TRANSPORT_UNAVAILABLE"
+
+
+def test_phase_c_gate10_factory_returning_fake_blocks(session):
+    """Factory must NOT return a Fake transport for the real path."""
+    _, cid = _seed_approved_candidate(session)
+    executor = RealOrderExecutor(
+        real_transport_factory=lambda settings: FakeKisOrderTransport()
+    )
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    assert result.blocked_reason == "TRANSPORT_UNAVAILABLE"
+
+
+def test_phase_c_gate10_factory_raising_blocks(session):
+    """A factory that raises is treated as TRANSPORT_UNAVAILABLE (not propagated)."""
+    def boom(_):
+        raise RuntimeError("simulated factory init failure")
+
+    _, cid = _seed_approved_candidate(session)
+    executor = RealOrderExecutor(real_transport_factory=boom)
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    assert result.blocked_reason == "TRANSPORT_UNAVAILABLE"
+
+
+def test_phase_c_dry_run_does_not_check_gate10(session):
+    """Dry-run path uses the FakeKisOrderTransport unconditionally."""
+    _, cid = _seed_approved_candidate(session)
+    executor = RealOrderExecutor()  # default Fake
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_settings(real_order_dry_run=True)
+    )
+    assert result.success is True
+    assert result.dry_run is True
+
+
+# ---------------------------------------------------------------------------
+# 18. Real path — SUBMITTED outcome
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_real_path_submitted_creates_real_order(session):
+    _, cid = _seed_approved_candidate(session)
+    transport = _StubTransport(next_place_result=_kis_submitted("REAL-ORDER-789"))
+    executor = RealOrderExecutor(transport=transport)
+
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    session.commit()
+
+    assert transport.place_calls == 1, "place_order must be invoked exactly once"
+    assert result.success is True
+    assert result.dry_run is False
+    assert result.status == "SUBMITTED"
+    assert result.real_order_id is not None
+
+    order = session.get(RealOrder, result.real_order_id)
+    assert order is not None
+    assert order.dry_run is False
+    assert order.status == "SUBMITTED"
+    # broker_order_no_hash MUST be 64-char SHA-256 hex of the plaintext order_no.
+    expected_hash = hashlib.sha256(b"REAL-ORDER-789").hexdigest()
+    assert order.broker_order_no_hash == expected_hash
+    assert len(order.broker_order_no_hash) == 64
+
+
+def test_phase_c_real_path_does_not_store_plain_order_no(session):
+    """The plaintext KIS order_no must NEVER be persisted on the RealOrder."""
+    _, cid = _seed_approved_candidate(session)
+    plaintext = "PLAINTEXT-ORDER-NO-99999"
+    transport = _StubTransport(next_place_result=_kis_submitted(plaintext))
+    executor = RealOrderExecutor(transport=transport)
+
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    session.commit()
+
+    order = session.get(RealOrder, result.real_order_id)
+    # No column on the model carries the plaintext.
+    assert plaintext not in (order.broker_order_no_hash or "")
+    assert plaintext not in (order.fake_order_no or "")
+    assert plaintext not in (order.error_message or "")
+    assert plaintext not in (order.error_code or "")
+    # ExecutorResult message and as_dict must not surface the plaintext.
+    text = repr(result) + " " + str(result.as_dict())
+    assert plaintext not in text
+
+
+def test_phase_c_real_path_executor_message_does_not_carry_plain_order_no(session):
+    """Belt-and-braces: ExecutorResult.message is hash-only / status-only."""
+    _, cid = _seed_approved_candidate(session)
+    plaintext = "DO-NOT-LEAK-ORDER-77777"
+    transport = _StubTransport(next_place_result=_kis_submitted(plaintext))
+    executor = RealOrderExecutor(transport=transport)
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    assert plaintext not in result.message
+
+
+# ---------------------------------------------------------------------------
+# 19. Real path — REJECTED / TIMEOUT / NETWORK_ERROR / UNKNOWN
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "kis_factory,classification",
+    [
+        (_kis_rejected, "REJECTED"),
+        (_kis_timeout, "TIMEOUT"),
+        (_kis_network_error, "NETWORK_ERROR"),
+        (_kis_unknown, "UNKNOWN"),
+    ],
+)
+def test_phase_c_real_path_non_submitted_marks_failed(
+    session, kis_factory, classification
+):
+    _, cid = _seed_approved_candidate(session)
+    transport = _StubTransport(next_place_result=kis_factory())
+    executor = RealOrderExecutor(transport=transport)
+
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    session.commit()
+
+    assert transport.place_calls == 1, "place_order retry MUST stay at 0"
+    assert result.success is False
+    assert result.dry_run is False
+    assert result.status == "FAILED"
+    assert result.blocked_reason == classification
+
+    order = session.get(RealOrder, result.real_order_id)
+    assert order.status == "FAILED"
+    assert order.error_code == classification
+    # broker_order_no_hash should NOT be populated for failed orders.
+    assert order.broker_order_no_hash is None
+
+
+# ---------------------------------------------------------------------------
+# 20. Audit log — REAL_ORDER_SUBMITTED / REAL_ORDER_FAILED rows
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_audit_event_types_extended():
+    """The repository's whitelist must include both new Phase C event types."""
+    assert "REAL_ORDER_SUBMITTED" in VALID_EVENT_TYPES
+    assert "REAL_ORDER_FAILED" in VALID_EVENT_TYPES
+
+
+def test_phase_c_real_path_submitted_writes_audit(session):
+    _, cid = _seed_approved_candidate(session)
+    transport = _StubTransport(next_place_result=_kis_submitted("REAL-AUDIT-001"))
+    executor = RealOrderExecutor(transport=transport)
+    executor.execute(session, candidate_id=cid, settings=_make_real_settings())
+    session.commit()
+
+    audit_repo = ApprovalAuditLogRepository(session)
+    rows = audit_repo.list_by_candidate(cid)
+    submitted = [r for r in rows if r.event_type == "REAL_ORDER_SUBMITTED"]
+    assert len(submitted) == 1
+    details = submitted[0].details_json
+    assert details["classification"] == "SUBMITTED"
+    assert details["dry_run"] is False
+    assert details["symbol"] == "005930"
+    assert details["side"] == "BUY"
+    # 16-char hex prefix only — not the full hash, never the plaintext.
+    assert isinstance(details.get("broker_order_no_hash_prefix"), str)
+    assert len(details["broker_order_no_hash_prefix"]) == 16
+
+
+def test_phase_c_real_path_failed_writes_audit(session):
+    _, cid = _seed_approved_candidate(session)
+    transport = _StubTransport(next_place_result=_kis_rejected())
+    executor = RealOrderExecutor(transport=transport)
+    executor.execute(session, candidate_id=cid, settings=_make_real_settings())
+    session.commit()
+
+    audit_repo = ApprovalAuditLogRepository(session)
+    rows = audit_repo.list_by_candidate(cid)
+    failed = [r for r in rows if r.event_type == "REAL_ORDER_FAILED"]
+    assert len(failed) == 1
+    assert failed[0].details_json["classification"] == "REJECTED"
+
+
+def test_phase_c_audit_details_have_no_forbidden_keys(session):
+    """details_json must never contain real_order_id / kis_order_id / api_key etc."""
+    _, cid = _seed_approved_candidate(session)
+    transport = _StubTransport(next_place_result=_kis_submitted("AUDIT-FORBID-77"))
+    executor = RealOrderExecutor(transport=transport)
+    executor.execute(session, candidate_id=cid, settings=_make_real_settings())
+    session.commit()
+
+    audit_repo = ApprovalAuditLogRepository(session)
+    rows = audit_repo.list_by_candidate(cid)
+    forbidden = {
+        "api_key", "token", "secret", "access_token", "jwt_secret",
+        "broker_order_id", "kis_order_id", "real_account", "real_order_id",
+        "account_number", "raw_text", "body", "full_text", "source_file_path",
+    }
+    for row in rows:
+        assert isinstance(row.details_json, dict)
+        leaked = set(row.details_json.keys()) & forbidden
+        assert leaked == set(), f"audit row {row.id} leaked {leaked}"
+
+
+# ---------------------------------------------------------------------------
+# 21. exists_non_failed_for_candidate helper
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_repo_helper_returns_false_when_no_orders(session):
+    _, cid = _seed_approved_candidate(session)
+    repo = RealOrderRepository(session)
+    assert repo.exists_non_failed_for_candidate(cid) is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["DRY_RUN", "CREATED", "SUBMITTED", "PARTIALLY_FILLED", "FILLED"],
+)
+def test_phase_c_repo_helper_returns_true_for_non_failed(session, status):
+    _, cid = _seed_approved_candidate(session)
+    repo = RealOrderRepository(session)
+    repo.create(
+        candidate_id=cid, symbol="005930", side="BUY",
+        quantity=1, order_type="MARKET", status=status,
+    )
+    session.flush()
+    assert repo.exists_non_failed_for_candidate(cid) is True
+
+
+@pytest.mark.parametrize("status", ["FAILED", "REJECTED", "CANCELED"])
+def test_phase_c_repo_helper_returns_false_for_failed_terminals(session, status):
+    _, cid = _seed_approved_candidate(session)
+    repo = RealOrderRepository(session)
+    repo.create(
+        candidate_id=cid, symbol="005930", side="BUY",
+        quantity=1, order_type="MARKET", status=status,
+    )
+    session.flush()
+    assert repo.exists_non_failed_for_candidate(cid) is False
+
+
+def test_phase_c_real_path_duplicate_blocks(session):
+    """After a SUBMITTED real order, a second execute() must be DUPLICATE_REAL_ORDER."""
+    _, cid = _seed_approved_candidate(session)
+    transport = _StubTransport(next_place_result=_kis_submitted("DUP-ABC"))
+    executor = RealOrderExecutor(transport=transport)
+    first = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    session.commit()
+    assert first.success is True
+
+    transport.next_place_result = _kis_submitted("DUP-XYZ")
+    second = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    assert second.success is False
+    assert second.blocked_reason == "DUPLICATE_REAL_ORDER"
+    assert transport.place_calls == 1, "duplicate must NOT call place_order again"
+
+
+def test_phase_c_real_path_failed_does_not_block_retry(session):
+    """A FAILED real order leaves room for a retry attempt."""
+    _, cid = _seed_approved_candidate(session)
+    t1 = _StubTransport(next_place_result=_kis_timeout())
+    executor = RealOrderExecutor(transport=t1)
+    r1 = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    session.commit()
+    assert r1.status == "FAILED"
+
+    # Retry with a fresh transport that succeeds.
+    t2 = _StubTransport(next_place_result=_kis_submitted("RETRY-OK"))
+    executor2 = RealOrderExecutor(transport=t2)
+    r2 = executor2.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    session.commit()
+    assert r2.success is True
+    assert r2.status == "SUBMITTED"
+
+
+# ---------------------------------------------------------------------------
+# 22. Sensitive substring scrubbing in error_message
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_real_path_error_message_scrubs_sensitive_substrings(session):
+    """If KIS happens to return a message containing 'access_token' (e.g. a
+    parser quirk), the executor must scrub before mark_failed (which would
+    otherwise raise) and the persisted error_message must not contain the leak."""
+    _, cid = _seed_approved_candidate(session)
+    leaky = KisOrderResult(
+        success=False, order_no="",
+        message=(
+            "REJECTED: KIS msg containing access_token=ABC123 should not "
+            "leak — api_key=DEF456 either"
+        ),
+    )
+    transport = _StubTransport(next_place_result=leaky)
+    executor = RealOrderExecutor(transport=transport)
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    session.commit()
+
+    assert result.status == "FAILED"
+    order = session.get(RealOrder, result.real_order_id)
+    assert "access_token" not in (order.error_message or "").lower()
+    assert "api_key" not in (order.error_message or "").lower()
+
+
+# ---------------------------------------------------------------------------
+# 23. RealOrder anchor row created BEFORE the KIS call
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_real_order_persisted_before_transport_call(session):
+    """The DB anchor row must exist by the time transport.place_order is called.
+
+    We assert by capturing how many RealOrder rows existed at the moment
+    the transport sees the request. The stub records ``place_calls`` before
+    returning — at that point the row must already be in the session.
+    """
+    _, cid = _seed_approved_candidate(session)
+
+    rows_seen_inside_transport: list[int] = []
+    real_result = _kis_submitted("ANCHOR-77")
+
+    class _AnchorObservingTransport(KisOrderClientInterface):
+        def place_order(self, request):
+            rows_seen_inside_transport.append(
+                session.query(RealOrder).filter_by(candidate_id=cid).count()
+            )
+            return real_result
+
+        def query_fill_status(self, order_no):
+            return KisFillStatusResult(
+                success=True, order_no=order_no, filled_quantity=0,
+                remaining_quantity=0, status="PENDING", message="",
+            )
+
+        def cancel_order(self, order_no):
+            return KisCancelResult(
+                success=True, order_no=order_no, message="",
+            )
+
+    executor = RealOrderExecutor(transport=_AnchorObservingTransport())
+    executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    assert rows_seen_inside_transport == [1], (
+        "RealOrder anchor row must be flushed BEFORE transport.place_order is called"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 24. AST guard — Phase C executor must remain free of httpx / real-transport
+#     module imports. The transport is injected, never imported.
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_executor_does_not_import_kis_order_transport_real():
+    src = _executor_source()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            assert "kis_order_transport_real" not in node.module, (
+                "real-transport module must not be imported by the executor "
+                "(transport is dependency-injected via the constructor)"
+            )
+
+
+def test_phase_c_executor_does_not_import_app_providers_kis():
+    src = _executor_source()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            assert "app.providers.kis" not in node.module, (
+                "executor must not import the read-only KIS data layer"
+            )
+
+
+# ---------------------------------------------------------------------------
+# 25. Constructor — real_transport_factory wiring
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_constructor_with_factory_uses_factory_for_real_path(session):
+    """Factory takes precedence over an injected Fake transport for the real branch."""
+    _, cid = _seed_approved_candidate(session)
+    factory_calls: list[Settings] = []
+
+    real_stub = _StubTransport(next_place_result=_kis_submitted("FAC-ABC"))
+
+    def factory(settings):
+        factory_calls.append(settings)
+        return real_stub
+
+    executor = RealOrderExecutor(real_transport_factory=factory)
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_real_settings()
+    )
+    session.commit()
+
+    assert len(factory_calls) == 1
+    assert real_stub.place_calls == 1
+    assert result.success is True
+
+
+def test_phase_c_constructor_default_uses_fake_only(session):
+    """Default constructor still produces a Fake-only executor — v0.16 behavior."""
+    _, cid = _seed_approved_candidate(session)
+    executor = RealOrderExecutor()
+    assert isinstance(executor._transport, FakeKisOrderTransport)
+
+    result = executor.execute(
+        session, candidate_id=cid, settings=_make_settings()
+    )
+    assert result.dry_run is True
+    assert result.success is True
+
+
+# ---------------------------------------------------------------------------
+# 26. Phase C scope guard — Phase D (FillSync real) still pending
+# ---------------------------------------------------------------------------
+
+
+def test_phase_c_does_not_introduce_fill_sync_real_helper():
+    import importlib
+
+    module = importlib.import_module("app.broker.fill_sync_service")
+    forbidden = ("sync_fills_real",)
+    for name in forbidden:
+        assert not hasattr(module, name), (
+            f"Phase C must not introduce {name} on FillSyncService — that is Phase D scope"
+        )

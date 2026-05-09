@@ -37,6 +37,14 @@ VALID_EVENT_TYPES: frozenset[str] = frozenset(
         "EXPIRED",
         "EXECUTED_PAPER",
         "KILL_SWITCH_BLOCKED",
+        # v1.0 Phase C — RealOrderExecutor real path outcomes.
+        # REAL_ORDER_SUBMITTED  : place_order returned SUBMITTED; broker_order_no
+        #                         was hashed to broker_order_no_hash and stored.
+        # REAL_ORDER_FAILED     : place_order returned REJECTED / TIMEOUT /
+        #                         NETWORK_ERROR / UNKNOWN. RealOrder.status =
+        #                         FAILED (operator follows RUNBOOK §5).
+        "REAL_ORDER_SUBMITTED",
+        "REAL_ORDER_FAILED",
     }
 )
 

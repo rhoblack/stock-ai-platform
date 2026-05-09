@@ -963,23 +963,21 @@ def test_v10_phase_b_kis_order_client_does_not_define_httpx_transport() -> None:
     )
 
 
-def test_v10_phase_c_no_real_order_executor_real_path() -> None:
-    """RealOrderExecutor real path (Phase C) is not yet implemented.
+def test_v10_phase_c_real_order_executor_real_path_present() -> None:
+    """v1.0 Phase C introduces the real-path branch on RealOrderExecutor.
 
-    The Phase D / v0.16 dry-run executor exists, but it must not yet expose
-    a method or branch named ``real_path`` / ``execute_real`` etc. We assert
-    that the executor module — which already exists — does NOT export an
-    HttpxKisOrderTransport-bound symbol or real-path method.
+    The branch is private (``_execute_real``) and is reached only via the
+    public ``execute()`` method when the 10-gate chain admits
+    ``real_order_dry_run=False`` AND a non-Fake transport is resolvable.
     """
-    import importlib
+    from app.broker.real_order_executor import RealOrderExecutor
 
-    module = importlib.import_module("app.broker.real_order_executor")
-    forbidden = ("execute_real", "real_path_execute")
-    for name in forbidden:
-        assert not hasattr(module, name), (
-            f"v1.0 Phase B must not introduce {name} on RealOrderExecutor; "
-            f"that belongs to Phase C"
-        )
+    assert hasattr(RealOrderExecutor, "_execute_real"), (
+        "v1.0 Phase C must introduce a private _execute_real method on the executor"
+    )
+    assert hasattr(RealOrderExecutor, "_resolve_real_transport"), (
+        "v1.0 Phase C must introduce _resolve_real_transport for transport DI"
+    )
 
 
 def test_v10_phase_d_no_fill_sync_real_transport_helper() -> None:

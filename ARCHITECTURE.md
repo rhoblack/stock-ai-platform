@@ -1,13 +1,13 @@
 # Architecture
 
-> 본 문서는 **v1.0 Phase B 진행 시점** 기준으로 갱신된다 (이전 마감 태그 `v0.16-final`,
-> 현재 태그 `v1.0-operating-checklist`). v0.16 5 Phase 마감 + v1.0 Phase A·B 완료.
+> 본 문서는 **v1.0 Phase C 진행 시점** 기준으로 갱신된다 (이전 마감 태그 `v0.16-final`,
+> 현재 태그 `v1.0-kis-real-transport`). v0.16 5 Phase 마감 + v1.0 Phase A·B·C 완료.
 >
-> v1.0 Phase A (운영 진입 체크리스트 + final safety gates) → **Phase B (`HttpxKisOrderTransport`
-> 첫 실 transport 구현체, mock-only 테스트)** → Phase C (RealOrderExecutor real path) →
+> v1.0 Phase A (운영 진입 체크리스트 + final safety gates) → Phase B (`HttpxKisOrderTransport`
+> 첫 실 transport 구현체, mock-only 테스트) → **Phase C (RealOrderExecutor 10-gate + real path 분기)** →
 > Phase D (Fill Sync actual transport + idempotent RealFill) → Phase E (UI status + RUNBOOK 최종).
 >
-> 누적 게이트 (v1.0 Phase B 시점): backend pytest **1995** / frontend vitest **214** /
+> 누적 게이트 (v1.0 Phase C 시점): backend pytest **2040** / frontend vitest **214** /
 > Playwright e2e **24** / build 그린. Alembic head: `0010_real_fills` (41 테이블, v1.0 동안
 > 변경 0건 예정).
 >
@@ -27,10 +27,47 @@
 > `app/broker/kis_order_transport_real.py` — `KisOrderClientInterface` 의 첫 실
 > 구현체. lazy `httpx` import (모듈 최상단 import 0건) + `respx` / `httpx.MockTransport`
 > 100% — 53 단위 테스트가 mock transport 또는 respx route 사용, 실 KIS endpoint 호출 0건.
-> Phase B 는 **executor 실 경로 wiring 0건** — `RealOrderExecutor` 는 여전히 `dry_run=True`
-> + `FakeKisOrderTransport` 만 사용 (Phase C 가 wiring). `HttpxKisOrderTransport` 는
-> 독립 모듈로 존재하며 운영자가 `REAL_TRADING_ENABLED=true` + `KIS_ORDER_ENABLED=true` +
-> `REAL_ORDER_DRY_RUN=false` 모두 명시 활성화 + Phase C real path 도입 후에만 도달 가능.
+>
+> **v1.0 Phase C — RealOrderExecutor 10-gate + dry-run vs real path 분기:**
+>
+> v0.16 Phase D 8-gate dry-run 전용 → v1.0 Phase C 10-gate + real path. 신규 gate 4
+> (TRADING_SAFETY_DISABLED, v0.15 layer 명시 검증) + gate 10 (TRANSPORT_UNAVAILABLE,
+> real path 진입 시 non-Fake transport 보장).
+>
+> ```text
+> OrderCandidate (APPROVED) → RealOrderExecutor.execute(candidate_id, settings)
+>   ① CANDIDATE_NOT_FOUND / NOT_APPROVED
+>   ② DUPLICATE_REAL_ORDER (real) / ALREADY_EXECUTED (dry)  [exists_non_failed_for_candidate]
+>   ③ KILL_SWITCH_ON
+>   ④ TRADING_SAFETY_DISABLED                              [v1.0 신규]
+>   ⑤ REAL_TRADING_DISABLED
+>   ⑥ KIS_ORDER_DISABLED
+>   ⑦ AMOUNT_EXCEEDS_PER_ORDER_CAP
+>   ⑧ AMOUNT_EXCEEDS_DAILY_CAP                             [DB KST aggregate]
+>   ⑨ RISK_REJECTED                                        [PreTradeRiskEngine]
+>   → if real_order_dry_run=True:
+>       FakeKisOrderTransport.place_order() → RealOrder(dry_run=True, status=DRY_RUN)
+>   → if real_order_dry_run=False:
+>       ⑩ TRANSPORT_UNAVAILABLE                            [v1.0 신규, _resolve_real_transport]
+>       RealOrder(dry_run=False, status=CREATED) 선저장 + flush()  [DB anchor for RUNBOOK §5]
+>       transport.place_order(KisOrderRequest)             [Phase B retry=0 보존]
+>       _classify_place_message → 5 분류:
+>         SUBMITTED → mark_submitted(broker_order_no_hash=sha256(order_no))
+>                   + ApprovalAuditLog(REAL_ORDER_SUBMITTED, details whitelist 6 키)
+>         REJECTED/TIMEOUT/NETWORK_ERROR/UNKNOWN
+>                   → mark_failed(error_code=cls, error_message=_scrub(msg))
+>                   + ApprovalAuditLog(REAL_ORDER_FAILED)
+> ```
+>
+> Phase C는 `HttpxKisOrderTransport` 직접 import 0건 — transport 는 DI 만
+> (`__init__(transport=, real_transport_factory=)`). 기본 생성자는 여전히 Fake-only로
+> v0.16 회귀 0건. Phase D ApprovalService 가 실제 wiring (factory 주입 또는 명시 transport
+> 주입). plaintext KIS order_no 어디에도 저장·로그 0건 — `broker_order_no_hash` SHA-256 64자
+> 만 / audit details `broker_order_no_hash_prefix` 16자 만.
+>
+> Phase B `HttpxKisOrderTransport` 는 독립 모듈로 존재하며 운영자가 `REAL_TRADING_ENABLED=true` +
+> `KIS_ORDER_ENABLED=true` + `REAL_ORDER_DRY_RUN=false` 모두 명시 활성화 + Phase D ApprovalService
+> wiring 후에만 도달 가능.
 >
 > **Retry / Timeout 정책 (`HttpxKisOrderTransport`):**
 >

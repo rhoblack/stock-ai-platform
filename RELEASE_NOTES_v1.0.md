@@ -182,9 +182,136 @@ KIS 응답에서 whitelist 필드만 추출 (`output.ODNO` / `rt_cd` / `msg1` / 
 
 ---
 
-## Phase C — RealOrderExecutor real path behind strict gates ⏳ (대기)
+## Phase C — RealOrderExecutor real path behind strict gates ✅ (Phase 진행 중)
 
-상세: PLAN-0017 Phase C. v0.16 8-gate → v1.0 10-gate + dry-run vs real 분기.
+**목표 달성:** v0.16 8-gate dry-run 전용 executor → v1.0 **10-gate + dry-run vs real path 분기**.
+HttpxKisOrderTransport 는 DI 주입만 (executor 코드는 import 0 건). plaintext KIS order_no /
+raw response / 자격증명 어디에도 저장·로그 0 건. 실 KIS 호출 0 건 — 통합 테스트는 모두 respx mock.
+
+### C.1 신규 / 갱신 파일
+
+- `app/broker/real_order_executor.py` 갱신 — 10-gate + `_resolve_real_transport()` + `_execute_real()`
+  + `_scrub()` + `_classify_place_message()` 추가. `__init__(transport=, real_transport_factory=)` 확장
+- `app/data/repositories/real_order.py` 갱신 — `exists_non_failed_for_candidate(candidate_id)` 헬퍼
+  추가
+- `app/data/repositories/approval_audit_log.py` 갱신 — `VALID_EVENT_TYPES` 에 `REAL_ORDER_SUBMITTED` /
+  `REAL_ORDER_FAILED` 2 종 추가
+- `tests/unit/test_real_order_executor.py` Phase C 단위 테스트 +37 건
+- `tests/integration/test_real_order_executor_integration.py` (신규) 8 건 통합 테스트
+- `tests/unit/test_safety_settings.py` Phase C scope guard 전환 (assertion 반전)
+
+### C.2 10-gate ordering
+
+1. CANDIDATE_NOT_FOUND / NOT_APPROVED
+2. DUPLICATE_REAL_ORDER (real) / ALREADY_EXECUTED (dry)
+3. KILL_SWITCH_ON
+4. **TRADING_SAFETY_DISABLED** (v1.0 신규)
+5. REAL_TRADING_DISABLED
+6. KIS_ORDER_DISABLED
+7. AMOUNT_EXCEEDS_PER_ORDER_CAP
+8. AMOUNT_EXCEEDS_DAILY_CAP (KST 일일 누적)
+9. RISK_REJECTED (PreTradeRiskEngine)
+10. **TRANSPORT_UNAVAILABLE** (real path only, v1.0 신규)
+
+dry-run 은 ①~⑨ 만, real path 는 ①~⑩ 모두. Gate ordering test 가 `kill_switch=True+safety=False` →
+`KILL_SWITCH_ON` 이 먼저 fire 되는 것을 단언.
+
+### C.3 dry-run vs real path 분기
+
+- `real_order_dry_run=True` → 기존 dry-run 경로 (`FakeKisOrderTransport.place_order()` →
+  `RealOrder(dry_run=True, status=DRY_RUN)`) 그대로
+- `real_order_dry_run=False` → real path:
+  1. `RealOrder(dry_run=False, status=CREATED)` 선저장 + `session.flush()` (DB anchor 보장,
+     RUNBOOK §5 수동 매칭 지원)
+  2. `transport.place_order(KisOrderRequest)` 1 회 호출 — Phase B retry=0 정책 보존
+  3. `_classify_place_message(result.message)` → 5 분류 (SUBMITTED/REJECTED/TIMEOUT/NETWORK_ERROR/UNKNOWN)
+  4. SUBMITTED → `mark_submitted(broker_order_no_hash=sha256(order_no))` /
+     비-SUBMITTED → `mark_failed(error_code=cls, error_message=_scrub(msg)[:500])`
+  5. ApprovalAuditLog `REAL_ORDER_SUBMITTED` 또는 `REAL_ORDER_FAILED` 1 행
+
+### C.4 broker_order_no_hash + plaintext 차단
+
+- `broker_order_no_hash` = SHA-256 64-char hex of `KisOrderResult.order_no`
+- 평문 KIS order_no 어디에도 저장·로그·반환 0 건 (단언):
+  - `RealOrder.broker_order_no_hash` / `fake_order_no` / `error_message` / `error_code` 모두 부재
+  - `ExecutorResult.message` / `as_dict()` hash-only / status-only
+  - audit details `broker_order_no_hash_prefix` 16-char hex 만 (full hash 도 미노출)
+- 단위 테스트가 secret marker 주입 후 `RealOrder.*` / `ExecutorResult.*` 모두 부재 단언
+
+### C.5 ApprovalAuditLog 연동
+
+- `VALID_EVENT_TYPES` 신규 2 종: `REAL_ORDER_SUBMITTED` / `REAL_ORDER_FAILED`
+- `_FORBIDDEN_DETAILS_KEYS` 13 종 정책 변경 0 건 — `real_order_id` / `kis_order_id` /
+  `api_key` / `secret` / `account_number` 등 차단 유지
+- audit details whitelist (6 키, 모두 forbidden 미포함):
+  - `classification` (SUBMITTED/REJECTED/TIMEOUT/NETWORK_ERROR/UNKNOWN)
+  - `dry_run` (boolean — real path 항상 False)
+  - `symbol` / `side` / `quantity`
+  - `broker_order_no_hash_prefix` (16자 hex, SUBMITTED 만)
+- 실패 시에도 audit 1 행 보장 — 운영자가 retroactive recovery 시 timeline 추적 가능
+
+### C.6 sensitive substring scrubbing
+
+`_scrub()` helper — KIS msg 가 평문 6 substring 포함 시 case-insensitive `***` 치환:
+`api_key` / `appsecret` / `secretkey` / `access_token` / `authorization` / `account_no`.
+RealOrderRepository 의 `_check_error_message()` 검증 통과 보장 (raise 없음). 단위 테스트가
+`access_token=ABC123 / api_key=DEF456` 포함 메시지가 DB 에 저장될 때 평문 0 건임을 단언.
+
+### C.7 RealOrderRepository 헬퍼
+
+`exists_non_failed_for_candidate(candidate_id) -> bool`:
+- True: 동일 candidate 의 RealOrder 가 `{DRY_RUN, CREATED, SUBMITTED, PARTIALLY_FILLED, FILLED}` 중
+  하나로 존재
+- False: 0 건이거나 모두 `{FAILED, REJECTED, CANCELED}` 인 경우 (재시도 가능)
+- 9 단위 테스트 (empty / non-failed parametrize 5 / failed-terminal parametrize 3)
+
+### C.8 Constructor / DI
+
+- `RealOrderExecutor(transport=None, real_transport_factory=None)`. 기본 생성자는 Fake-only —
+  v0.16 회귀 0 건
+- `_resolve_real_transport(settings)` 우선순위: factory(settings) → 명시 주입 non-Fake transport →
+  None (gate 10 차단). Factory 가 Fake 반환 또는 raise 시 None
+- 통합 테스트가 `HttpxKisOrderTransport(client=httpx.Client(transport=httpx.MockTransport(handler)))`
+  주입 → respx-style end-to-end 검증
+
+### C.9 anchor row before KIS call
+
+`RealOrder(dry_run=False, status=CREATED)` 행은 transport.place_order() 호출 직전에 `session.flush()`
+까지 완료. `_AnchorObservingTransport` (단위) + `httpx.MockTransport` handler (통합) 가 transport
+호출 시점에 DB 의 `RealOrder.candidate_id == cid` row 수를 기록 — 두 케이스 모두 정확히 1 row 보장.
+응답 손실 시 운영자가 RUNBOOK §5 수동 매칭 절차로 recovery 가능.
+
+### C.10 AST + import 가드
+
+- `real_order_executor.py` 직접 `httpx.Client` 0 건 / `httpx` import 0 건
+- `requests` / `urllib` / `app.providers.kis` / `app.broker.kis_order_transport_real` 직접 import
+  0 건 — transport 는 항상 DI 만 (`KisOrderClientInterface` 인자로 주입)
+
+### C.11 게이트
+
+- pytest **1995 → 2040 passed (+45)** / 회귀 0 건
+- Alembic head: `0010_real_fills` (변경 0 건, 41 테이블 그대로)
+- DB 모델 변경 0 건 / API 라우터 변경 0 건 / 프런트 변경 0 건
+- 신규 pip 의존성 0 건 (`httpx` / `respx` / stdlib 만)
+- 실 KIS API 호출 0 건 / 외부 네트워크 호출 0 건 — `httpx.MockTransport` + `respx` + `_StubTransport` 100%
+- API key / app_secret / access_token / account_number / plaintext order_no 평문 저장·로그 0 건
+- raw KIS response 저장·반환 0 건
+- FULL_AUTO / SMALL_AUTO / 사용자 승인 없는 주문 0 건
+
+### C.12 안전 정책 (Phase C 잠금 — Phase D 전)
+
+- 기본 `RealOrderExecutor()` 는 여전히 Fake-only — Phase D ApprovalService wiring 까지는 production
+  경로에서 실 transport 도달 0 건
+- 운영자가 명시 주입 (`RealOrderExecutor(transport=HttpxKisOrderTransport(...))`) 한 인스턴스만
+  real path 진입 가능. 테스트는 모두 respx-mocked client 주입
+- candidate 상태는 real 실행 후에도 APPROVED 그대로 — RealOrder 상태가 source of truth (FILLED 등의
+  자동 전이는 v1.1 자동 reconciliation 도입 후 검토)
+- v1.0 paranoid default 9 종 그대로 유지 — `REAL_TRADING_ENABLED=false` / `KIS_ORDER_ENABLED=false` /
+  `REAL_ORDER_DRY_RUN=true` 등
+
+### C.13 태그
+
+- `v1.0-real-order-executor-real` (예상 — Phase C 종료 시점에 발행)
 
 ---
 
