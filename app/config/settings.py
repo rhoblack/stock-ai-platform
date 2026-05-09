@@ -547,3 +547,60 @@ def can_attempt_real_order_settings(settings: Settings) -> bool:
         and settings.kis_order_enabled
         and not settings.real_order_dry_run
     )
+
+
+# v1.0 Phase A — Real trading operating-limit advisory thresholds.
+#
+# These caps are SOFT recommendations for the v1.0 Small Approval Trading
+# Release. The hard correctness boundaries (positivity, per-order <= daily)
+# are already enforced by Settings.__post_init__ and surface as ValueError at
+# Settings construction time. The thresholds below produce non-fatal advisory
+# strings via validate_real_trading_operating_limits() — they are consumed by
+# the operator runbook checklist (RUNBOOK_REAL_TRADING.md §8) and unit tests.
+#
+# Defaults (max_real_order_amount=100,000 / max_real_daily_order_amount=
+# 1,000,000) are well within these recommendations, so a paranoid Settings
+# never produces an advisory. Operators who raise their .env caps beyond the
+# v1.0 threshold get a single descriptive string per breached cap.
+RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW: int = 1_000_000
+RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW: int = 10_000_000
+
+
+def validate_real_trading_operating_limits(settings: Settings) -> list[str]:
+    """Pure operating-checklist validator for v1.0 real-trading limits.
+
+    Returns a list of advisory warning strings. An empty list means all caps
+    are within the conservative recommended ranges for v1.0 Small Approval
+    Trading Release. This helper NEVER raises and NEVER logs — it is invoked
+    from the operator runbook checklist (§8) or from unit tests that assert
+    advisories surface for unsafe configurations.
+
+    Caps validated:
+      * max_real_order_amount       <= 1,000,000 KRW recommended
+      * max_real_daily_order_amount <= 10,000,000 KRW recommended
+
+    Numeric boundaries (positivity, per-order <= daily) are already enforced
+    by Settings.__post_init__ at construction time and surface as ValueError;
+    this helper only flags SOFT advisories. The two recommended caps above
+    are exposed as module-level constants
+    (RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW /
+    RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW) so tests and runbook tooling
+    can reference the same thresholds without re-deriving them.
+    """
+    warnings: list[str] = []
+    if settings.max_real_order_amount > RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW:
+        warnings.append(
+            f"MAX_REAL_ORDER_AMOUNT={settings.max_real_order_amount} exceeds "
+            f"recommended cap {RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW} KRW for "
+            f"v1.0 Small Approval Trading Release"
+        )
+    if (
+        settings.max_real_daily_order_amount
+        > RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW
+    ):
+        warnings.append(
+            f"MAX_REAL_DAILY_ORDER_AMOUNT={settings.max_real_daily_order_amount} "
+            f"exceeds recommended cap "
+            f"{RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW} KRW for v1.0"
+        )
+    return warnings

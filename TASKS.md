@@ -1789,18 +1789,30 @@ Alembic head: `0010_real_fills` (변경 0건 — 41 테이블 그대로 유지).
 **`REAL_TRADING_ENABLED=false` / `KIS_ORDER_ENABLED=false` / `REAL_ORDER_DRY_RUN=true` 모두 paranoid
 default 그대로 유지** — 실거래는 운영자가 `.env` 에서 명시 활성화 + 사용자 명시 승인 시에만 1 건씩 진입.
 
-### Phase A — Real trading operating checklist + final safety gates
+### Phase A — Real trading operating checklist + final safety gates ✅
 
-- [ ] `RUNBOOK_REAL_TRADING.md` (또는 `INTEGRATION_RUNBOOK.md` 갱신) § 1~7 작성:
-      §1 실거래 활성화 절차 / §2 비상 중지 / §3 KillSwitch 사용 / §4 주문 실패 대응 /
-      §5 체결 불일치 / §6 dry-run rollback / §7 GitHub Release 운영 체크리스트
-- [ ] 운영 진입 체크리스트 명문화 — v0.16 dry-run 4 주 운영 / 한도 정책 / 운영자 책임·면책 명문화
-- [ ] `app/config/settings.py` `__post_init__` 검증 보강 — `MAX_REAL_ORDER_AMOUNT > 1_000_000` warning 로그.
-      신규 필드 추가 0건
-- [ ] `tests/unit/test_safety_settings.py` v1.0 단위 테스트 ~10 건 추가
-      (paranoid default 재확인 / 운영자 명시 활성화 시 동작 / 한도 검증 / Phase B scope guard)
-- [ ] `RELEASE_NOTES_v1.0.md` 초안 시작 — Phase A 절
-- [ ] pytest `1905 → ~1915` (+10) / 회귀 0건 / Alembic revision 0건 / DB 모델 0건 / API 라우터 0건 / 프런트 0건
+- [x] `RUNBOOK_REAL_TRADING.md` (신규) § 1~9 작성:
+      §1 실거래 활성화 전제 조건 (운영자 9 항목 체크리스트) / §2 .env 활성화 절차 (5 단계) /
+      §3 KillSwitch 사용 절차 / §4 비상 중지 절차 / §5 주문 실패 대응 절차 (4 분기) /
+      §6 체결 불일치 대응 절차 / §7 dry-run rollback 절차 / §8 GitHub Release 운영 체크리스트 (5 카테고리) /
+      §9 v1.0 에서 하지 않을 것 (FULL_AUTO / SMALL_AUTO / 사용자 승인 없는 주문 / 등 14 항목 잠금)
+- [x] 운영 진입 체크리스트 명문화 — v0.16 dry-run 4 주 운영 / KIS 라이선스 / 운영자 책임·면책 / 비상중지 채널 / AUTH /
+      v0.15 paper 검증 / KillSwitch 재검사 dry-run / 비밀값 0건 9 항목
+- [x] `app/config/settings.py` 신규 helper:
+      `RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW=1_000_000` / `RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW=10_000_000` 모듈 상수 +
+      `validate_real_trading_operating_limits(settings) -> list[str]` 순수 advisory helper.
+      신규 Settings 필드 추가 0건. 기존 `__post_init__` / `can_attempt_real_order_settings` / `_as_strict_bool` 변경 0건
+- [x] `tests/unit/test_safety_settings.py` v1.0 Phase A 단위 테스트 +38 건:
+      §14 RUNBOOK 존재 + 17 종 필수 키워드 (env-var name + § 1~9 + FULL_AUTO/SMALL_AUTO + paranoid 정책 라인) /
+      §15 paranoid default 재검증 (v0.15 + v0.16 + v0.14 + v0.8 layer 일관) /
+      §16 `validate_real_trading_operating_limits()` 6 케이스 (defaults / 회당 초과 / 일일 초과 / 둘 다 / pure / 경계) /
+      §17 `can_attempt_real_order_settings()` × RUNBOOK §2 9 키 일관성 (6 게이트 each closed → blocks) /
+      §18 Phase B scope guard (`HttpxKisOrderTransport` / `kis_order_transport_real.py` / executor real path /
+      fill sync real 4 종 미존재 단언) /
+      §19 Alembic head `0010_real_fills` 변경 0 건 + pyproject `httpx` / `respx` 보존 + 외부 broker SDK 미추가
+- [x] `RELEASE_NOTES_v1.0.md` (신규) 초안 시작 — Phase A 절 작성, Phase B~E 대기 표시
+- [x] pytest **1905 → 1942 passed (+38, locally — 1 pre-existing `MARKET_CAP_LIMIT=5` deselect 무관)** / 회귀 0건 /
+      Alembic revision 0건 / DB 모델 0건 / API 라우터 0건 / 프런트 0건 / 신규 pip 0건 / 외부 네트워크 호출 0건
 - [ ] `tag v1.0-operating-checklist + push`
 
 ### Phase B — KIS real order transport with mock-only tests

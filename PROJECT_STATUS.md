@@ -79,6 +79,31 @@ Sync 만 포함; W 는 본 프로젝트 명시 금지 정책 위반으로 기각
 가장 중요한 게이트는 운영 진입 체크리스트 명문화 — Phase B 의 실 transport 진입 전에 운영자 책임 /
 면책 / dry-run 4 주 운영 검증 / 자본 한도 정책이 모두 잠겨 있어야 한다.
 
+### v1.0 Phase A 완료 (2026-05-09)
+
+- `RUNBOOK_REAL_TRADING.md` (신규, 12KB) §1~9 — 실거래 활성화 전제 9 항목 / `.env` 활성화 5 단계 /
+  KillSwitch ON·OFF / 비상중지 / 주문실패 4 분기 / 체결불일치 / dry-run rollback / GitHub Release 운영
+  체크리스트 5 카테고리 / v1.0 에서 하지 않을 것 14 항목 (FULL_AUTO / SMALL_AUTO / 사용자 승인 없는
+  주문 / 등) 명시
+- `app/config/settings.py` 신규 advisory helper —
+  `RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW = 1_000_000` /
+  `RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW = 10_000_000` 모듈 상수 +
+  `validate_real_trading_operating_limits(settings) -> list[str]` (순수 함수, 예외 raise / log 0건,
+  paranoid default 시 빈 list / 임계값 초과 시 1~2 advisory 반환). 신규 Settings 필드 추가 0건,
+  기존 `__post_init__` / `can_attempt_real_order_settings` / `_as_strict_bool` 변경 0건
+- `tests/unit/test_safety_settings.py` v1.0 Phase A 단위 테스트 +38 건 (§14~§19):
+  RUNBOOK 존재 + 17 종 필수 키워드 / paranoid default 재검증 / advisory helper 6 케이스 /
+  `can_attempt_real_order_settings` × RUNBOOK §2 9 키 일관성 / Phase B scope guard 4 종
+  (`HttpxKisOrderTransport` / `kis_order_transport_real.py` / executor real path / fill sync real 미존재) /
+  Alembic head `0010_real_fills` 변경 0건 + pyproject 외부 broker SDK 미추가
+- `RELEASE_NOTES_v1.0.md` (신규 초안) — Phase A 절 작성, Phase B~E 대기 표시. v1.0-final 태그
+  발행은 RUNBOOK §8 운영 체크리스트가 모두 ✅ 가 된 다음에만
+- **실제 게이트: pytest 1905 → 1942 passed (+38, 로컬 — 1 pre-existing `MARKET_CAP_LIMIT=5`
+  deselect 는 운영자 .env 차이로 무관)** / 회귀 0건 / Alembic head `0010_real_fills` 변경 0건 /
+  DB 모델 변경 0건 / API 라우터 변경 0건 / 프런트 변경 0건 / 신규 pip 의존성 0건 / 실 KIS API
+  호출 0건 / 외부 네트워크 호출 0건 / API key / app_secret / access_token / account_number 평문
+  저장·로그 0건
+
 ---
 
 ## 0-1. v0.16 마감 선언 — Real Order Integration Skeleton & Fill Sync Readiness

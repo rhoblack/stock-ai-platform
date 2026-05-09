@@ -639,3 +639,416 @@ def test_v016_does_not_regress_v014_paper_trading_default(
 ) -> None:
     monkeypatch.delenv("PAPER_TRADING_ENABLED", raising=False)
     assert Settings().paper_trading_enabled is False
+
+
+# ---------------------------------------------------------------------------
+# 14. v1.0 Phase A — RUNBOOK_REAL_TRADING.md presence + required keywords
+# ---------------------------------------------------------------------------
+
+
+def _runbook_path():
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[2] / "RUNBOOK_REAL_TRADING.md"
+
+
+def test_v10_phase_a_runbook_exists() -> None:
+    """Phase A produces RUNBOOK_REAL_TRADING.md at repo root."""
+    assert _runbook_path().exists(), (
+        "RUNBOOK_REAL_TRADING.md must exist at repo root after v1.0 Phase A"
+    )
+
+
+@pytest.mark.parametrize(
+    "keyword",
+    [
+        # Mandatory env-var names — runbook must show operators what to set
+        "REAL_TRADING_ENABLED",
+        "KIS_ORDER_ENABLED",
+        "REAL_ORDER_DRY_RUN",
+        "KILL_SWITCH_ENABLED",
+        "APPROVAL_REQUIRED",
+        "TRADING_SAFETY_ENABLED",
+        "MAX_REAL_ORDER_AMOUNT",
+        "MAX_REAL_DAILY_ORDER_AMOUNT",
+        # Mandatory section anchors — runbook must contain §1~§9
+        "§1",
+        "§2",
+        "§3",
+        "§4",
+        "§5",
+        "§6",
+        "§7",
+        "§8",
+        "§9",
+        # Mandatory policy lockdowns — both autotrade modes named explicitly
+        "FULL_AUTO",
+        "SMALL_AUTO",
+    ],
+)
+def test_v10_phase_a_runbook_contains_required_keywords(keyword: str) -> None:
+    """Runbook must surface every safety knob and forbidden mode by name."""
+    text = _runbook_path().read_text(encoding="utf-8")
+    assert keyword in text, (
+        f"RUNBOOK_REAL_TRADING.md must contain {keyword!r}"
+    )
+
+
+def test_v10_phase_a_runbook_forbids_full_auto_and_small_auto() -> None:
+    """Runbook §9 must explicitly mark FULL_AUTO + SMALL_AUTO as forbidden."""
+    text = _runbook_path().read_text(encoding="utf-8")
+    # The §9 lockdown lines start with the no-entry symbol ❌.
+    assert "❌ **FULL_AUTO" in text, (
+        "Runbook §9 must explicitly forbid FULL_AUTO autotrade"
+    )
+    assert "❌ **SMALL_AUTO" in text, (
+        "Runbook §9 must explicitly forbid SMALL_AUTO autotrade"
+    )
+
+
+def test_v10_phase_a_runbook_forbids_user_approval_bypass() -> None:
+    """Runbook §9 must explicitly forbid user-approval-less orders."""
+    text = _runbook_path().read_text(encoding="utf-8")
+    assert "❌ **사용자 승인 없는 주문**" in text, (
+        "Runbook §9 must forbid user-approval-less orders"
+    )
+
+
+def test_v10_phase_a_runbook_forbids_real_default_on() -> None:
+    """Runbook §9 must lock REAL_TRADING_ENABLED / KIS_ORDER_ENABLED /
+    REAL_ORDER_DRY_RUN paranoid defaults — no default-ON real trading."""
+    text = _runbook_path().read_text(encoding="utf-8")
+    assert "❌ **실거래 default ON**" in text, (
+        "Runbook §9 must forbid default-ON real trading"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 15. v1.0 Phase A — paranoid default re-verification (ALL safety gates)
+# ---------------------------------------------------------------------------
+
+
+def test_v10_phase_a_all_paranoid_defaults_intact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-verification of every safety/real-trading default at the start of v1.0.
+
+    No env override, no Settings kwarg — purely the .env-less default state.
+    Any drift here is a regression in the safety baseline.
+    """
+    for var in (
+        # v0.15 layer
+        "TRADING_SAFETY_ENABLED",
+        "KILL_SWITCH_ENABLED",
+        "APPROVAL_REQUIRED",
+        "MAX_ORDER_AMOUNT",
+        "MAX_DAILY_ORDER_AMOUNT",
+        # v0.16 layer
+        "REAL_TRADING_ENABLED",
+        "KIS_ORDER_ENABLED",
+        "REAL_ORDER_DRY_RUN",
+        "MAX_REAL_ORDER_AMOUNT",
+        "MAX_REAL_DAILY_ORDER_AMOUNT",
+        # adjacent gates
+        "PAPER_TRADING_ENABLED",
+        "AUTH_ENABLED",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    s = Settings()
+
+    # v0.15 — paranoid Approval layer
+    assert s.trading_safety_enabled is False
+    assert s.kill_switch_enabled is True
+    assert s.approval_required is True
+
+    # v0.16 — paranoid Real Order layer
+    assert s.real_trading_enabled is False
+    assert s.kis_order_enabled is False
+    assert s.real_order_dry_run is True
+
+    # v0.14 — paranoid Paper layer (still off)
+    assert s.paper_trading_enabled is False
+
+    # v0.8 — auth default off (matches dev/CI baseline)
+    assert s.auth_enabled is False
+
+    # Real-order execution gate is structurally False under defaults
+    assert can_attempt_real_order_settings(s) is False
+
+
+def test_v10_phase_a_all_real_trading_settings_default_to_paranoid_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bare assertions of the 5 v0.16 real-trading defaults at the start of v1.0."""
+    for var in (
+        "REAL_TRADING_ENABLED",
+        "KIS_ORDER_ENABLED",
+        "REAL_ORDER_DRY_RUN",
+        "MAX_REAL_ORDER_AMOUNT",
+        "MAX_REAL_DAILY_ORDER_AMOUNT",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    s = Settings()
+    assert s.real_trading_enabled is False
+    assert s.kis_order_enabled is False
+    assert s.real_order_dry_run is True
+    assert s.max_real_order_amount == 100_000
+    assert s.max_real_daily_order_amount == 1_000_000
+
+
+# ---------------------------------------------------------------------------
+# 16. v1.0 Phase A — validate_real_trading_operating_limits() advisory helper
+# ---------------------------------------------------------------------------
+
+
+def test_v10_validate_operating_limits_empty_for_paranoid_defaults() -> None:
+    """Default 100k / 1M caps are well within recommended thresholds."""
+    from app.config.settings import validate_real_trading_operating_limits
+
+    warnings = validate_real_trading_operating_limits(Settings())
+    assert warnings == [], (
+        f"Paranoid defaults must produce zero advisories, got {warnings!r}"
+    )
+
+
+def test_v10_validate_operating_limits_warns_on_per_order_above_threshold() -> None:
+    """Per-order cap above the v1.0 threshold (1,000,000 KRW) must surface."""
+    from app.config.settings import (
+        RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW,
+        validate_real_trading_operating_limits,
+    )
+
+    s = Settings(
+        max_real_order_amount=RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW + 1,
+        max_real_daily_order_amount=RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW + 1,
+    )
+    warnings = validate_real_trading_operating_limits(s)
+    assert any("MAX_REAL_ORDER_AMOUNT" in w for w in warnings), (
+        f"Expected MAX_REAL_ORDER_AMOUNT advisory, got {warnings!r}"
+    )
+
+
+def test_v10_validate_operating_limits_warns_on_daily_above_threshold() -> None:
+    """Daily cumulative cap above the v1.0 threshold (10,000,000 KRW) must surface."""
+    from app.config.settings import (
+        RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW,
+        validate_real_trading_operating_limits,
+    )
+
+    s = Settings(
+        max_real_order_amount=100_000,
+        max_real_daily_order_amount=RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW + 1,
+    )
+    warnings = validate_real_trading_operating_limits(s)
+    assert any("MAX_REAL_DAILY_ORDER_AMOUNT" in w for w in warnings), (
+        f"Expected MAX_REAL_DAILY_ORDER_AMOUNT advisory, got {warnings!r}"
+    )
+
+
+def test_v10_validate_operating_limits_returns_two_when_both_exceed() -> None:
+    """Both caps over threshold → both advisories returned (in stable order)."""
+    from app.config.settings import (
+        RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW,
+        RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW,
+        validate_real_trading_operating_limits,
+    )
+
+    s = Settings(
+        max_real_order_amount=RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW + 1,
+        max_real_daily_order_amount=RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW + 1,
+    )
+    warnings = validate_real_trading_operating_limits(s)
+    assert len(warnings) == 2
+    assert "MAX_REAL_ORDER_AMOUNT" in warnings[0]
+    assert "MAX_REAL_DAILY_ORDER_AMOUNT" in warnings[1]
+
+
+def test_v10_validate_operating_limits_pure_returns_no_io(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Helper must be pure — no logging, no external calls. Calling twice on
+    the same Settings yields the same list (no side effect)."""
+    from app.config.settings import validate_real_trading_operating_limits
+
+    s = Settings()
+    a = validate_real_trading_operating_limits(s)
+    b = validate_real_trading_operating_limits(s)
+    assert a == b == []
+
+
+def test_v10_validate_operating_limits_at_exact_threshold_no_warning() -> None:
+    """Exactly at the recommended cap is acceptable (boundary inclusive)."""
+    from app.config.settings import (
+        RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW,
+        RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW,
+        validate_real_trading_operating_limits,
+    )
+
+    s = Settings(
+        max_real_order_amount=RECOMMENDED_MAX_REAL_ORDER_AMOUNT_KRW,
+        max_real_daily_order_amount=RECOMMENDED_MAX_REAL_DAILY_ORDER_AMOUNT_KRW,
+    )
+    assert validate_real_trading_operating_limits(s) == []
+
+
+# ---------------------------------------------------------------------------
+# 17. v1.0 Phase A — can_attempt_real_order_settings(): full operating gate
+#     re-verification across the 9 .env keys from RUNBOOK §2
+# ---------------------------------------------------------------------------
+
+
+def test_v10_can_attempt_only_with_all_runbook_section_2_keys_open() -> None:
+    """The 6-gate AND helper agrees with the RUNBOOK §2 activation keys.
+
+    All 6 simultaneously-open gates → True. Closing any one → False.
+    (auth_enabled + max_real_*_amount are checked at HTTP / Executor layer,
+    not the can_attempt helper — the helper covers settings-level gating only.)
+    """
+    open_kwargs = dict(
+        trading_safety_enabled=True,
+        kill_switch_enabled=False,
+        approval_required=True,
+        real_trading_enabled=True,
+        kis_order_enabled=True,
+        real_order_dry_run=False,
+    )
+    assert can_attempt_real_order_settings(Settings(**open_kwargs)) is True
+
+    # Each of the 6 gates, when flipped to its closed state in isolation,
+    # must independently block.
+    for closed_field, closed_value in [
+        ("trading_safety_enabled", False),
+        ("kill_switch_enabled", True),
+        ("approval_required", False),
+        ("real_trading_enabled", False),
+        ("kis_order_enabled", False),
+        ("real_order_dry_run", True),
+    ]:
+        kwargs = dict(open_kwargs)
+        kwargs[closed_field] = closed_value
+        assert can_attempt_real_order_settings(Settings(**kwargs)) is False, (
+            f"{closed_field}={closed_value} must block real-order execution"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 18. v1.0 Phase A — Phase B scope guard:
+#     HttpxKisOrderTransport + KIS real transport must NOT yet exist.
+# ---------------------------------------------------------------------------
+
+
+def test_v10_phase_a_httpx_kis_order_transport_module_absent() -> None:
+    """Phase B (KIS real transport) is not yet implemented in Phase A."""
+    from pathlib import Path
+
+    broker_dir = Path(__file__).resolve().parents[2] / "app" / "broker"
+    real_transport = broker_dir / "kis_order_transport_real.py"
+    assert not real_transport.exists(), (
+        "kis_order_transport_real.py must be deferred to v1.0 Phase B "
+        f"(found at {real_transport})"
+    )
+
+
+def test_v10_phase_a_kis_order_client_does_not_define_httpx_transport() -> None:
+    """Even within the existing kis_order_client.py, HttpxKisOrderTransport
+    is not yet a concrete class — Phase A only adds runbook + settings
+    helpers."""
+    import importlib
+
+    module = importlib.import_module("app.broker.kis_order_client")
+    assert not hasattr(module, "HttpxKisOrderTransport"), (
+        "HttpxKisOrderTransport must not exist before v1.0 Phase B"
+    )
+
+
+def test_v10_phase_a_no_real_order_executor_real_path() -> None:
+    """RealOrderExecutor real path (Phase C) is not yet implemented.
+
+    The Phase D / v0.16 dry-run executor exists, but it must not yet expose
+    a method or branch named ``real_path`` / ``execute_real`` etc. We assert
+    that the executor module — which already exists — does NOT export an
+    HttpxKisOrderTransport-bound symbol.
+    """
+    import importlib
+
+    module = importlib.import_module("app.broker.real_order_executor")
+    # Phase A scope guard: no public symbol named after the real transport
+    forbidden = ("HttpxKisOrderTransport", "execute_real", "real_path_execute")
+    for name in forbidden:
+        assert not hasattr(module, name), (
+            f"v1.0 Phase A must not introduce {name} on RealOrderExecutor; "
+            f"that belongs to Phase C"
+        )
+
+
+def test_v10_phase_a_no_fill_sync_real_transport_helper() -> None:
+    """FillSyncService real-transport helper (Phase D) is not yet present."""
+    import importlib
+
+    module = importlib.import_module("app.broker.fill_sync_service")
+    forbidden = ("sync_fills_real", "HttpxKisOrderTransport")
+    for name in forbidden:
+        assert not hasattr(module, name), (
+            f"v1.0 Phase A must not introduce {name} on FillSyncService; "
+            f"that belongs to Phase D"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 19. v1.0 Phase A — Alembic head + DB / API / frontend scope unchanged
+# ---------------------------------------------------------------------------
+
+
+def test_v10_phase_a_alembic_head_is_unchanged_at_0010_real_fills() -> None:
+    """Phase A adds zero Alembic revisions — head stays at 0010_real_fills."""
+    from pathlib import Path
+
+    versions_dir = (
+        Path(__file__).resolve().parents[2] / "alembic" / "versions"
+    )
+    revisions = sorted(p.name for p in versions_dir.glob("0*.py"))
+    assert revisions == [
+        "0001_baseline_v0_7.py",
+        "0002_auth_foundation.py",
+        "0003_watchlist.py",
+        "0004_user_preferences.py",
+        "0005_virtual_trading_core.py",
+        "0006_virtual_positions.py",
+        "0007_order_candidates.py",
+        "0008_approval_audit_logs.py",
+        "0009_real_orders.py",
+        "0010_real_fills.py",
+    ], f"v1.0 Phase A must not add Alembic revisions, got {revisions}"
+
+
+def test_v10_phase_a_no_new_pip_dependency() -> None:
+    """Phase A introduces zero new pip dependencies. The pyproject.toml's
+    declared distribution dependencies must remain a subset of those that
+    were present at v0.16-final.
+
+    We sanity-check that no new top-level package name is added — we don't
+    pin exact versions because dev tooling (respx/prometheus-client/sqlalchemy)
+    can surface as a shared lockfile. We only assert that:
+      * httpx (used by Phase B later) was already a dependency
+      * respx (Phase B/D test mock) was already a dev dependency
+      * no exotic 'real trading' SDK has been silently added
+    """
+    from pathlib import Path
+
+    pyproject = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "httpx" in pyproject
+    assert "respx" in pyproject
+    # Forbidden / suspicious additions
+    forbidden_pkgs = (
+        "ccxt",  # crypto exchange SDK
+        "broker-sdk",
+        "kis-sdk",
+        "openapi-kis",
+    )
+    for pkg in forbidden_pkgs:
+        assert pkg not in pyproject, (
+            f"v1.0 Phase A must not add {pkg!r} to pyproject.toml"
+        )
